@@ -1,0 +1,628 @@
+A380X-XP12.acf|3158464959
+A380X-XP12_cockpit.obj|1249829005
+INSTALL_AILERON_VISUALS.txt|734154147
+README.txt|1171677594
+VERSION|188343767
+X-Camera_A380X-XP12.csv|-1
+airfoils/Boeing Mid (high subsonic).afl|120007708
+airfoils/Boeing Root (high subsonic).afl|1581054308
+airfoils/Boeing Tip (high subsonic).afl|337355144
+airfoils/Clark-Y (good propeller).afl|1792809283
+airfoils/NACA 0006 (symmetrical).afl|2848735655
+airfoils/NACA 0009 (symmetrical).afl|1755903114
+airfoils/NACA 64-206(Inverted)_3m.afl|4280628362
+airfoils/NACA 64-206(Inverted)_9m.afl|2559317633
+airfoils/NACA 64-206_3m.afl|3041230358
+airfoils/NACA 64-206_9m.afl|1399393846
+airfoils/NACA 64-209(Inverted)_3m.afl|1699934727
+airfoils/NACA 64-209(Inverted)_9m.afl|3858557716
+airfoils/hstab_root.afl|1701116699
+airfoils/hstab_tip.afl|2570577469
+airfoils/vstab_root.afl|1084836527
+airfoils/vstab_tip.afl|1844763971
+airfoils/wing_mid1.afl|424190755
+airfoils/wing_mid2.afl|1341895899
+airfoils/wing_root.afl|2176112156
+airfoils/wing_tip.afl|3825209966
+airfoils/winglet_root.afl|3519875912
+airfoils/winglet_tip.afl|2032427047
+animation-providers/aileron-dance-v1.json|3500617508
+avionics-providers/fbw-avionics-v1.json|1746935004
+build-manifest.json|1718813068
+changelog.txt|2815586915
+cockpit/-PANELS-/Panel.png|1634964808
+cockpit_3d/-PANELS-/Panel.png|377334255
+cockpit_3d/fcu_labels.png|1726928638
+cockpit_3d/fcu_labels_LIT.png|3538220336
+licenses/ATTRIBUTION.md|2909693473
+licenses/GPL-3.0.txt|2540125440
+licenses/mSparks-747-400-CC-BY-NC-SA-4.0.txt|669382600
+liveries/Thai Airways HS-TUA/Preview.png|1585198340
+liveries/Thai Airways HS-TUA/README.txt|2010485590
+liveries/Thai Airways HS-TUA/conversion-manifest.json|3345298078
+liveries/Thai Airways HS-TUA/original-package-manifest.json|2959409231
+liveries/Thai Airways HS-TUA/preview-manifest.json|2016316321
+liveries/Thai Airways HS-TUA/textures/exterior/fuselage/a380x_fuse1_material_gloss.png|668896207
+liveries/Thai Airways HS-TUA/textures/exterior/fuselage/a380x_fuse2_material_gloss.png|1622339434
+liveries/Thai Airways HS-TUA/textures/exterior/fuselage/a380x_fuse3_material_gloss.png|2969206707
+liveries/Thai Airways HS-TUA/textures/exterior/fuselage/a380x_fuse4_material_gloss.png|501020298
+liveries/Thai Airways HS-TUA/textures/exterior/fuselage/a380x_fuse5_material_gloss.png|1868777865
+liveries/Thai Airways HS-TUA/textures/exterior/fuselage/image-008.png|2751322146
+liveries/Thai Airways HS-TUA/textures/exterior/fuselage/image-011.png|3547641204
+liveries/Thai Airways HS-TUA/textures/exterior/fuselage/image-021.png|3073637195
+liveries/Thai Airways HS-TUA/textures/exterior/fuselage/image-024.png|1730663747
+liveries/Thai Airways HS-TUA/textures/exterior/fuselage/image-030.png|360752928
+liveries/Thai Airways HS-TUA/textures/exterior/gear-wing-lh/image-008.png|3828899236
+liveries/Thai Airways HS-TUA/textures/exterior/gear-wing-rh/image-008.png|286220315
+liveries/Thai Airways HS-TUA/textures/exterior/wings/a380x_eng_lh_material_gloss.png|1975295210
+liveries/Thai Airways HS-TUA/textures/exterior/wings/a380x_eng_rh_material_gloss.png|54374572
+liveries/Thai Airways HS-TUA/textures/exterior/wings/a380x_wingfence_material_gloss.png|2242577760
+liveries/Thai Airways HS-TUA/textures/exterior/wings/image-012.png|1814476551
+liveries/Thai Airways HS-TUA/textures/exterior/wings/image-015.png|3118743037
+liveries/Thai Airways HS-TUA/textures/exterior/wings/image-020.png|2754974248
+liveries/Thai Airways HS-TUA/textures/exterior/wings/image-023.png|4207095576
+liveries/Thai Airways HS-TUA/textures/exterior/wings/image-034.png|2989011656
+liveries/Thai Airways HS-TUA/textures/exterior/wings/image-037.png|2568479821
+liveries/Thai Airways HS-TUA/textures/exterior/wings/image-049.png|3078552728
+liveries/Thai Airways HS-TUA/textures/interior/cabin-seats/a380x_bc_seats_material_gloss.png|1458035209
+liveries/Thai Airways HS-TUA/textures/interior/cabin-seats/a380x_main_deck_pec_seats_material_gloss.png|3681454015
+liveries/Thai Airways HS-TUA/textures/interior/cabin-seats/image-003.png|746748240
+liveries/Thai Airways HS-TUA/textures/interior/cabin-seats/image-006.png|2468165372
+liveries/Thai Airways HS-TUA/textures/interior/cabin-seats/image-010.png|2257598875
+liveries/Thai Airways HS-TUA/textures/interior/cabin-seats/image-013.png|306756702
+liveries/Thai Airways HS-TUA/textures/interior/cabin-seats/image-016.png|2028979207
+liveries/Thai Airways HS-TUA/textures/interior/cabin/a380x_fc_deck_sidwealls_material_gloss.png|3024746974
+liveries/Thai Airways HS-TUA/textures/interior/cabin/a380x_pax_doors_material_gloss.png|1142890091
+liveries/Thai Airways HS-TUA/textures/interior/cabin/image-006.png|2975268420
+liveries/Thai Airways HS-TUA/textures/interior/cabin/image-010.png|1037325061
+liveries/Thai Airways HS-TUA/textures/interior/cabin/image-014.png|572017058
+liveries/Thai Airways HS-TUA/textures/interior/cabin/image-021.png|3196404710
+liveries/Thai Airways HS-TUA/textures/interior/cabin/image-025.png|1740800620
+liveries/Thai Airways HS-TUA/textures/interior/cabin/image-031.png|3606811881
+liveries/Thai Airways HS-TUA/textures/interior/cabin/image-037.png|1943927961
+liveries/Thai Airways HS-TUA/textures/interior/cabin/image-041.png|1196437403
+liveries/Thai Airways HS-TUA/textures/interior/cockpit/image-035.png|540119523
+liveries/Thai Airways HS-TUA/validation-report.json|2724827982
+liveries/Thai Airways HS-TUA/visual-validation.json|1986256401
+objects/exterior/fuselage/a380x_accessories.obj|3318679138
+objects/exterior/fuselage/a380x_fuse1.obj|2349902377
+objects/exterior/fuselage/a380x_fuse2.obj|2142813338
+objects/exterior/fuselage/a380x_fuse3.obj|3496313385
+objects/exterior/fuselage/a380x_fuse4.obj|1308393445
+objects/exterior/fuselage/a380x_fuse5.obj|3600311202
+objects/exterior/fuselage/a380x_lg_bay.obj|2676108438
+objects/exterior/fuselage/a380x_lg_bay_main.obj|3962727220
+objects/exterior/fuselage/a380x_pax_windows.obj|3657009672
+objects/exterior/gear-body-lh/gear_body_lh_a380_exterior_tyres.obj|301763429
+objects/exterior/gear-body-lh/gear_body_lh_a380x_blg.obj|296346649
+objects/exterior/gear-body-rh/gear_body_rh_a380_exterior_tyres.obj|2632010457
+objects/exterior/gear-body-rh/gear_body_rh_a380x_blg.obj|1458997302
+objects/exterior/gear-nose/gear_nose_a380_exterior_nlg.obj|3208246384
+objects/exterior/gear-nose/gear_nose_a380_exterior_tyres.obj|239639206
+objects/exterior/gear-nose/gear_nose_a380x_accessories.obj|3864189327
+objects/exterior/gear-nose/gear_nose_a380x_lg_bay.obj|2655218009
+objects/exterior/gear-wing-lh/gear_wing_lh_a380_exterior_tyres.obj|740120517
+objects/exterior/gear-wing-lh/gear_wing_lh_a380_exterior_wing1.obj|3244901776
+objects/exterior/gear-wing-lh/gear_wing_lh_a380x_wlg.obj|2816860135
+objects/exterior/gear-wing-rh/gear_wing_rh_a380_exterior_tyres.obj|3730576293
+objects/exterior/gear-wing-rh/gear_wing_rh_a380_exterior_wing2.obj|2609820022
+objects/exterior/gear-wing-rh/gear_wing_rh_a380x_wlg.obj|3716087703
+objects/exterior/wings/a380x_eng_cores_lh.obj|3221046209
+objects/exterior/wings/a380x_eng_cores_rh.obj|249462626
+objects/exterior/wings/a380x_eng_lh.obj|2304045513
+objects/exterior/wings/a380x_eng_rh.obj|930487863
+objects/exterior/wings/a380x_fans.obj|2421877683
+objects/exterior/wings/a380x_pylons.obj|195065801
+objects/exterior/wings/a380x_wing1.obj|2007385241
+objects/exterior/wings/a380x_wing1_2.obj|1052276705
+objects/exterior/wings/a380x_wing2.obj|397420616
+objects/exterior/wings/a380x_wing2_2.obj|1410237617
+objects/exterior/wings/a380x_wingfence.obj|3464253648
+objects/interior/cabin-seats/cabin_seats_a380x_bc_seats.obj|4286221981
+objects/interior/cabin-seats/cabin_seats_a380x_main_deck_cas_seats.obj|3541866304
+objects/interior/cabin-seats/cabin_seats_a380x_main_deck_pec_seats.obj|1316255062
+objects/interior/cabin-seats/cabin_seats_a380x_main_deck_yc_seat.obj|3447299680
+objects/interior/cabin-seats/cabin_seats_a380x_upper_deck_suites.obj|14053157
+objects/interior/cabin-seats/cabin_seats_powered_off_screens.obj|2951231546
+objects/interior/cabin/cabin_a380_cockpit_black_floor_panel_4k.obj|1574397941
+objects/interior/cabin/cabin_a380x_aft_stairs.obj|1514087378
+objects/interior/cabin/cabin_a380x_cabin_carpet_sewing.obj|743580117
+objects/interior/cabin/cabin_a380x_cabin_floor.obj|3516581669
+objects/interior/cabin/cabin_a380x_cabin_ntf.obj|4126163898
+objects/interior/cabin/cabin_a380x_cabin_stairs_fwd.obj|2394235566
+objects/interior/cabin/cabin_a380x_fc_deck_sidwealls.obj|1375914843
+objects/interior/cabin/cabin_a380x_main_deck_assets.obj|3508638084
+objects/interior/cabin/cabin_a380x_main_deck_carpet.obj|4248509107
+objects/interior/cabin/cabin_a380x_main_deck_galley.obj|3256020103
+objects/interior/cabin/cabin_a380x_main_deck_pec_sidewalls.obj|2855413374
+objects/interior/cabin/cabin_a380x_main_deck_yc_sidewalls.obj|540956067
+objects/interior/cabin/cabin_a380x_pax_doors.obj|2962327200
+objects/interior/cabin/cabin_a380x_upper_deck_door_surrounds.obj|2536007857
+objects/interior/cabin/cabin_a380x_upper_deck_floor.obj|2553430108
+objects/interior/cabin/cabin_a380x_upper_deck_galley.obj|3838420683
+objects/interior/cockpit-controls/a380x_cockpit_controls.obj|2982599958
+objects/interior/cockpit-panels/a380x_mfd_screens.obj|2802143180
+objects/interior/cockpit-panels/decal_a380_cockpit_sticker_8k.obj|4076263244
+objects/interior/cockpit-panels/decal_a380_pushbutton_decal.obj|2139656264
+objects/interior/cockpit-panels/decal_a380x_cockpit_decal_emis.obj|582535637
+objects/interior/cockpit-panels/decal_a380x_cockpit_decal_lovis.obj|507347688
+objects/interior/cockpit-panels/decal_decal_black_noemis.obj|1208423989
+objects/interior/cockpit-panels/decal_new_decal_noemis.obj|1532383547
+objects/interior/cockpit-panels/panel_a380_cockpit_aft_misc01_4k.obj|3198183338
+objects/interior/cockpit-panels/panel_a380_cockpit_aft_misc02_4k.obj|1555708230
+objects/interior/cockpit-panels/panel_a380_cockpit_aft_misc03_4k.obj|3791100765
+objects/interior/cockpit-panels/panel_a380_cockpit_aft_misc05_4k.obj|1067431978
+objects/interior/cockpit-panels/panel_a380_cockpit_fcu_4k.obj|1368572609
+objects/interior/cockpit-panels/panel_a380_cockpit_glareshield_4k.obj|1801879847
+objects/interior/cockpit-panels/panel_a380_cockpit_keyboard.obj|4277900893
+objects/interior/cockpit-panels/panel_a380_cockpit_keyboard2.obj|2552992562
+objects/interior/cockpit-panels/panel_a380_cockpit_leather01_4k.obj|3083919847
+objects/interior/cockpit-panels/panel_a380_cockpit_leather02_4k.obj|39279382
+objects/interior/cockpit-panels/panel_a380_cockpit_leather03_4k.obj|3117163549
+objects/interior/cockpit-panels/panel_a380_cockpit_mip01_8k.obj|741827439
+objects/interior/cockpit-panels/panel_a380_cockpit_mip02_4k.obj|28988045
+objects/interior/cockpit-panels/panel_a380_cockpit_mip03_4k.obj|649248392
+objects/interior/cockpit-panels/panel_a380_cockpit_mip04_4k.obj|402293165
+objects/interior/cockpit-panels/panel_a380_cockpit_mip_knob01_4k.obj|246459524
+objects/interior/cockpit-panels/panel_a380_cockpit_mip_knobs_02_4k.obj|2299289896
+objects/interior/cockpit-panels/panel_a380_cockpit_misc01_4k.obj|3996732191
+objects/interior/cockpit-panels/panel_a380_cockpit_misc02.obj|163621567
+objects/interior/cockpit-panels/panel_a380_cockpit_misc03_4k.obj|1396410932
+objects/interior/cockpit-panels/panel_a380_cockpit_misc_stuff.obj|3220703548
+objects/interior/cockpit-panels/panel_a380_cockpit_ovhd01_4k.obj|3475335891
+objects/interior/cockpit-panels/panel_a380_cockpit_ovhd02_4k.obj|1509962328
+objects/interior/cockpit-panels/panel_a380_cockpit_ovhd_knobs_4k.obj|70983828
+objects/interior/cockpit-panels/panel_a380_cockpit_ovhd_knobs_emmis_4k.obj|3959277195
+objects/interior/cockpit-panels/panel_a380_cockpit_ovhd_knobs_fire_4k.obj|1121224668
+objects/interior/cockpit-panels/panel_a380_cockpit_pedestal01_4k.obj|2407203150
+objects/interior/cockpit-panels/panel_a380_cockpit_pedestal02_4k.obj|1191952707
+objects/interior/cockpit-panels/panel_a380_cockpit_pedestal03_4k.obj|1104282662
+objects/interior/cockpit-panels/panel_a380_cockpit_pedestal04_4k.obj|3463910032
+objects/interior/cockpit-panels/panel_a380_cockpit_pedestal_knobs01_4k.obj|2766402363
+objects/interior/cockpit-panels/panel_a380_cockpit_pedestal_knobs02_4k.obj|1035320412
+objects/interior/cockpit-panels/panel_a380_cockpit_pedestal_screws_4k.obj|2224966238
+objects/interior/cockpit-panels/panel_a380_cockpit_pushbuttons01_4k.obj|1359759524
+objects/interior/cockpit-panels/panel_a380_cockpit_seat_textile_4k.obj|1318837710
+objects/interior/cockpit-panels/panel_a380_cockpit_seatbelt_textile_4k.obj|260170543
+objects/interior/cockpit-panels/panel_a380_cockpit_seats01_4k.obj|1183299621
+objects/interior/cockpit-panels/panel_a380_cockpit_seats02_4k.obj|909457913
+objects/interior/cockpit-panels/panel_a380_cockpit_seats03_4k.obj|428465330
+objects/interior/cockpit-panels/panel_a380_cockpit_sideboards01_4k.obj|3894066506
+objects/interior/cockpit-panels/panel_a380_cockpit_sideboards02_4k.obj|1551608652
+objects/interior/cockpit-panels/panel_a380_cockpit_sidewall01_4k.obj|1689035779
+objects/interior/cockpit-panels/panel_a380_cockpit_sidewall02_4k.obj|2377355788
+objects/interior/cockpit-panels/panel_a380_cockpit_sidewall_isolations_4k.obj|2800385655
+objects/interior/cockpit-panels/panel_a380_cockpit_window_structure_4k.obj|1206776642
+objects/interior/cockpit-panels/panel_a380_mikes_cables_4k.obj|3821612491
+objects/interior/cockpit-panels/panel_rudder_cables_4k.obj|3546263264
+objects/interior/cockpit-panels/screen_powered_off_display_faces.obj|1738354608
+objects/interior/cockpit/cockpit_a380_cockpit_aft_misc04_4k.obj|4234092905
+objects/interior/cockpit/cockpit_a380_cockpit_backwall_4k.obj|3464848137
+objects/interior/cockpit/cockpit_a380_cockpit_black_floor_panel_4k.obj|569901406
+objects/interior/cockpit/cockpit_a380_cockpit_ceiling01_4k.obj|1198776538
+objects/interior/cockpit/cockpit_a380_cockpit_ceiling02_4k.obj|1259504413
+objects/interior/cockpit/cockpit_a380_cockpit_floor_4k.obj|1019316650
+objects/interior/cockpit/cockpit_a380_cockpit_misc02_no_emis.obj|266773959
+objects/interior/cockpit/cockpit_a380_cockpit_ovhd_screws_4k.obj|118476639
+objects/interior/cockpit/cockpit_a380_cockpit_pedestal_misc01_4k.obj|331082027
+objects/interior/cockpit/cockpit_a380_cockpit_rudder_4k.obj|1986938119
+objects/interior/cockpit/cockpit_a380_cockpit_sidewall_misc01_4k.obj|4262341414
+objects/interior/cockpit/cockpit_a380_cockpit_sidewalls_frontshield_4k.obj|1881935004
+objects/interior/cockpit/cockpit_a380_cockpit_windshield_frame_4k.obj|1408803681
+objects/interior/cockpit/cockpit_misc.obj|2373295701
+plugins/A380XAileronDatarefs/mac_x64/A380XAileronDatarefs.xpl|2446150677
+plugins/A380XAileronDatarefs/win_x64/A380XAileronDatarefs.xpl|773465987
+plugins/A380XAvionics/mac_x64/A380XAvionics.xpl|301594901
+plugins/A380XAvionics/sounds/priority_left.pcm|1840394366
+plugins/A380XAvionics/sounds/priority_right.pcm|2393554532
+plugins/A380XAvionics/win_x64/A380XAvionics.xpl|1812878951
+plugins/FlyWithLua/Modules/a380x_aileron_dance.lua|2838693976
+plugins/FlyWithLua/Modules/a380x_hydraulic_surfaces.lua|1618036086
+plugins/FlyWithLua/Scripts (optional)/A380X_XP12_FBW.lua|1153041035
+plugins/FlyWithLua/Scripts (required)/A380X_XP12_Ailerons.lua|3959357832
+plugins/FlyWithLua/Scripts (required)/A380X_XP12_Hydraulics.lua|2528756410
+textures/exterior/fuselage/a380x_accessories_material_gloss.png|2743940313
+textures/exterior/fuselage/a380x_fuse1_material_gloss.png|801007745
+textures/exterior/fuselage/a380x_fuse2_material_gloss.png|2452412576
+textures/exterior/fuselage/a380x_fuse3_material_gloss.png|386368932
+textures/exterior/fuselage/a380x_fuse4_material_gloss.png|3552270496
+textures/exterior/fuselage/a380x_fuse5_material_gloss.png|1050084791
+textures/exterior/fuselage/a380x_lg_bay_albedo.png|1645056323
+textures/exterior/fuselage/a380x_lg_bay_main_material_gloss.png|2258022419
+textures/exterior/fuselage/a380x_pax_window_material_gloss.png|4058768280
+textures/exterior/fuselage/image-000.png|3808144303
+textures/exterior/fuselage/image-001.png|638217311
+textures/exterior/fuselage/image-002.png|1333340604
+textures/exterior/fuselage/image-006.png|4200049776
+textures/exterior/fuselage/image-007.png|3793678163
+textures/exterior/fuselage/image-008.png|3610066989
+textures/exterior/fuselage/image-009.png|3300114274
+textures/exterior/fuselage/image-010.png|2142404820
+textures/exterior/fuselage/image-011.png|2514679163
+textures/exterior/fuselage/image-016.png|3144970269
+textures/exterior/fuselage/image-017.png|1569870253
+textures/exterior/fuselage/image-018.png|938219310
+textures/exterior/fuselage/image-019.png|3010779244
+textures/exterior/fuselage/image-020.png|1581028787
+textures/exterior/fuselage/image-021.png|2871652856
+textures/exterior/fuselage/image-022.png|874906172
+textures/exterior/fuselage/image-023.png|2256202417
+textures/exterior/fuselage/image-024.png|1737079261
+textures/exterior/fuselage/image-028.png|2705995978
+textures/exterior/fuselage/image-029.png|2762863168
+textures/exterior/fuselage/image-030.png|3241675940
+textures/exterior/fuselage/image-040.png|1657367042
+textures/exterior/fuselage/image-041.png|1129784496
+textures/exterior/fuselage/image-042.png|1493944817
+textures/exterior/gear-body-lh/a380_exterior_tyres_material_gloss.png|755286210
+textures/exterior/gear-body-lh/a380x_blg_material_gloss.png|3650144342
+textures/exterior/gear-body-lh/image-000.png|150556301
+textures/exterior/gear-body-lh/image-001.png|3348660625
+textures/exterior/gear-body-lh/image-002.png|868989798
+textures/exterior/gear-body-lh/image-003.png|3820266134
+textures/exterior/gear-body-lh/image-004.png|21938423
+textures/exterior/gear-body-lh/image-005.png|3374587669
+textures/exterior/gear-body-rh/a380_exterior_tyres_material_gloss.png|755286210
+textures/exterior/gear-body-rh/a380x_blg_material_gloss.png|3650144342
+textures/exterior/gear-body-rh/image-000.png|150556301
+textures/exterior/gear-body-rh/image-001.png|3348660625
+textures/exterior/gear-body-rh/image-002.png|868989798
+textures/exterior/gear-body-rh/image-003.png|3820266134
+textures/exterior/gear-body-rh/image-004.png|21938423
+textures/exterior/gear-body-rh/image-005.png|3374587669
+textures/exterior/gear-nose/a380_exterior_nlg_material_gloss.png|2944833661
+textures/exterior/gear-nose/a380_exterior_tyres_material_gloss.png|755286210
+textures/exterior/gear-nose/a380x_accessories_material_gloss.png|2897190468
+textures/exterior/gear-nose/a380x_lg_bay_albedo.png|1645056323
+textures/exterior/gear-nose/image-000.png|1177232705
+textures/exterior/gear-nose/image-001.png|3644803922
+textures/exterior/gear-nose/image-002.png|1592290583
+textures/exterior/gear-nose/image-006.png|3820266134
+textures/exterior/gear-nose/image-007.png|21938423
+textures/exterior/gear-nose/image-008.png|3374587669
+textures/exterior/gear-nose/image-010.png|297076775
+textures/exterior/gear-nose/image-011.png|4021204562
+textures/exterior/gear-nose/image-012.png|3013857104
+textures/exterior/gear-wing-lh/a380_exterior_tyres_material_gloss.png|755286210
+textures/exterior/gear-wing-lh/a380_exterior_wing1_material_gloss.png|2929094353
+textures/exterior/gear-wing-lh/a380x_wlg_material_gloss.png|1691476525
+textures/exterior/gear-wing-lh/image-000.png|3737193422
+textures/exterior/gear-wing-lh/image-001.png|1256211408
+textures/exterior/gear-wing-lh/image-002.png|4191777635
+textures/exterior/gear-wing-lh/image-003.png|3820266134
+textures/exterior/gear-wing-lh/image-004.png|21938423
+textures/exterior/gear-wing-lh/image-005.png|3374587669
+textures/exterior/gear-wing-lh/image-006.png|2375595279
+textures/exterior/gear-wing-lh/image-007.png|651996243
+textures/exterior/gear-wing-lh/image-008.png|1731304116
+textures/exterior/gear-wing-rh/a380_exterior_tyres_material_gloss.png|755286210
+textures/exterior/gear-wing-rh/a380_exterior_wing2_material_gloss.png|1671381689
+textures/exterior/gear-wing-rh/a380x_wlg_material_gloss.png|1691476525
+textures/exterior/gear-wing-rh/image-000.png|3737193422
+textures/exterior/gear-wing-rh/image-001.png|1256211408
+textures/exterior/gear-wing-rh/image-002.png|4191777635
+textures/exterior/gear-wing-rh/image-003.png|3820266134
+textures/exterior/gear-wing-rh/image-004.png|21938423
+textures/exterior/gear-wing-rh/image-005.png|3374587669
+textures/exterior/gear-wing-rh/image-006.png|2164471167
+textures/exterior/gear-wing-rh/image-007.png|4090977522
+textures/exterior/gear-wing-rh/image-008.png|3454362137
+textures/exterior/wings/a380x_eng_cores_lh_material_gloss.png|1300128257
+textures/exterior/wings/a380x_eng_cores_lh_normal.png|3942233985
+textures/exterior/wings/a380x_eng_cores_rh_material_gloss.png|3868920462
+textures/exterior/wings/a380x_eng_cores_rh_normal.png|4232389664
+textures/exterior/wings/a380x_eng_lh_material_gloss.png|3071504136
+textures/exterior/wings/a380x_eng_lh_normal.png|737462306
+textures/exterior/wings/a380x_eng_rh_material_gloss.png|3105885161
+textures/exterior/wings/a380x_eng_rh_normal.png|678228128
+textures/exterior/wings/a380x_fan_material_gloss.png|3490006571
+textures/exterior/wings/a380x_fans_normal.png|4181063343
+textures/exterior/wings/a380x_pylon_material_gloss.png|1795912316
+textures/exterior/wings/a380x_wing1_2_material_gloss.png|266112773
+textures/exterior/wings/a380x_wing1_material_gloss.png|1487103442
+textures/exterior/wings/a380x_wing2_2_material_gloss.png|1426287006
+textures/exterior/wings/a380x_wing2_material_gloss.png|1247390301
+textures/exterior/wings/a380x_wingfence_material_gloss.png|3944488985
+textures/exterior/wings/image-000.png|4133036920
+textures/exterior/wings/image-001.png|2895789108
+textures/exterior/wings/image-002.png|77781615
+textures/exterior/wings/image-010.png|1194715548
+textures/exterior/wings/image-011.png|65391503
+textures/exterior/wings/image-012.png|1381161494
+textures/exterior/wings/image-013.png|1238078793
+textures/exterior/wings/image-014.png|1979808974
+textures/exterior/wings/image-015.png|1970199783
+textures/exterior/wings/image-016.png|388368647
+textures/exterior/wings/image-017.png|1549962487
+textures/exterior/wings/image-018.png|1229615254
+textures/exterior/wings/image-019.png|1397154770
+textures/exterior/wings/image-020.png|3513145094
+textures/exterior/wings/image-021.png|5618192
+textures/exterior/wings/image-022.png|3166364340
+textures/exterior/wings/image-023.png|4293411422
+textures/exterior/wings/image-032.png|3216081659
+textures/exterior/wings/image-033.png|2506274486
+textures/exterior/wings/image-034.png|1045545908
+textures/exterior/wings/image-035.png|2221391397
+textures/exterior/wings/image-036.png|2126829508
+textures/exterior/wings/image-037.png|361094084
+textures/exterior/wings/image-041.png|2107835342
+textures/exterior/wings/image-042.png|3107400154
+textures/exterior/wings/image-043.png|4116877673
+textures/exterior/wings/image-044.png|3730191361
+textures/exterior/wings/image-045.png|3967279179
+textures/exterior/wings/image-046.png|3430901894
+textures/exterior/wings/image-047.png|1149878747
+textures/exterior/wings/image-048.png|2939412128
+textures/exterior/wings/image-049.png|1851414226
+textures/interior/cabin-seats/a380x_bc_seats_material_gloss.png|4188568779
+textures/interior/cabin-seats/a380x_main_deck_cas_seats_material_gloss.png|3273050782
+textures/interior/cabin-seats/a380x_main_deck_pec_seats_material_gloss.png|370086751
+textures/interior/cabin-seats/a380x_main_deck_yc_seat_material_gloss.png|4036098030
+textures/interior/cabin-seats/a380x_upper_deck_suites_material_gloss.png|2429185450
+textures/interior/cabin-seats/image-001.png|4089704108
+textures/interior/cabin-seats/image-003.png|3900485774
+textures/interior/cabin-seats/image-004.png|3944383274
+textures/interior/cabin-seats/image-006.png|2357575002
+textures/interior/cabin-seats/image-008.png|1442520677
+textures/interior/cabin-seats/image-010.png|1677409530
+textures/interior/cabin-seats/image-011.png|3926218789
+textures/interior/cabin-seats/image-013.png|2914026963
+textures/interior/cabin-seats/image-014.png|242567388
+textures/interior/cabin-seats/image-016.png|3283016221
+textures/interior/cabin-seats/powered_off_seatback_material_gloss.png|720150378
+textures/interior/cabin-seats/powered_off_seatback_screens.png|476075842
+textures/interior/cabin/a380_cockpit_black_floor_panel_4k_material_gloss.png|2757786388
+textures/interior/cabin/a380x_aft_stairs_material_gloss.png|1434105125
+textures/interior/cabin/a380x_cabin_carpet_sewing_material_gloss.png|2655673441
+textures/interior/cabin/a380x_cabin_floor_albedo.png|3686509059
+textures/interior/cabin/a380x_cabin_ntf_albedo.png|2236355623
+textures/interior/cabin/a380x_cabin_ntf_material_gloss.png|2946973526
+textures/interior/cabin/a380x_cabin_stairs_fwd_material_gloss.png|886707058
+textures/interior/cabin/a380x_fc_deck_sidwealls_material_gloss.png|1631812094
+textures/interior/cabin/a380x_main_deck_assets_material_gloss.png|1992647636
+textures/interior/cabin/a380x_main_deck_carpet_albedo.png|2294605119
+textures/interior/cabin/a380x_main_deck_carpet_material_gloss.png|916304583
+textures/interior/cabin/a380x_main_deck_galley_material_gloss.png|1305416152
+textures/interior/cabin/a380x_main_deck_pec_sidewalls_material_gloss.png|1674552999
+textures/interior/cabin/a380x_main_deck_yc_sidewalls_material_gloss.png|1464673724
+textures/interior/cabin/a380x_pax_doors_material_gloss.png|3405516996
+textures/interior/cabin/a380x_upper_deck_floor_material_gloss.png|779994474
+textures/interior/cabin/a380x_upper_deck_galley_material_gloss.png|1305416152
+textures/interior/cabin/image-004.png|4036568234
+textures/interior/cabin/image-006.png|2278440940
+textures/interior/cabin/image-008.png|396248688
+textures/interior/cabin/image-010.png|4257721463
+textures/interior/cabin/image-012.png|1937143165
+textures/interior/cabin/image-014.png|4084188367
+textures/interior/cabin/image-016.png|2193406399
+textures/interior/cabin/image-018.png|782943721
+textures/interior/cabin/image-019.png|376688408
+textures/interior/cabin/image-021.png|62621601
+textures/interior/cabin/image-023.png|4059422816
+textures/interior/cabin/image-025.png|2704905569
+textures/interior/cabin/image-029.png|67279728
+textures/interior/cabin/image-031.png|3837052032
+textures/interior/cabin/image-032.png|2292785312
+textures/interior/cabin/image-034.png|1548710207
+textures/interior/cabin/image-035.png|2624851071
+textures/interior/cabin/image-037.png|393547317
+textures/interior/cabin/image-039.png|2318986997
+textures/interior/cabin/image-041.png|3694629202
+textures/interior/cabin/image-042.png|3793181729
+textures/interior/cabin/image-044.png|3359786915
+textures/interior/cockpit-material-fix/a380_cockpit_fcu_4k_albedo.png|1350712483
+textures/interior/cockpit-material-fix/a380_cockpit_fcu_4k_material_gloss.png|1516170450
+textures/interior/cockpit-material-fix/a380_cockpit_fcu_4k_normal.png|1637477037
+textures/interior/cockpit-material-fix/a380_cockpit_glareshield_4k_albedo.png|1290854294
+textures/interior/cockpit-material-fix/a380_cockpit_glareshield_4k_material_gloss.png|1516170450
+textures/interior/cockpit-material-fix/a380_cockpit_glareshield_4k_normal.png|3614746065
+textures/interior/cockpit-material-fix/a380_cockpit_mip01_8k_albedo.png|3211104992
+textures/interior/cockpit-material-fix/a380_cockpit_mip01_8k_material_gloss.png|1053226114
+textures/interior/cockpit-material-fix/a380_cockpit_mip01_8k_normal.png|2099840585
+textures/interior/cockpit-material-fix/a380_cockpit_mip02_4k_albedo.png|2343246827
+textures/interior/cockpit-material-fix/a380_cockpit_mip02_4k_material_gloss.png|384556653
+textures/interior/cockpit-material-fix/a380_cockpit_mip02_4k_normal.png|3928859591
+textures/interior/cockpit-material-fix/a380_cockpit_mip04_4k_albedo.png|4040384175
+textures/interior/cockpit-material-fix/a380_cockpit_mip04_4k_material_gloss.png|4092514320
+textures/interior/cockpit-material-fix/a380_cockpit_mip04_4k_normal.png|3975080416
+textures/interior/cockpit-material-fix/a380x_cockpit_decal_emis_albedo.png|3375438240
+textures/interior/cockpit-material-fix/a380x_cockpit_decal_emis_lit.png|652753845
+textures/interior/cockpit-material-fix/a380x_cockpit_decal_emis_material_gloss.png|1516170450
+textures/interior/cockpit-material-fix/a380x_cockpit_decal_emis_normal.png|637574186
+textures/interior/cockpit-panels/a380_cockpit_aft_misc01_4k_material_gloss.png|1275087154
+textures/interior/cockpit-panels/a380_cockpit_aft_misc02_4k_material_gloss.png|4147790985
+textures/interior/cockpit-panels/a380_cockpit_aft_misc03_4k_material_gloss.png|50036645
+textures/interior/cockpit-panels/a380_cockpit_aft_misc05_4k_material_gloss.png|191973367
+textures/interior/cockpit-panels/a380_cockpit_fcu_4k_albedo.png|1350712483
+textures/interior/cockpit-panels/a380_cockpit_fcu_4k_material_gloss.png|1516170450
+textures/interior/cockpit-panels/a380_cockpit_fcu_4k_normal.png|1637477037
+textures/interior/cockpit-panels/a380_cockpit_glareshield_4k_albedo.png|1290854294
+textures/interior/cockpit-panels/a380_cockpit_glareshield_4k_material_gloss.png|1516170450
+textures/interior/cockpit-panels/a380_cockpit_glareshield_4k_normal.png|3614746065
+textures/interior/cockpit-panels/a380_cockpit_keyboard2_material_gloss.png|884086561
+textures/interior/cockpit-panels/a380_cockpit_keyboard_material_gloss.png|884086561
+textures/interior/cockpit-panels/a380_cockpit_leather01_4k_material_gloss.png|161503092
+textures/interior/cockpit-panels/a380_cockpit_leather02_4k_material_gloss.png|174498391
+textures/interior/cockpit-panels/a380_cockpit_leather03_4k_material_gloss.png|396583004
+textures/interior/cockpit-panels/a380_cockpit_mip01_8k_albedo.png|3211104992
+textures/interior/cockpit-panels/a380_cockpit_mip01_8k_material_gloss.png|1053226114
+textures/interior/cockpit-panels/a380_cockpit_mip01_8k_normal.png|2099840585
+textures/interior/cockpit-panels/a380_cockpit_mip02_4k_albedo.png|2343246827
+textures/interior/cockpit-panels/a380_cockpit_mip02_4k_material_gloss.png|384556653
+textures/interior/cockpit-panels/a380_cockpit_mip02_4k_normal.png|3928859591
+textures/interior/cockpit-panels/a380_cockpit_mip04_4k_albedo.png|4040384175
+textures/interior/cockpit-panels/a380_cockpit_mip04_4k_material_gloss.png|4092514320
+textures/interior/cockpit-panels/a380_cockpit_mip04_4k_normal.png|3975080416
+textures/interior/cockpit-panels/a380_cockpit_mip_knob01_4k_material_gloss.png|2469543675
+textures/interior/cockpit-panels/a380_cockpit_mip_knobs_02_4k_material_gloss.png|2780132761
+textures/interior/cockpit-panels/a380_cockpit_misc01_4k_material_gloss.png|3079698011
+textures/interior/cockpit-panels/a380_cockpit_misc02_material_gloss.png|3118128818
+textures/interior/cockpit-panels/a380_cockpit_misc03_4k_material_gloss.png|3530578711
+textures/interior/cockpit-panels/a380_cockpit_misc_stuff_material_gloss.png|2463608363
+textures/interior/cockpit-panels/a380_cockpit_ovhd01_4k_material_gloss.png|810388435
+textures/interior/cockpit-panels/a380_cockpit_ovhd02_4k_material_gloss.png|1140526424
+textures/interior/cockpit-panels/a380_cockpit_ovhd_knobs_4k_material_gloss.png|4205715580
+textures/interior/cockpit-panels/a380_cockpit_ovhd_knobs_emmis_4k_material_gloss.png|4205715580
+textures/interior/cockpit-panels/a380_cockpit_ovhd_knobs_fire_4k_material_gloss.png|4205715580
+textures/interior/cockpit-panels/a380_cockpit_pedestal01_4k_material_gloss.png|576387864
+textures/interior/cockpit-panels/a380_cockpit_pedestal02_4k_material_gloss.png|577370975
+textures/interior/cockpit-panels/a380_cockpit_pedestal03_4k_material_gloss.png|3548742495
+textures/interior/cockpit-panels/a380_cockpit_pedestal04_4k_material_gloss.png|3474607435
+textures/interior/cockpit-panels/a380_cockpit_pedestal_knobs01_4k_material_gloss.png|2678757061
+textures/interior/cockpit-panels/a380_cockpit_pedestal_knobs02_4k_material_gloss.png|1009283602
+textures/interior/cockpit-panels/a380_cockpit_pedestal_screws_4k_material_gloss.png|2462789760
+textures/interior/cockpit-panels/a380_cockpit_pushbuttons01_4k_material_gloss.png|1161244559
+textures/interior/cockpit-panels/a380_cockpit_seat_textile_4k_material_gloss.png|2906093040
+textures/interior/cockpit-panels/a380_cockpit_seatbelt_textile_4k_material_gloss.png|284123809
+textures/interior/cockpit-panels/a380_cockpit_seats01_4k_material_gloss.png|412935460
+textures/interior/cockpit-panels/a380_cockpit_seats02_4k_material_gloss.png|868371668
+textures/interior/cockpit-panels/a380_cockpit_seats03_4k_material_gloss.png|3824417666
+textures/interior/cockpit-panels/a380_cockpit_sideboards01_4k_material_gloss.png|919667844
+textures/interior/cockpit-panels/a380_cockpit_sideboards02_4k_material_gloss.png|79161542
+textures/interior/cockpit-panels/a380_cockpit_sidewall01_4k_material_gloss.png|3594902589
+textures/interior/cockpit-panels/a380_cockpit_sidewall02_4k_material_gloss.png|3588742382
+textures/interior/cockpit-panels/a380_cockpit_sidewall_isolations_4k_material_gloss.png|3362701985
+textures/interior/cockpit-panels/a380_cockpit_sticker_8k_material_gloss.png|4171323924
+textures/interior/cockpit-panels/a380_cockpit_window_structure_4k_material_gloss.png|135956508
+textures/interior/cockpit-panels/a380_mikes_cables_4k_material_gloss.png|2959343085
+textures/interior/cockpit-panels/a380_pushbutton_decal_material_gloss.png|935191192
+textures/interior/cockpit-panels/a380x_cockpit_decal_emis_albedo.png|3375438240
+textures/interior/cockpit-panels/a380x_cockpit_decal_emis_lit.png|652753845
+textures/interior/cockpit-panels/a380x_cockpit_decal_emis_material_gloss.png|1516170450
+textures/interior/cockpit-panels/a380x_cockpit_decal_emis_normal.png|637574186
+textures/interior/cockpit-panels/a380x_cockpit_decal_lovis_albedo.png|2162123898
+textures/interior/cockpit-panels/a380x_cockpit_decal_lovis_material_gloss.png|2328753963
+textures/interior/cockpit-panels/decal_black_noemis_albedo.png|1661912279
+textures/interior/cockpit-panels/image-000.png|2970995603
+textures/interior/cockpit-panels/image-002.png|223532694
+textures/interior/cockpit-panels/image-003.png|3771985161
+textures/interior/cockpit-panels/image-005.png|3524331017
+textures/interior/cockpit-panels/image-006.png|1218616771
+textures/interior/cockpit-panels/image-008.png|573714145
+textures/interior/cockpit-panels/image-009.png|2785354896
+textures/interior/cockpit-panels/image-011.png|2933365904
+textures/interior/cockpit-panels/image-014.png|3215959068
+textures/interior/cockpit-panels/image-016.png|135633116
+textures/interior/cockpit-panels/image-017.png|3324486710
+textures/interior/cockpit-panels/image-019.png|1178651649
+textures/interior/cockpit-panels/image-026.png|2719160198
+textures/interior/cockpit-panels/image-028.png|49665075
+textures/interior/cockpit-panels/image-029.png|1586966829
+textures/interior/cockpit-panels/image-031.png|1184334886
+textures/interior/cockpit-panels/image-033.png|188087194
+textures/interior/cockpit-panels/image-035.png|1622589352
+textures/interior/cockpit-panels/image-042.png|580742990
+textures/interior/cockpit-panels/image-044.png|3271274367
+textures/interior/cockpit-panels/image-045.png|137277966
+textures/interior/cockpit-panels/image-047.png|2697728984
+textures/interior/cockpit-panels/image-055.png|2692069097
+textures/interior/cockpit-panels/image-057.png|2231086403
+textures/interior/cockpit-panels/image-061.png|566215237
+textures/interior/cockpit-panels/image-063.png|1586263253
+textures/interior/cockpit-panels/image-067.png|794648731
+textures/interior/cockpit-panels/image-069.png|2930368170
+textures/interior/cockpit-panels/image-070.png|3757930141
+textures/interior/cockpit-panels/image-072.png|647136643
+textures/interior/cockpit-panels/image-073.png|1035077414
+textures/interior/cockpit-panels/image-075.png|2832031670
+textures/interior/cockpit-panels/image-076.png|3699455203
+textures/interior/cockpit-panels/image-078.png|3704166061
+textures/interior/cockpit-panels/image-091.png|2014488336
+textures/interior/cockpit-panels/image-105.png|1598701274
+textures/interior/cockpit-panels/image-107.png|2532203484
+textures/interior/cockpit-panels/image-119.png|4279759344
+textures/interior/cockpit-panels/image-120.png|1490984493
+textures/interior/cockpit-panels/image-122.png|2921807085
+textures/interior/cockpit-panels/image-127.png|4223190184
+textures/interior/cockpit-panels/image-129.png|4012131133
+textures/interior/cockpit-panels/image-130.png|2051185680
+textures/interior/cockpit-panels/image-132.png|256454703
+textures/interior/cockpit-panels/image-134.png|3858598766
+textures/interior/cockpit-panels/image-136.png|550975416
+textures/interior/cockpit-panels/image-144.png|749178073
+textures/interior/cockpit-panels/image-146.png|1905879636
+textures/interior/cockpit-panels/image-147.png|4277432881
+textures/interior/cockpit-panels/image-149.png|1103965598
+textures/interior/cockpit-panels/image-150.png|2134741890
+textures/interior/cockpit-panels/image-152.png|3894959968
+textures/interior/cockpit-panels/image-154.png|265320454
+textures/interior/cockpit-panels/image-156.png|1936406144
+textures/interior/cockpit-panels/image-157.png|1937332857
+textures/interior/cockpit-panels/image-159.png|3351677683
+textures/interior/cockpit-panels/image-161.png|3651641868
+textures/interior/cockpit-panels/image-163.png|696715303
+textures/interior/cockpit-panels/image-165.png|2748555949
+textures/interior/cockpit-panels/image-167.png|3899735987
+textures/interior/cockpit-panels/image-170.png|3270368349
+textures/interior/cockpit-panels/image-172.png|1673475308
+textures/interior/cockpit-panels/image-174.png|4140914346
+textures/interior/cockpit-panels/image-176.png|3784872292
+textures/interior/cockpit-panels/image-177.png|600496108
+textures/interior/cockpit-panels/image-179.png|14635788
+textures/interior/cockpit-panels/image-185.png|1750981088
+textures/interior/cockpit-panels/image-187.png|1753295004
+textures/interior/cockpit-panels/image-203.png|163170286
+textures/interior/cockpit-panels/image-205.png|511958629
+textures/interior/cockpit-panels/image-206.png|896571730
+textures/interior/cockpit-panels/image-208.png|3567366068
+textures/interior/cockpit-panels/image-209.png|1531956351
+textures/interior/cockpit-panels/image-211.png|1534761596
+textures/interior/cockpit-panels/image-212.png|2322133658
+textures/interior/cockpit-panels/image-214.png|176057996
+textures/interior/cockpit-panels/image-215.png|2839707442
+textures/interior/cockpit-panels/image-217.png|2748322242
+textures/interior/cockpit-panels/image-218.png|1603393965
+textures/interior/cockpit-panels/image-220.png|4050718309
+textures/interior/cockpit-panels/image-221.png|3956091224
+textures/interior/cockpit-panels/image-223.png|3927914220
+textures/interior/cockpit-panels/mfd_screen_black.png|3490257729
+textures/interior/cockpit-panels/mip03_restoration_albedo.png|1615432697
+textures/interior/cockpit-panels/mip03_restoration_lit.png|2926873434
+textures/interior/cockpit-panels/mip03_restoration_material_gloss.png|2447113201
+textures/interior/cockpit-panels/mip03_restoration_normal.png|3097875927
+textures/interior/cockpit-panels/powered_off_display_faces.png|476075842
+textures/interior/cockpit-panels/powered_off_display_material_gloss.png|720150378
+textures/interior/cockpit-panels/rudder_cables_4k_material_gloss.png|1129060864
+textures/interior/cockpit/a380_cockpit_aft_misc04_4k_material_gloss.png|3233000115
+textures/interior/cockpit/a380_cockpit_backwall_4k_material_gloss.png|3799779047
+textures/interior/cockpit/a380_cockpit_black_floor_panel_4k_material_gloss.png|2047010005
+textures/interior/cockpit/a380_cockpit_ceiling01_4k_material_gloss.png|3354176213
+textures/interior/cockpit/a380_cockpit_ceiling02_4k_material_gloss.png|3657266826
+textures/interior/cockpit/a380_cockpit_floor_4k_material_gloss.png|2463908131
+textures/interior/cockpit/a380_cockpit_misc02_no_emis_material_gloss.png|3343649425
+textures/interior/cockpit/a380_cockpit_ovhd_screws_4k_material_gloss.png|744415847
+textures/interior/cockpit/a380_cockpit_pedestal_misc01_4k_material_gloss.png|1493554997
+textures/interior/cockpit/a380_cockpit_rudder_4k_material_gloss.png|3150377517
+textures/interior/cockpit/a380_cockpit_sidewall_misc01_4k_material_gloss.png|3326158521
+textures/interior/cockpit/a380_cockpit_sidewalls_frontshield_4k_material_gloss.png|3139601357
+textures/interior/cockpit/a380_cockpit_windshield_frame_4k_material_gloss.png|3824406392
+textures/interior/cockpit/image-000.png|3656355543
+textures/interior/cockpit/image-002.png|2558964874
+textures/interior/cockpit/image-003.png|2186253052
+textures/interior/cockpit/image-005.png|3513709450
+textures/interior/cockpit/image-006.png|2896332356
+textures/interior/cockpit/image-008.png|4109478222
+textures/interior/cockpit/image-011.png|2801831293
+textures/interior/cockpit/image-013.png|1319210384
+textures/interior/cockpit/image-014.png|2622923460
+textures/interior/cockpit/image-016.png|203670096
+textures/interior/cockpit/image-017.png|3227740219
+textures/interior/cockpit/image-019.png|3534680274
+textures/interior/cockpit/image-020.png|981614457
+textures/interior/cockpit/image-022.png|853876508
+textures/interior/cockpit/image-023.png|210196134
+textures/interior/cockpit/image-025.png|2084465612
+textures/interior/cockpit/image-026.png|3360828673
+textures/interior/cockpit/image-028.png|1219451218
+textures/interior/cockpit/image-029.png|4206454873
+textures/interior/cockpit/image-031.png|1548710207
+textures/interior/cockpit/image-033.png|2636198464
+textures/interior/cockpit/image-035.png|2703061025
+textures/interior/cockpit/image-037.png|1219472532
+textures/interior/cockpit/image-039.png|1622589352
+textures/interior/cockpit/image-040.png|705080030
+textures/interior/cockpit/image-042.png|3764537120
+textures/interior/cockpit/image-059.png|2331958562
+textures/interior/cockpit/image-061.png|447132459
+textures/interior/cockpit/misc_material_gloss.png|2186270362

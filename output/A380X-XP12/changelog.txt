@@ -1,0 +1,5 @@
+0.1.0-alpha.20261029.1
+- Added a SkunkCrafts Updater 4-compatible development feed.
+- Added deterministic CRC32 and byte-size repair manifests.
+- Custom liveries and local aircraft preferences are protected during repair.
+- Published from GitHub source snapshot 93bdfe4247719d4b723666f640f98c248ee17374.
