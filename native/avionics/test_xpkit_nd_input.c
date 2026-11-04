@@ -73,19 +73,21 @@ static void rotate(float angle,float x,float y,float z){assert(angle==-90&&x==0&
 #define glClear(...) ((void)0)
 #define XPLMSetGraphicsState(...) ((void)0)
 #include "a380x_xpkit_nd_input.inc"
+/* 768x1024 logical unit -> device texel on the A380X_ND_SCALE denser ND device. */
+#define DEV(v) ((int)((float)(v) * A380X_ND_SCALE + 0.5f))
 
 int main(void) {
     XpKitNd *d=&xpkit_nd[0];d->device=(XPLMAvionicsID)1;
     xpkit_health[6]=xpkit_health[7]=1;
-    assert(xpkit_nd_cursor(320,700,d)==xplm_CursorHidden);
+    assert(xpkit_nd_cursor(DEV(320),DEV(700),d)==xplm_CursorHidden);
     assert(d->x==320&&d->y==323&&d->inside&&d->serial==1&&redraws==1);
-    assert(xpkit_nd_cursor(320,700,d)==xplm_CursorHidden);
+    assert(xpkit_nd_cursor(DEV(320),DEV(700),d)==xplm_CursorHidden);
     assert(d->serial==1&&redraws==1);
-    assert(xpkit_nd_touch(320,700,xplm_MouseDown,d)==1);
+    assert(xpkit_nd_touch(DEV(320),DEV(700),xplm_MouseDown,d)==1);
     assert(d->down&&d->events[1].type==1);
-    assert(xpkit_nd_touch(325,695,xplm_MouseDrag,d)==1);
+    assert(xpkit_nd_touch(DEV(325),DEV(695),xplm_MouseDrag,d)==1);
     assert(d->down&&d->events[2].type==0);
-    assert(xpkit_nd_touch(325,695,xplm_MouseUp,d)==1);
+    assert(xpkit_nd_touch(DEV(325),DEV(695),xplm_MouseUp,d)==1);
     assert(!d->down&&d->events[3].type==2);
     assert(xpkit_nd_right(0,0,xplm_MouseDown,d)==0);
     int count=redraws;

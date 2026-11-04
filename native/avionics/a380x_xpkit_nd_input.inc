@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * Device texels are 768x1024, bottom-left. JS client coordinates are top-left.
+ * Device texels are A380X_ND_SCALE x 768x1024, bottom-left; every position below is in the
+ * 768x1024 logical units the JS client uses (top-left).
  * Every ordered button event is retained across host frames; hover is sampled.
  */
+#include "a380x_du_scale.h"
 #include "a380x_elec_power.h"
 #include "a380x_avionics_popup.h"
 /* CDS boot / self-test screen hook (a380x_avionics.c defines it before including the xp-kit adapter). */
@@ -57,8 +59,11 @@ static void xpkit_nd_event(XpKitNd *d,int type,int x,int y,int amount) {
      * requests a cheap device draw, never a WebKit capture or pixel upload. */
     if(d->device&&mfda_av.loaded)mfda_av.needs_drawing(d->device);
 }
+/* Device texel -> 768x1024 logical unit. */
+static int xpkit_nd_logical(int px) { return px<0?px:(int)A380X_DU_LOGICAL(px, A380X_ND_SCALE); }
 static int xpkit_nd_touch(int x,int y,XPLMMouseStatus phase,void *refcon) {
     XpKitNd *d=refcon;
+    x=xpkit_nd_logical(x);y=xpkit_nd_logical(y);
     if(!xpkit_nd_input_on(d)) return 1;
     /* Releases/drags may arrive with an off-screen sentinel (-16,-16) or (0,0):
      * finish the gesture where it was instead of in the corner. */
@@ -71,11 +76,13 @@ static int xpkit_nd_right(int x,int y,XPLMMouseStatus phase,void *refcon) {
 }
 static int xpkit_nd_scroll(int x,int y,int wheel,int clicks,void *refcon) {
     XpKitNd *d=refcon;
+    x=xpkit_nd_logical(x);y=xpkit_nd_logical(y);
     if(!xpkit_nd_input_on(d)||wheel||!efis[d->side].zoom) return 0;
     xpkit_nd_event(d,3,x,1023-y,clicks); return 1;
 }
 static XPLMCursorStatus xpkit_nd_cursor(int x,int y,void *refcon) {
     XpKitNd *d=refcon;d->seen=1;
+    x=xpkit_nd_logical(x);y=xpkit_nd_logical(y);
     if(!xpkit_nd_input_on(d)) return xplm_CursorDefault;
     if(!d->inside||d->x!=x||d->y!=1023-y) xpkit_nd_event(d,0,x,1023-y,0);
     return xplm_CursorHidden;
@@ -117,7 +124,8 @@ static void xpkit_nd_draw_device(void *refcon) {
      * which can zero the alpha, and a see-through ND shows the 180x234 panel-atlas copy behind it
      * (the "blurry ND") and a transparent pop-up. */
     glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_FALSE);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
-    if(XPKIT_ND_OVERLAY(d->side)) { d->presented_frame=0; glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE); if(cull)glEnable(GL_CULL_FACE); return; }
+    glPushMatrix();glScalef(A380X_ND_SCALE,A380X_ND_SCALE,1);  /* 768x1024 logical units */
+    if(XPKIT_ND_OVERLAY(d->side)) { d->presented_frame=0; glPopMatrix(); glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE); if(cull)glEnable(GL_CULL_FACE); return; }
     int rendered=plugin_enabled && xpkit_draw_view(d->side+2,0,0,768,1024);
     if(plugin_enabled && !rendered) {
         glPushMatrix();glScalef(768.0f/180.0f,1024.0f/234.0f,1);
@@ -125,6 +133,7 @@ static void xpkit_nd_draw_device(void *refcon) {
     }
     d->presented_frame=rendered?xpkit_uploaded[d->side+2]:0;
     xpkit_nd_draw_cursor(d);
+    glPopMatrix();
     glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
     if(xpkit_shared)atomic_fetch_add_explicit(&xpkit_shared->nd_profile[d->side].draw_count,1,memory_order_relaxed);
     if(cull)glEnable(GL_CULL_FACE);
@@ -180,7 +189,7 @@ static void xpkit_nd_init(void) {
         }
         if(mfda_av.loaded) {
             XPLMCreateAvionics_t p;memset(&p,0,sizeof(p));p.structSize=sizeof(p);
-            p.screenWidth=p.bezelWidth=768;p.screenHeight=p.bezelHeight=1024;
+            p.screenWidth=p.bezelWidth=A380X_ND_PX(768);p.screenHeight=p.bezelHeight=A380X_ND_PX(1024);
             p.drawOnDemand=1;p.drawCallback=xpkit_nd_draw_device;p.bezelDrawCallback=a380x_black_bezel;p.screenTouchCallback=xpkit_nd_touch;
             p.screenRightTouchCallback=xpkit_nd_right;p.screenScrollCallback=xpkit_nd_scroll;p.screenCursorCallback=xpkit_nd_cursor;
             p.brightnessCallback=xpkit_nd_brightness;p.refcon=d;
@@ -197,6 +206,7 @@ static void xpkit_nd_poll(void) {
         xpkit_health[11+s]=d->device&&mfda_av.loaded&&mfda_av.is_bound(d->device);
         if(xpkit_shared) {int delta=atomic_exchange(&xpkit_shared->zoom_delta[s],0);d->zoom=d->zoom+delta<0?0:d->zoom+delta>XPKIT_ND_ZOOM_MAX?XPKIT_ND_ZOOM_MAX:d->zoom+delta;}
         if(d->device&&mfda_av.loaded&&xpkit_nd_input_on(d)&&mfda_av.cursor_over(d->device,&x,&y)) {
+            x=xpkit_nd_logical(x);y=xpkit_nd_logical(y);
             if(!d->inside||d->x!=x||d->y!=1023-y)xpkit_nd_event(d,0,x,1023-y,0);
         }else if(d->inside&&(!xpkit_nd_input_on(d)||(!d->seen&&!d->down)))xpkit_nd_event(d,4,d->x,d->y,0);
         d->seen=0;

@@ -43,6 +43,7 @@
 #include "XPLMScenery.h"
 
 #include "a380x_avionics_core.h"
+#include "a380x_du_scale.h"
 #include "a380x_efb.h"
 #include "a380x_guidance.h"
 #include "a380x_pfd_data.h"

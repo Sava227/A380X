@@ -32,9 +32,14 @@
 #define ND_FONT_INTERMEDIATE 27.5f
 #define ND_FONT_LARGE 32.5f
 
+/* Line widths are authored for the 768x1024 canvas; a denser cockpit device raises the scale
+ * (a380x_native_displays.inc) because glLineWidth ignores the modelview scale. */
+static float ndf_line_scale = 1.0f;
+static void ndf_line_width(float width) { glLineWidth(width * ndf_line_scale); }
+
 static void ndf_line(float x1, float y1, float x2, float y2, float width, Color color)
 {
-    glLineWidth(width);
+    ndf_line_width(width);
     line(x1, NDY(y1), x2, NDY(y2), color);
 }
 
@@ -64,7 +69,7 @@ static void ndf_rotated_polyline(float cx, float cy, const float *xy, int n, int
 {
     float a = deg * (float)M_PI / 180.0f, c = cosf(a), s = sinf(a);
     int i;
-    glLineWidth(width);
+    ndf_line_width(width);
     set_color(color);
     glBegin(GL_LINE_STRIP);
     for (i = 0; i < n + (closed ? 1 : 0); ++i) {
@@ -100,7 +105,7 @@ static void ndf_dashed_ring(float r, float dash, float gap, float left, float ce
 {
     const float step = 2.0f / r; /* ~2 px along the arc */
     float a, travelled = 0.0f;
-    glLineWidth(2.0f);
+    ndf_line_width(2.0f);
     set_color(color);
     for (a = -(float)M_PI; a < (float)M_PI; a += step, travelled += 2.0f) {
         float x1 = ND_FBW_CX + r * sinf(a), y1 = ND_FBW_CY - r * cosf(a);
@@ -118,7 +123,7 @@ static void ndf_dashed_circle(float cx, float cy, float r, float dash, float gap
 {
     const float step = 2.0f / r;
     float a, travelled = 0.0f;
-    glLineWidth(width);
+    ndf_line_width(width);
     set_color(color);
     glBegin(GL_LINES);
     for (a = 0.0f; a < 2.0f * (float)M_PI; a += step, travelled += 2.0f) {
@@ -145,7 +150,7 @@ static void ndf_compass_ring(float cx, float cy, float radius, float major_r, fl
 {
     int h;
     float a;
-    glLineWidth(width);
+    ndf_line_width(width);
     set_color(WHITE);
     glBegin(GL_LINE_STRIP);
     for (a = -limit; a <= limit + 0.01f; a += 0.5f) {
@@ -383,7 +388,7 @@ static void draw_nd_fbw_arc(const Side *side, int index)
     map.clip_l = 6.0f; map.clip_r = 762.0f; map.clip_b = NDY(690.0f); map.clip_t = NDY(80.0f);
     map.label_r = 700.0f; map.sym = 3.0f;
     if (position_valid) {
-        glLineWidth(2.5f);
+        ndf_line_width(2.5f);
         nd_draw_terrain(&map, index);
         nd_draw_route(&map, index);
         nd_draw_nav_layers(&map, index);
@@ -405,7 +410,7 @@ static void draw_nd_fbw_arc(const Side *side, int index)
     ndf_radio_info(index);
     if (!position_valid) ndf_text(384.0f, 320.0f, "MAP NOT AVAIL", ND_FONT_INTERMEDIATE, AMBER, 1);
     ndf_vertical_display(range_nm, index);
-    glLineWidth(1.0f);
+    ndf_line_width(1.0f);
     text_use_atlas = saved_atlas; text_atlas_size = saved_size;
 }
 
@@ -418,7 +423,7 @@ static void ndf_aircraft_symbol(float x, float y, float deg)
     const float *parts[3] = {wings, body, tail};
     float a = deg * (float)M_PI / 180.0f, c = cosf(a), s = sinf(a);
     int k;
-    glLineWidth(5.0f);
+    ndf_line_width(5.0f);
     set_color(YELLOW);
     glBegin(GL_LINES);
     for (k = 0; k < 3; ++k) {
@@ -446,7 +451,7 @@ static void ndf_map_canvas(EfisNdCanvas *map, float cx, float cy, float radius, 
 
 static void ndf_map_layers(const EfisNdCanvas *map, int index, int with_route)
 {
-    glLineWidth(2.5f);
+    ndf_line_width(2.5f);
     nd_draw_terrain(map, index);
     if (with_route) { nd_draw_route(map, index); nd_draw_nav_layers(map, index); }
     nd_draw_traffic(map, index);
@@ -520,7 +525,7 @@ static void draw_nd_fbw_plan(const Side *side, int index)
     ndf_map_canvas(&map, ND_FBW_CX, ND_FBW_ROSE_CY, ND_FBW_ROSE_RADIUS, range_nm, 0.0f,
                    centre_lat, centre_lon, 45.0f, 723.0f, 155.0f, 625.0f);
     if (position_valid) ndf_map_layers(&map, index, 1);
-    glLineWidth(3.0f);
+    ndf_line_width(3.0f);
     set_color(WHITE);
     glBegin(GL_LINE_STRIP);
     for (k = 0; k <= 360; k += 2) {
@@ -558,6 +563,6 @@ static void draw_nd_fbw(const Side *side, int index)
     text_use_atlas = 1; text_atlas_size = 22.0f;
     if (mode == 4) draw_nd_fbw_plan(side, index);
     else draw_nd_fbw_rose(side, index, mode);
-    glLineWidth(1.0f);
+    ndf_line_width(1.0f);
     text_use_atlas = saved_atlas; text_atlas_size = saved_size;
 }

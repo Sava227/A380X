@@ -16,6 +16,7 @@
  * aircraft-systems side lives in a380x_fms_adapter.inc, which fills mfda_inputs' FMS fields
  * and supplies the A380XMfdSystemsHost.
  */
+#include "a380x_du_scale.h"
 #if !defined(XPLM400) || !defined(XPLM410)
 #error "MFD adapter needs -DXPLM400=1 -DXPLM410=1"
 #endif
@@ -91,6 +92,9 @@ enum {
     MFDA_BEZEL_SIDE = 16, MFDA_BEZEL_TOP = 40,
     MFDA_BEZEL_W = MFD_W + 2 * MFDA_BEZEL_SIDE, MFDA_BEZEL_H = MFD_H + MFDA_BEZEL_SIDE + MFDA_BEZEL_TOP
 };
+/* The cockpit device is A380X_MFD_SCALE times denser than the 768x1024 canvas (a380x_du_scale.h):
+ * the bezel layout above is in canvas units, the device and its texels in pixels. */
+#define MFDA_PX(v) A380X_MFD_PX(v)
 
 typedef struct {
     MfdSide side;
@@ -159,8 +163,8 @@ static float mfda_du_knob(int s)
 /* Device texel (x right, y up, origin bottom-left) -> canvas pixel centre (y down). */
 static void mfda_to_canvas(int x, int y, float *cx, float *cy)
 {
-    *cx = mfda_clampf((float)x + 0.5f, 0.0f, (float)MFD_W);
-    *cy = mfda_clampf((float)(MFD_H - 1 - y) + 0.5f, 0.0f, (float)MFD_H);
+    *cx = mfda_clampf(A380X_DU_LOGICAL(x, A380X_MFD_SCALE), 0.0f, (float)MFD_W);
+    *cy = mfda_clampf((float)MFD_H - A380X_DU_LOGICAL(y, A380X_MFD_SCALE), 0.0f, (float)MFD_H);
 }
 
 static int mfda_popup_shown(const MfdaDevice *d)
@@ -195,7 +199,7 @@ static uint64_t mfda_list_hash(const MfdDrawList *dl, int du_on)
 /* ---- Draw callbacks (GL only; the display list is built in the flight loop) ----------------- */
 
 /* Scissor boxes are framebuffer coordinates: only use them when the device framebuffer is the
- * plain 768x1024 y-up target (risk R2 of spec 08: Metal/Vulkan reverse-Y). */
+ * plain y-up device-size target (risk R2 of spec 08: Metal/Vulkan reverse-Y). */
 static int mfda_scissor_ok(MfdaDevice *d)
 {
     GLint vp[4] = {0, 0, 0, 0};
@@ -204,9 +208,9 @@ static int mfda_scissor_ok(MfdaDevice *d)
     glGetIntegerv(GL_VIEWPORT, vp);
     glGetFloatv(GL_PROJECTION_MATRIX, proj);
     glGetFloatv(GL_MODELVIEW_MATRIX, model);
-    ok = vp[0] == 0 && vp[1] == 0 && vp[2] == MFD_W && vp[3] == MFD_H && proj[5] * model[5] > 0.0f;
+    ok = vp[0] == 0 && vp[1] == 0 && vp[2] == MFDA_PX(MFD_W) && vp[3] == MFDA_PX(MFD_H) && proj[5] * model[5] > 0.0f;
     if (!ok && !d->scissor_logged) {
-        XPLMDebugString("A380X MFD: device framebuffer is not a plain y-up 768x1024 target; clipping uses no scissor\n");
+        XPLMDebugString("A380X MFD: device framebuffer is not a plain y-up device-size target; clipping uses no scissor\n");
         d->scissor_logged = 1;
     }
     return ok;
@@ -222,12 +226,15 @@ static void mfda_screen_draw(void *refcon)
     glClear(GL_COLOR_BUFFER_BIT);                     /* X-Plane does not clear the device FBO */
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE); /* keep alpha = 1: the screen never blends */
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    if (plugin_enabled && d && !d->du_on && MFDA_CDS_OVERLAY(d->side)) {
+    if (plugin_enabled && d && !d->du_on) {
         /* Thales boot / self-test (A380 network): nothing else on the screen */
+        glPushMatrix(); glScalef(A380X_MFD_SCALE, A380X_MFD_SCALE, 1);
+        (void)MFDA_CDS_OVERLAY(d->side);
+        glPopMatrix();
     } else if (plugin_enabled && d && d->du_on) {
         const MfdDrawList *dl=a380x_mfd_display_list(&mfda_mfd,d->side);
-        if(xpkit_draw_mfd(d->side,0,0,1))mfd_gl_cursor(dl,0,0,1);
-        else mfd_gl_draw(dl,0,0,1,mfda_scissor_ok(d));
+        if(xpkit_draw_mfd(d->side,0,0,A380X_MFD_SCALE))mfd_gl_cursor(dl,0,0,A380X_MFD_SCALE);
+        else mfd_gl_draw(dl,0,0,A380X_MFD_SCALE,mfda_scissor_ok(d));
     }
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
@@ -239,21 +246,23 @@ static void mfda_bezel_draw(float r, float g, float b, void *refcon)
     (void)refcon;
     XPLMSetGraphicsState(0, 0, 0, 0, 0, 0, 0);
     glColor3f(0.18f * r, 0.19f * g, 0.20f * b);
+    glPushMatrix(); glScalef(A380X_MFD_SCALE, A380X_MFD_SCALE, 1);   /* bezel layout in canvas units */
     glBegin(GL_QUADS);
     glVertex2i(0, 0); glVertex2i(MFDA_BEZEL_W, 0); glVertex2i(MFDA_BEZEL_W, MFDA_BEZEL_H); glVertex2i(0, MFDA_BEZEL_H);
     glColor3f(0.0f, 0.0f, 0.0f);
     glVertex2i(MFDA_BEZEL_SIDE, MFDA_BEZEL_SIDE); glVertex2i(MFDA_BEZEL_SIDE + MFD_W, MFDA_BEZEL_SIDE);
     glVertex2i(MFDA_BEZEL_SIDE + MFD_W, MFDA_BEZEL_SIDE + MFD_H); glVertex2i(MFDA_BEZEL_SIDE, MFDA_BEZEL_SIDE + MFD_H);
     glEnd();
+    glPopMatrix();
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 }
 
 /* ---- Mouse callbacks (3D cockpit through ATTR_manip_device, and the popup) ------------------ */
 
-/* (0,0) or any texel outside the 768x1024 screen: the event carries no usable position. */
+/* (0,0) or any texel outside the device screen: the event carries no usable position. */
 static int mfda_positionless(int x, int y)
 {
-    return (x == 0 && y == 0) || x < 0 || y < 0 || x >= MFD_W || y >= MFD_H;
+    return (x == 0 && y == 0) || x < 0 || y < 0 || x >= MFDA_PX(MFD_W) || y >= MFDA_PX(MFD_H);
 }
 
 static int mfda_screen_touch(int x, int y, XPLMMouseStatus status, void *refcon)
@@ -952,9 +961,9 @@ static void mfda_devices_enable(void)
         MfdaDevice *d = &mfda_dev[s];
         memset(&p, 0, sizeof(p));
         p.structSize = (int)sizeof(p);
-        p.screenWidth = MFD_W; p.screenHeight = MFD_H;
-        p.bezelWidth = MFDA_BEZEL_W; p.bezelHeight = MFDA_BEZEL_H;
-        p.screenOffsetX = MFDA_BEZEL_SIDE; p.screenOffsetY = MFDA_BEZEL_SIDE;
+        p.screenWidth = MFDA_PX(MFD_W); p.screenHeight = MFDA_PX(MFD_H);
+        p.bezelWidth = MFDA_PX(MFDA_BEZEL_W); p.bezelHeight = MFDA_PX(MFDA_BEZEL_H);
+        p.screenOffsetX = MFDA_PX(MFDA_BEZEL_SIDE); p.screenOffsetY = MFDA_PX(MFDA_BEZEL_SIDE);
         p.drawOnDemand = 1;
         p.bezelDrawCallback = mfda_bezel_draw;
         p.drawCallback = mfda_screen_draw;

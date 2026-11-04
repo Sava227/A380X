@@ -54,7 +54,7 @@ int main(int argc,char **argv) {
             if(elapsed-(int)elapsed>.7 && !captured[page] && atomic_load(&s->frame_seq[6])>0) {
                 char name[4096];snprintf(name,sizeof(name),"%s-sd-page-%02d.ppm",argv[4],page);
                 unsigned seq=atomic_load(&s->frame_seq[6]);
-                if(!(seq&1)){FILE *image=fopen(name,"wb");fprintf(image,"P6\n768 1024\n255\n");
+                if(!(seq&1)){FILE *image=fopen(name,"wb");fprintf(image,"P6\n%d %d\n255\n",xpkit_view_width(6),xpkit_view_height(6));
                     unsigned char *pixels=xpkit_view_pixels(s,6);for(size_t k=0;k<XPKIT_MFD_BYTES;k+=4)fwrite(pixels+k,1,3,image);fclose(image);captured[page]=1;}
             }
         }
