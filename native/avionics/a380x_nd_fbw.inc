@@ -190,10 +190,11 @@ static void ndf_aircraft_and_bugs(const Side *side, float heading_mag)
     ndf_line(384.0f, 108.0f, 384.0f, 148.0f, 5.0f, YELLOW);
     if (!side->heading_valid) return;
     /* Track diamond (shared/TrackBug.tsx), green, from the ground track converted to magnetic. */
-    if (ground_speed_knots > 2.0f && isfinite(ground_track_degrees) && isfinite(nd_data.true_heading)) {
+    {   /* FBW IR track: the heading below 50 kt ground speed (adirs.rs), so the diamond sits at the lubber line. */
         static const float diamond[] = {384, 128, 378, 138, 384, 148, 390, 138};
-        float track_mag = ground_track_degrees - (nd_data.true_heading - heading_mag);
-        float rel = ndf_wrap180(track_mag - heading_mag);
+        float rel = 0.0f;
+        if (ground_speed_knots >= 50.0f && isfinite(ground_track_degrees) && isfinite(nd_data.true_heading))
+            rel = ndf_wrap180(ground_track_degrees - (nd_data.true_heading - heading_mag) - heading_mag);
         if (fabsf(rel) <= 50.0f) ndf_rotated_polyline(ND_FBW_CX, ND_FBW_CY, diamond, 4, 1, rel, 3.0f, GREEN);
     }
     /* Selected heading bug (pages/arc/SelectedHeadingBug.tsx), cyan, while HDG is selected. */
@@ -472,9 +473,11 @@ static void ndf_rose_underlay(const Side *side, float heading_mag, float range_n
     ndf_line(384.0f, 116.0f, 384.0f, 152.0f, 5.0f, YELLOW);                       /* lubber line */
     ndf_aircraft_symbol(ND_FBW_CX, ND_FBW_ROSE_CY, 0.0f);
     if (!side->heading_valid) return;
-    if (ground_speed_knots > 2.0f && isfinite(ground_track_degrees) && isfinite(nd_data.true_heading)) {
-        float track_mag = ground_track_degrees - (nd_data.true_heading - heading_mag);
-        ndf_rotated_polyline(ND_FBW_CX, ND_FBW_ROSE_CY, diamond, 4, 1, ndf_wrap180(track_mag - heading_mag), 3.0f, GREEN);
+    {   /* FBW IR track: the heading below 50 kt ground speed (adirs.rs). */
+        float rel = 0.0f;
+        if (ground_speed_knots >= 50.0f && isfinite(ground_track_degrees) && isfinite(nd_data.true_heading))
+            rel = ndf_wrap180(ground_track_degrees - (nd_data.true_heading - heading_mag) - heading_mag);
+        ndf_rotated_polyline(ND_FBW_CX, ND_FBW_ROSE_CY, diamond, 4, 1, rel, 3.0f, GREEN);
     }
     if (!pfd_guidance.heading_managed && isfinite(pfd_guidance.selected_heading_deg))
         ndf_rotated_polyline(ND_FBW_CX, ND_FBW_ROSE_CY, bug, 4, 0,
