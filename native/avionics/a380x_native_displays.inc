@@ -16,11 +16,13 @@
  * blank if the simulator does not present the device surface. Devices are created from XPluginStart,
  * before the aircraft OBJs load, or X-Plane drops their click manipulators.
  */
+#include "a380x_du_scale.h"
 
 #include "a380x_avionics_popup.h"
 
 #if !defined(A380X_XPKIT)
 
+/* 768x1024 logical layout; the devices are A380X_PFD_SCALE / A380X_ND_SCALE times denser (a380x_du_scale.h). */
 #define NATIVE_DU_W 768
 #define NATIVE_DU_H 1024
 #define NATIVE_ND_LAYOUT_W 180.0f
@@ -39,6 +41,8 @@ static int native_display_du(const NativeDisplay *d)
     if (d->is_nd) return d->side ? A380X_ELN_DU_FO_ND : A380X_ELN_DU_CAPT_ND;
     return d->side ? A380X_ELN_DU_FO_PFD : A380X_ELN_DU_CAPT_PFD;
 }
+
+static float native_display_scale(const NativeDisplay *d) { return d->is_nd ? A380X_ND_SCALE : A380X_PFD_SCALE; }
 
 static float native_display_level(const NativeDisplay *d)
 {
@@ -72,7 +76,10 @@ static void native_display_draw(void *refcon)
     glClearColor(0, 0, 0, 1);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glClear(GL_COLOR_BUFFER_BIT);   /* X-Plane does not clear the device framebuffer */
+    glPushMatrix();
+    glScalef(native_display_scale(d), native_display_scale(d), 1);
     if (plugin_enabled && cds_overlay(native_display_du(d), 0, 0, NATIVE_DU_W, NATIVE_DU_H)) {
+        glPopMatrix();
         if (cull) glEnable(GL_CULL_FACE);
         return;
     }
@@ -82,14 +89,16 @@ static void native_display_draw(void *refcon)
         if (!d->is_nd) {
             glPushMatrix();
             glScalef(NATIVE_DU_W / PFD_PIXEL_WIDTH, NATIVE_DU_H / PFD_PIXEL_HEIGHT, 1);
-            pfd_line_scale = NATIVE_DU_H / PFD_PIXEL_HEIGHT;
+            pfd_line_scale = A380X_PFD_SCALE * NATIVE_DU_H / PFD_PIXEL_HEIGHT;
             pfd_line_width(1.0f);
             draw_pfd(&refs.side[d->side], 0, 0, name);
             pfd_line_scale = 1.0f;
             glPopMatrix();
         } else if (!efis[d->side].zoom) {
             text_use_atlas = 1;
+            ndf_line_scale = A380X_ND_SCALE;
             draw_nd_fbw(&refs.side[d->side], d->side);   /* ARC, ROSE LS/VOR/NAV, PLAN */
+            ndf_line_scale = 1.0f;
             text_use_atlas = 0;
         } else {                                         /* airport zoom: native layout, scaled */
             const float scale = NATIVE_DU_W / NATIVE_ND_LAYOUT_W;
@@ -98,7 +107,7 @@ static void native_display_draw(void *refcon)
             glPushMatrix();
             glTranslatef(0, (NATIVE_DU_H - NATIVE_ND_LAYOUT_H * scale) * 0.5f, 0);
             glScalef(scale, scale, 1);
-            glLineWidth(scale * 0.75f);
+            glLineWidth(A380X_ND_SCALE * scale * 0.75f);
             draw_nd(&refs.side[d->side], 0, 0, name);
             glPopMatrix();
             text_use_atlas = 0;
@@ -106,6 +115,7 @@ static void native_display_draw(void *refcon)
         text_atlas_size = 9.0f;
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     }
+    glPopMatrix();
     glLineWidth(1.0f);
     glColor4f(1, 1, 1, 1);
     if (cull) glEnable(GL_CULL_FACE);
@@ -174,8 +184,8 @@ static void native_displays_init(void)
         if (d->device) { ++created; continue; }
         memset(&p, 0, sizeof(p));
         p.structSize = sizeof(p);
-        p.screenWidth = p.bezelWidth = NATIVE_DU_W;
-        p.screenHeight = p.bezelHeight = NATIVE_DU_H;
+        p.screenWidth = p.bezelWidth = d->is_nd ? A380X_ND_PX(NATIVE_DU_W) : A380X_PFD_PX(NATIVE_DU_W);
+        p.screenHeight = p.bezelHeight = d->is_nd ? A380X_ND_PX(NATIVE_DU_H) : A380X_PFD_PX(NATIVE_DU_H);
         p.drawOnDemand = 0;   /* the native PFD/ND animate every frame */
         p.drawCallback = native_display_draw;
         p.bezelDrawCallback = a380x_black_bezel;

@@ -104,7 +104,7 @@ int main(int argc,char **argv)
         sda_shutdown();return 0;
     }
     CHECK(sda.initialized&&sd_device()&&sd_device()->p.drawOnDemand);
-    CHECK(sd_device()->p.screenWidth==768&&sd_device()->p.screenHeight==1024);
+    CHECK(sd_device()->p.screenWidth==A380X_MFD_PX(768)&&sd_device()->p.screenHeight==A380X_MFD_PX(1024));
     CHECK(sd_device()->p.bezelDrawCallback!=NULL); /* opaque black bezel: never a see-through screen */
     CHECK(!sd_device()->p.screenTouchCallback); /* SD is selected by ECP, not the MFD mouse path. */
     sda_update(.25f,1,&engines);

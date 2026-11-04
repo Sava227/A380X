@@ -190,8 +190,8 @@ struct View {
     void configure(ICoreWebView2Controller *value) {
         controller=value;controller->AddRef();controller->get_CoreWebView2(&web);
         ICoreWebView2Controller3 *c3=nullptr;
-        if(SUCCEEDED(controller->QueryInterface(__uuidof(ICoreWebView2Controller3),(void**)&c3))){c3->put_ShouldDetectMonitorScaleChanges(FALSE);c3->put_RasterizationScale(1);c3->Release();}
-        controller->put_Bounds(RECT{0,0,768,1024});controller->put_ZoomFactor(1);controller->put_IsVisible(TRUE);
+        if(SUCCEEDED(controller->QueryInterface(__uuidof(ICoreWebView2Controller3),(void**)&c3))){c3->put_ShouldDetectMonitorScaleChanges(FALSE);c3->put_RasterizationScale(xpkit_view_scale(side));c3->Release();}
+        controller->put_Bounds(RECT{0,0,xpkit_view_width(side),xpkit_view_height(side)});controller->put_ZoomFactor(1);controller->put_IsVisible(TRUE);
         ICoreWebView2_3 *w3=nullptr;
         if(!okay(web->QueryInterface(__uuidof(ICoreWebView2_3),(void**)&w3),"WebView2 local content API"))return;
         HRESULT hr=w3->SetVirtualHostNameToFolderMapping(L"a380x.invalid",assets.c_str(),COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);w3->Release();
@@ -295,7 +295,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         if(!okay(hr,"WebView2 initialization (install Microsoft Evergreen Runtime)")){PostQuitMessage(9);return S_OK;}
         environment=env;environment->AddRef();
         for(int i=0;i<XPKIT_VIEWS;++i){auto view=std::make_unique<View>(i);View *raw=view.get();
-            view->window=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE,L"A380XOfflineDisplays",L"A380X avionics",WS_POPUP,-20000-i*1000,-20000,768,1024,nullptr,nullptr,instance,nullptr);
+            view->window=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE,L"A380XOfflineDisplays",L"A380X avionics",WS_POPUP,-20000-i*1000,-20000,xpkit_view_width(i),xpkit_view_height(i),nullptr,nullptr,instance,nullptr);
             ShowWindow(view->window,SW_SHOWNOACTIVATE);views.push_back(std::move(view));
             auto done=callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler,HRESULT,ICoreWebView2Controller*>([raw](HRESULT status,ICoreWebView2Controller *controller){if(okay(status,"Create WebView2 display"))raw->configure(controller);return S_OK;});
             okay(environment->CreateCoreWebView2Controller(raw->window,done.get()),"Create display controller");
