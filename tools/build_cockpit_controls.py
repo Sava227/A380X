@@ -182,6 +182,10 @@ FCU_LEGACY_SCREEN_QUADS = (
 )
 
 
+
+# Dataref that hides each panel-atlas display copy while its cockpit device is shown.
+ATLAS_SCREEN_HIDE = {'pfd': 'a380x/xp12/xpkit/pfd_devices_active', 'nd': 'a380x/xp12/xpkit/nd_devices_active'}
+
 def fcu_engagement_bar(positions: list[tuple[float, float, float]]) -> tuple[
     tuple[float, float, float], float, float
 ]:
@@ -1234,7 +1238,16 @@ def build_obj(
             if any(draw[0].startswith(prefix) for prefix in ('screen:', 'pfd:', 'nd:', 'ewd:', 'efb:', 'efis:', 'clock:', 'accu:'))
         ]
         lines.extend(['ATTR_cockpit_region\t0', 'ATTR_poly_os\t2'])
-        lines.extend(f'TRIS\t{start}\t{count}' for _name, start, count in screen_draws)
+        for name, start, count in screen_draws:
+            # The PFD/ND panel-atlas copies are only a fallback: while the dedicated cockpit
+            # devices are active they must be hidden, because X-Plane draws these region quads
+            # over the device quads in front of them (in-sim marker test: both PFDs and NDs
+            # showed the 320x416 / 180x234 atlas copy, so the ND looked blurry).
+            hide = ATLAS_SCREEN_HIDE.get(name.split(':')[0])
+            if hide:
+                lines.extend(['ANIM_begin', f'ANIM_hide\t0.5\t1.5\t{hide}', f'TRIS\t{start}\t{count}', 'ANIM_end'])
+            else:
+                lines.append(f'TRIS\t{start}\t{count}')
         lines.extend(['ATTR_no_cockpit', 'ATTR_poly_os\t0'])
         lamp_draws = {name.removeprefix('lamp:'): (start, count)
                       for name, start, count in overlay_draws if name.startswith('lamp:')}

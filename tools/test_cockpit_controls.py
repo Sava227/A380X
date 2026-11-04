@@ -142,6 +142,9 @@ class CockpitControlTests(unittest.TestCase):
                 encoded,
             )
             self.assertIn('ATTR_cockpit_region\t0', encoded)
+            # PFD/ND atlas copies are hidden while their devices are active (both seats).
+            self.assertEqual(encoded.count('ANIM_hide\t0.5\t1.5\ta380x/xp12/xpkit/pfd_devices_active'), 2)
+            self.assertEqual(encoded.count('ANIM_hide\t0.5\t1.5\ta380x/xp12/xpkit/nd_devices_active'), 2)
             self.assertIn(
                 '# A380X FLYPAD ORIENTATION: UV0 TOUCH0 A380_CONTROL_UI_V3',
                 encoded,
