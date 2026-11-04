@@ -3,6 +3,7 @@
  * Every ordered button event is retained across host frames; hover is sampled.
  */
 #include "a380x_elec_power.h"
+#include "a380x_avionics_popup.h"
 /* CDS boot / self-test screen hook (a380x_avionics.c defines it before including the xp-kit adapter). */
 #ifndef XPKIT_ND_OVERLAY
 #define XPKIT_ND_OVERLAY(side) 0
@@ -112,7 +113,11 @@ static void xpkit_nd_draw_device(void *refcon) {
     GLboolean cull=glIsEnabled(GL_CULL_FACE);glDisable(GL_CULL_FACE);
     XPLMSetGraphicsState(0,0,0,0,1,0,0);
     glClearColor(0,0,0,1);glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);glClear(GL_COLOR_BUFFER_BIT);
-    if(XPKIT_ND_OVERLAY(d->side)) { d->presented_frame=0; if(cull)glEnable(GL_CULL_FACE); return; }
+    /* Keep alpha = 1, as the MFD/SD do: the device is drawn with X-Plane's leftover blend state,
+     * which can zero the alpha, and a see-through ND shows the 180x234 panel-atlas copy behind it
+     * (the "blurry ND") and a transparent pop-up. */
+    glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_FALSE);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+    if(XPKIT_ND_OVERLAY(d->side)) { d->presented_frame=0; glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE); if(cull)glEnable(GL_CULL_FACE); return; }
     int rendered=plugin_enabled && xpkit_draw_view(d->side+2,0,0,768,1024);
     if(plugin_enabled && !rendered) {
         glPushMatrix();glScalef(768.0f/180.0f,1024.0f/234.0f,1);
@@ -120,6 +125,7 @@ static void xpkit_nd_draw_device(void *refcon) {
     }
     d->presented_frame=rendered?xpkit_uploaded[d->side+2]:0;
     xpkit_nd_draw_cursor(d);
+    glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
     if(xpkit_shared)atomic_fetch_add_explicit(&xpkit_shared->nd_profile[d->side].draw_count,1,memory_order_relaxed);
     if(cull)glEnable(GL_CULL_FACE);
 }
@@ -132,7 +138,11 @@ static int xpkit_nd_command(XPLMCommandRef cmd,XPLMCommandPhase phase,void *refc
     XpKitNd *d=refcon;
     if(phase!=xplm_CommandBegin||!plugin_enabled)return 1;
     for(int a=0;a<5;++a) if(cmd==d->command[a]) {
-        if(a==0&&d->device&&mfda_av.loaded)mfda_av.set_popup_visible(d->device,!mfda_av.is_popup_visible(d->device));
+        if(a==0&&d->device&&mfda_av.loaded) {
+            int show=!mfda_av.is_popup_visible(d->device);
+            if(show)a380x_fit_popup(d->device,d->side,mfda_av.get_geometry,mfda_av.set_geometry);
+            mfda_av.set_popup_visible(d->device,show);
+        }
         else if(a==1&&xpkit_nd_input_on(d))xpkit_nd_event(d,5,d->x,d->y,0);
         else if(a==2&&xpkit_nd_input_on(d))xpkit_nd_event(d,6,d->x,d->y,0);
         else if(a==3&&d->zoom>0)--d->zoom;
@@ -171,7 +181,7 @@ static void xpkit_nd_init(void) {
         if(mfda_av.loaded) {
             XPLMCreateAvionics_t p;memset(&p,0,sizeof(p));p.structSize=sizeof(p);
             p.screenWidth=p.bezelWidth=768;p.screenHeight=p.bezelHeight=1024;
-            p.drawOnDemand=1;p.drawCallback=xpkit_nd_draw_device;p.screenTouchCallback=xpkit_nd_touch;
+            p.drawOnDemand=1;p.drawCallback=xpkit_nd_draw_device;p.bezelDrawCallback=a380x_black_bezel;p.screenTouchCallback=xpkit_nd_touch;
             p.screenRightTouchCallback=xpkit_nd_right;p.screenScrollCallback=xpkit_nd_scroll;p.screenCursorCallback=xpkit_nd_cursor;
             p.brightnessCallback=xpkit_nd_brightness;p.refcon=d;
             p.deviceID=s?"a380x.xp12.nd.first_officer":"a380x.xp12.nd.captain";

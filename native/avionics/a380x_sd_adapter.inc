@@ -2,6 +2,7 @@
  * ECAM SD boundary. Shares only the SDK symbol table and tested GL renderer
  * with the MFD, not its mouse queue, menus, WebKit transport or page controller.
  */
+#include "a380x_avionics_popup.h"
 #include "a380x_sd.h"
 #include "a380x_ecam_button.h"
 #include "a380x_elec_power.h"
@@ -259,7 +260,7 @@ static int sda_init(void)
     if(mfda_av.loaded) {
         XPLMCreateAvionics_t p;memset(&p,0,sizeof(p));p.structSize=sizeof(p);
         p.screenWidth=MFD_W;p.screenHeight=MFD_H;p.bezelWidth=MFD_W;p.bezelHeight=MFD_H;
-        p.drawOnDemand=1;p.drawCallback=sda_screen_draw;p.deviceID=SDA_DEVICE;
+        p.drawOnDemand=1;p.drawCallback=sda_screen_draw;p.bezelDrawCallback=a380x_black_bezel;p.deviceID=SDA_DEVICE;
         p.deviceName="A380X ECAM System Display";
         sda.device=mfda_av.create(&p);
         if(sda.device) mfda_av.needs_drawing(sda.device);

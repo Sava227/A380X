@@ -105,6 +105,7 @@ int main(int argc,char **argv)
     }
     CHECK(sda.initialized&&sd_device()&&sd_device()->p.drawOnDemand);
     CHECK(sd_device()->p.screenWidth==768&&sd_device()->p.screenHeight==1024);
+    CHECK(sd_device()->p.bezelDrawCallback!=NULL); /* opaque black bezel: never a see-through screen */
     CHECK(!sd_device()->p.screenTouchCallback); /* SD is selected by ECP, not the MFD mouse path. */
     sda_update(.25f,1,&engines);
     CHECK(sda.bound&&sda.powered&&sda.page==SD_ENGINE);
