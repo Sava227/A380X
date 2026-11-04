@@ -158,7 +158,9 @@ static void sda_screen_draw(void *refcon)
     if(plugin_enabled && !sda.powered && SDA_CDS_OVERLAY()) {
         /* Thales boot / self-test (A380 network) */
     } else if(plugin_enabled && sda.powered) {
-        if(sda.checklist || sda.abnormal || sda.page<2 || !xpkit_draw_sd())mfd_gl_draw(&sda.list,0,0,1,0);
+        /* ENGINE: FBW's page with the FBW-named data (a380x_sd_data.inc) when the xp-kit view is live,
+         * the native page otherwise. APU stays native. */
+        if(sda.checklist || sda.abnormal || sda.page==SD_APU || !xpkit_draw_sd())mfd_gl_draw(&sda.list,0,0,1,0);
         else if(sda.overlay.cmd_count)mfd_gl_draw(&sda.overlay,0,0,1,0);
     }
     glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);glColor4f(1,1,1,1);
