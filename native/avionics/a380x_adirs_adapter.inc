@@ -70,6 +70,10 @@ static void adirs_read_inputs(void)
     adirs_inputs.ground_speed_knots=gs;
     heading=adirs_wrap(XPLMGetDataf(adirs_raw[AR_HEADING])-XPLMGetDataf(adirs_raw[AR_MAGVAR]));
     track=adirs_wrap(XPLMGetDataf(refs.ground_track)-XPLMGetDataf(adirs_raw[AR_MAGVAR]));
+    /* FBW adirs.rs: below MINIMUM_GROUND_SPEED_FOR_TRACK_KNOTS (50 kt) the IR track output is the
+     * heading. X-Plane's ground track from a near-zero velocity wanders, which made the ND track
+     * diamond jump around the rose while parked. */
+    if(!(isfinite(gs) && gs>=50.0)) track=heading;
     pitch=XPLMGetDataf(adirs_raw[AR_PITCH]); roll=XPLMGetDataf(adirs_raw[AR_ROLL]);
     vertical=XPLMGetDataf(adirs_raw[AR_VY])*196.850394;
     for(i=0;i<3;++i) {
