@@ -39,7 +39,7 @@ class ControlAnimationTests(unittest.TestCase):
         begin = lines.index('ANIM_begin')
         self.assertEqual(lines[begin + 1], BARO_MARKER + 'captain')
         self.assertEqual(lines[begin + 2], 'ANIM_trans_begin\ta380x/xp12/efis/captain/baro_knob_axial')
-        self.assertIn('ANIM_trans_key\t-1\t-0\t0.00045\t-0.0012', lines)
+        self.assertIn('ANIM_trans_key\t-1\t0\t0.00045\t-0.0012', lines)
         self.assertIn('ANIM_trans_key\t1\t0\t-0.00045\t0.0012', lines)
         self.assertEqual(add_baro_shaft(text, SHAFT), (text, 0))
 

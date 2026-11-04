@@ -15,6 +15,7 @@ from build_cockpit_controls import (
 from patch_center_right_animations import animation_block, source_targets, wrap_geometry
 from patch_efis_animations import vertex_payload
 from sd_cockpit_device import append_geometry, MARKER as SD_MARKER
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 PRESS_REF = "a380x/xp12/ecam/buttons/eng/press_ratio"
 SELECTED_REF = "a380x/xp12/ecam/buttons/eng/selected"
@@ -102,7 +103,7 @@ def add_selection_light(text, selection_text, target):
     if LAMP_MARKER in text:
         if text.count(LAMP_MARKER) != 1 or SELECTED_REF not in text:
             raise ValueError("Incomplete existing ENG selection-light patch")
-        endpoint = "ANIM_trans_key\t1\t" + "\t".join(f"{v:.10g}" for v in target["poses"][1])
+        endpoint = "ANIM_trans_key\t1\t" + "\t".join(f"{obj8_fmt(v)}" for v in target["poses"][1])
         if endpoint not in text.split(LAMP_MARKER, 1)[1]:
             raise ValueError("Installed ENG lamp uses a different press distance")
         return text
@@ -122,7 +123,7 @@ def add_selection_light(text, selection_text, target):
                 raise ValueError("Authored press axis points out of the button face")
             lifted = tuple(point[a] + .00006*normal[a] for a in range(3))
             remap[index] = len(vertices)
-            vertices.append("VT\t" + "\t".join(f"{value:.10g}" for value in (*lifted, *normal, u, v)))
+            vertices.append("VT\t" + "\t".join(f"{obj8_fmt(value)}" for value in (*lifted, *normal, u, v)))
         indices.append(remap[index])
     block = animation_block(target, 0, 6, marker="# ECAM ENG LAMP MOTION ")
     commands = [
@@ -152,7 +153,7 @@ def patch_eng_geometry(source: Path, objects: dict[str, str], press_distance: fl
         raise ValueError(f"Missing ENG cockpit objects: {sorted(missing)}")
     targets = button_targets(source, press_distance)
     changed, draw_reports = {}, []
-    endpoint = "ANIM_trans_key\t1\t" + "\t".join(f"{v:.10g}" for v in targets[0]["poses"][1])
+    endpoint = "ANIM_trans_key\t1\t" + "\t".join(f"{obj8_fmt(v)}" for v in targets[0]["poses"][1])
     for relative in ENG_OBJECT_PATHS[:-1]:
         original = objects[relative]
         patched, report, gear_count = wrap_geometry(original, Path(relative).name, targets, marker=MARKER)

@@ -14,6 +14,12 @@ import re
 
 from obj8_preview import IDENTITY, multiply, rotation
 
+def obj8_fmt(value: float) -> str:
+    """Fixed-point OBJ8 number (same rule as tools/obj8_numbers.py): X-Plane cannot read exponent notation."""
+    text = f"{float(value):.10f}".rstrip("0").rstrip(".")
+    return "0" if text in ("-0", "") else text
+
+
 FAN_REF = re.compile(r"sim/flightmodel2/engines/prop_rotation_angle_deg\[([0-3])\]")
 
 
@@ -64,11 +70,11 @@ def normalize_text(text: str) -> tuple[str, int]:
                 raise ValueError(f"{reference}: authored fan is not a fixed-axis revolution")
         indent = lines[index][:len(lines[index])-len(lines[index].lstrip())]
         rows = ["# A380X continuous fan rotation",
-                "ANIM_rotate_begin\t" + "\t".join(f"{v:.10g}" for v in axis) + "\t" + reference,
+                "ANIM_rotate_begin\t" + "\t".join(obj8_fmt(v) for v in axis) + "\t" + reference,
                 "ANIM_rotate_key\t0\t0", "ANIM_rotate_key\t360\t360", "ANIM_rotate_end"]
         for original_axis, keys in tables:
             fields = (*original_axis, keys[0][1], keys[0][1])
-            rows.append("ANIM_rotate\t" + "\t".join(f"{v:.10g}" for v in fields))
+            rows.append("ANIM_rotate\t" + "\t".join(obj8_fmt(v) for v in fields))
         output.extend(indent + line + "\n" for line in rows)
         index, changed = end, changed + 1
     return "".join(output), changed

@@ -25,6 +25,7 @@ from urllib.parse import unquote_to_bytes
 from avionics_provider import ADIRS_COMMANDS, CENTER_RIGHT_COMMANDS, CLOCK_COMMANDS, DU_COMMANDS, EFIS_COMMANDS, FCU_COMMANDS, GLARESHIELD_COMMANDS
 from avionics_provider import KCCU_COMMANDS, MFD_COMMANDS, SD_COMMANDS
 
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 from avionics_panel_layout import (
     CLOCK_CHR_PANEL_RECT,
     CLOCK_UTC_PANEL_RECT,
@@ -280,7 +281,7 @@ def build_mfd_screens_obj() -> str:
     for side, device, quad in mfd_device_quads(MFD_SCREEN_LIFT):
         lines.append(f'# {MFD_SEATS[side]} MFD {device}. Corners as seen from the seat: '
                      'BL, TL, TR, BR. UV (0,0) = device bottom-left.')
-        lines.extend('VT\t' + '\t'.join(f'{value:.9g}' for value in vertex) for vertex in quad)
+        lines.extend('VT\t' + '\t'.join(f'{obj8_fmt(value)}' for value in vertex) for vertex in quad)
     lines.append('')
     packed_count = len(indices) - len(indices) % 10
     for offset in range(0, packed_count, 10):
@@ -1171,7 +1172,7 @@ def build_obj(
         '',
     ]
     lines.extend(
-        f'VT\t{x:.9g}\t{y:.9g}\t{z:.9g}\t{nx:.9g}\t{ny:.9g}\t{nz:.9g}\t{u:.9g}\t{v:.9g}'
+        f'VT\t{obj8_fmt(x)}\t{obj8_fmt(y)}\t{obj8_fmt(z)}\t{obj8_fmt(nx)}\t{obj8_fmt(ny)}\t{obj8_fmt(nz)}\t{obj8_fmt(u)}\t{obj8_fmt(v)}'
         for x, y, z, nx, ny, nz, *texture_uv in vertices
         for u, v in (texture_uv if texture_uv else (0.0, 0.0),)
     )
@@ -1185,8 +1186,8 @@ def build_obj(
         if control.visible_dataref is not None:
             value = control.visible_value
             lines.extend(['ANIM_begin',
-                f'ANIM_hide\t-100\t{value - .5:g}\t{control.visible_dataref}',
-                f'ANIM_hide\t{value + .5:g}\t100\t{control.visible_dataref}'])
+                f'ANIM_hide\t-100\t{obj8_fmt(value - .5)}\t{control.visible_dataref}',
+                f'ANIM_hide\t{obj8_fmt(value + .5)}\t100\t{control.visible_dataref}'])
         if control.command is not None:
             lines.append(f'ATTR_manip_command\t{control.command_cursor}\t{control.command}\t{control.label}')
         elif control.command_up is not None and control.command_down is not None:
@@ -1199,14 +1200,14 @@ def build_obj(
         elif control.toggle_values is not None:
             low, high = (float(value) for value in control.toggle_values)
             lines.append(
-                f'ATTR_manip_toggle\t{control.cursor}\t{low:.9g}\t{high:.9g}\t'
+                f'ATTR_manip_toggle\t{control.cursor}\t{obj8_fmt(low)}\t{obj8_fmt(high)}\t'
                 f'{control.dataref}\t{control.label}'
             )
         else:
-            axis = '\t'.join(f'{float(value):.9g}' for value in control.axis or ())
+            axis = '\t'.join(f'{obj8_fmt(float(value))}' for value in control.axis or ())
             lines.append(
-                f'ATTR_manip_drag_axis\thand\t{axis}\t{float(control.value_min):.9g}\t'
-                f'{float(control.value_max):.9g}\t{control.dataref}\t{control.label}'
+                f'ATTR_manip_drag_axis\thand\t{axis}\t{obj8_fmt(float(control.value_min))}\t'
+                f'{obj8_fmt(float(control.value_max))}\t{control.dataref}\t{control.label}'
             )
         motion_node = control.node.split(':', 1)[0] if control.node.startswith('KNOB_FCU_') else control.node
         motion = control_motions.get((_group_source, motion_node))
@@ -1294,8 +1295,8 @@ def build_obj(
                 start, count = selector_draws[marker]
                 lines.extend([f'# EFIS SELECTOR {marker}', 'ANIM_begin',
                     'ANIM_hide\t0\t0\tsim/cockpit2/switches/avionics_power_on',
-                    f'ANIM_hide\t-100\t{value - .5:g}\t{dataref}',
-                    f'ANIM_hide\t{value + .5:g}\t100\t{dataref}',
+                    f'ANIM_hide\t-100\t{obj8_fmt(value - .5)}\t{dataref}',
+                    f'ANIM_hide\t{obj8_fmt(value + .5)}\t100\t{dataref}',
                     f'TRIS\t{start}\t{count}', 'ANIM_end'])
             lines.extend(['ATTR_light_level_reset', 'ATTR_poly_os\t0'])
     lines.extend(['', '# Generated from named FBW cockpit control meshes.'])

@@ -17,6 +17,7 @@ import re
 
 from avionics_panel_layout import FCU_PANEL_RECT, PANEL_SIZE
 from build_cockpit_controls import FCU_LEGACY_SCREEN_QUADS, FCU_SCREEN_QUADS
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 MARKER = '# A380X FCU SHARED DISPLAYS V1 SPD+HDG ALT+VS'
 CONTROLS = 'objects/interior/cockpit-controls/a380x_cockpit_controls.obj'
@@ -88,7 +89,7 @@ def patch_shared_displays(original):
         for corner, values in enumerate(quad_vertices(bounds)):
             at = vertices[base+corner][0]
             allowed_vertex_lines.add(at)
-            lines[at] = 'VT\t' + '\t'.join(f'{v:.10g}' for v in values) + '\n'
+            lines[at] = 'VT\t' + '\t'.join(f'{obj8_fmt(v)}' for v in values) + '\n'
         removed = legacy[pair*2+1][1]
         removed_draw_lines.add(removed)
         lines[removed] = ''

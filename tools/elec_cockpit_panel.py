@@ -38,6 +38,7 @@ from build_cockpit_controls import (
 from elec_panel_contract import COVERS, CONTROLS, PREFIX, lamps, press_command, pressable_ids
 from patch_center_right_animations import animation_block, source_targets, wrap_geometry
 from patch_efis_animations import vertex_payload
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 MARKER = '# A380X ELEC PANEL V1'
 MOTION_MARKER = '# ELEC MOTION '
@@ -263,7 +264,7 @@ def controls_block(source_path: Path):
         indices.extend(base + i for i in box_indices)
         line = f'ATTR_manip_command\tbutton\t{press_command(cid)}\t{caption(cid)}'
         if cover:
-            commands.extend(['ANIM_begin', f'ANIM_hide\t-1\t{COVER_ACTIVE - 0.001:g}\t{PREFIX}cover/{cover}',
+            commands.extend(['ANIM_begin', f'ANIM_hide\t-1\t{obj8_fmt(COVER_ACTIVE - 0.001)}\t{PREFIX}cover/{cover}',
                              line, f'TRIS\t{start}\t{len(box_indices)}', 'ATTR_manip_none', 'ANIM_end'])
         else:
             commands.extend([line, f'TRIS\t{start}\t{len(box_indices)}', 'ATTR_manip_none'])
@@ -291,7 +292,7 @@ def _append(text, vertices, indices, commands):
             sum(len(line.split()) - 1 for line in lines if re.match(r'^IDX(?:10)?\s', line)) != count[3]:
         raise ValueError('Existing cockpit controls geometry is inconsistent; refusing to rewrite it')
     at = max(i for i, line in enumerate(lines) if line.startswith('VT\t')) + 1
-    lines[at:at] = ['VT\t' + '\t'.join(f'{v:.9g}' for v in vertex) for vertex in vertices]
+    lines[at:at] = ['VT\t' + '\t'.join(f'{obj8_fmt(v)}' for v in vertex) for vertex in vertices]
     at = max(i for i, line in enumerate(lines) if re.match(r'^IDX(?:10)?\s', line)) + 1
     lines[at:at] = ['IDX\t' + str(count[0] + i) for i in indices]
     lines[row] = 'POINT_COUNTS\t' + '\t'.join(map(str, (count[0] + len(vertices), count[1], count[2],

@@ -52,6 +52,7 @@ from avionics_provider import FLAPS_DATAREFS
 from cockpit_lever_geometry import (Source, clip_motion, describe, drag_rotate_lines, nested_block, oriented_box,
                                     part_points, tris_coverage, vertex_payload)
 from isis_cockpit_device import _append
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 PREFIX = 'a380x/xp12/flaps/'
 MARKER = '# A380X FLAPS LEVER V1'
@@ -265,7 +266,7 @@ def rebind_pedestal(text: str, source: Source, motion: dict[str, dict]) -> tuple
         tris_indent + MOTION_MARKER + 'LOCK_FLAPS', tris_indent + 'ANIM_begin',
         tris_indent + f'ANIM_trans_begin\t{motion["lock"]["dataref"]}',
         tris_indent + 'ANIM_trans_key\t0\t0\t0\t0',
-        tris_indent + 'ANIM_trans_key\t1\t' + '\t'.join(f'{v:.9g}' for v in lock_vector),
+        tris_indent + 'ANIM_trans_key\t1\t' + '\t'.join(f'{obj8_fmt(v)}' for v in lock_vector),
         tris_indent + 'ANIM_trans_end', tris, tris_indent + 'ANIM_end']
     result = ending.join(patched)
     if vertex_payload(text) != vertex_payload(result):

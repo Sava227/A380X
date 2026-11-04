@@ -16,6 +16,7 @@ from avionics_panel_layout import (
     ND_PANEL_RECTS, PANEL_SIZE, PFD_PANEL_RECTS,
 )
 from cockpit_draw_order import cockpit_decal_order_errors
+from obj8_numbers import has_exponent
 
 
 PFD_EFIS_INSTRUMENTS = (
@@ -640,10 +641,14 @@ def validate(root: Path, datarefs: Path | None = None, commands: Path | None = N
         sample_vertices, sample_indices = [], []
         textures, animated_refs, manipulator_commands, manipulator_refs = [], set(), set(), set()
         manipulator_devices, cockpit_device = set(), None
-        for line in file_lines(obj):
+        exponent_lines, first_exponent = 0, None
+        for line_number, line in enumerate(file_lines(obj), 1):
             words = line.split()
             if not words:
                 continue
+            if has_exponent(line):
+                exponent_lines += 1
+                first_exponent = first_exponent or line_number
             command = words[0]
             if command == 'VT':
                 verts += 1
@@ -770,6 +775,9 @@ def validate(root: Path, datarefs: Path | None = None, commands: Path | None = N
                 key_table = None
         if points is None or points[0] != verts or points[3] != indices:
             errors.append(f'{relative}: vertex/index count mismatch {points} vs {verts}/{indices}')
+        if exponent_lines:
+            errors.append(f'{relative}: {exponent_lines} lines use exponent notation (first line {first_exponent}); '
+                          'X-Plane reads 4.7e-07 as 4.7 - run tools/obj8_numbers.py --fix')
         if min_index < 0 or max_index >= verts:
             errors.append(f'{relative}: vertex index outside 0..{verts-1}')
         if animation_depth:

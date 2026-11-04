@@ -18,6 +18,7 @@ from build_cockpit_controls import (
     matrix_multiply, transform_point,
 )
 from patch_efis_animations import quaternion_multiply, vertex_payload
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 
 MOTIONS = (
@@ -159,7 +160,7 @@ def source_targets(source, include_gear=False, motions=None, include_child_point
 
 def animation_block(target, start, count, marker=MARKER):
     def vec(values):
-        return "\t".join(f"{value:.10g}" for value in values)
+        return "\t".join(f"{obj8_fmt(value)}" for value in values)
 
     lines = [marker + target["name"], "ANIM_begin"]
     if target["kind"] == "rotation":
@@ -167,12 +168,12 @@ def animation_block(target, start, count, marker=MARKER):
         inverse = vec([-v for v in target["pivot"]])
         lines += [f"ANIM_trans\t{pivot}\t{pivot}",
                   f'ANIM_rotate_begin\t{vec(target["axis"])}\t{target["dataref"]}']
-        lines += [f"ANIM_rotate_key\t{value:.10g}\t{pose:.10g}"
+        lines += [f"ANIM_rotate_key\t{obj8_fmt(value)}\t{obj8_fmt(pose)}"
                   for value, pose in zip(target["values"], target["poses"])]
         lines += ["ANIM_rotate_end", f"ANIM_trans\t{inverse}\t{inverse}"]
     else:
         lines += [f'ANIM_trans_begin\t{target["dataref"]}']
-        lines += [f"ANIM_trans_key\t{value:.10g}\t{vec(pose)}"
+        lines += [f"ANIM_trans_key\t{obj8_fmt(value)}\t{vec(pose)}"
                   for value, pose in zip(target["values"], target["poses"])]
         lines += ["ANIM_trans_end"]
     lines += [f"TRIS\t{start}\t{count}", "ANIM_end"]

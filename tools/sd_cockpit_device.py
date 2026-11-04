@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 from avionics_panel_layout import SD_SCREEN_SURFACE
 from build_cockpit_controls import Control, build_obj, mfd_surface_normal
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 SD_DEVICE = 'a380x.xp12.ecam.sd'
 SD_CHANNEL = 18
@@ -53,7 +54,7 @@ def compact_targets(text):
         commands.append(f'TRIS\t{begin}\t36')
     if not vertices:raise ValueError('ECAM patch contains no physical controls')
     return '\n'.join(['I','800','OBJ',f'POINT_COUNTS\t{len(vertices)}\t0\t0\t{len(indices)}',
-        *('VT\t'+'\t'.join(f'{v:.9g}' for v in vertex) for vertex in vertices),
+        *('VT\t'+'\t'.join(f'{obj8_fmt(v)}' for v in vertex) for vertex in vertices),
         *('IDX\t'+str(i) for i in indices),*commands,''])
 
 
@@ -105,7 +106,7 @@ def augment_screen(text):
     vertices=[]
     for p,uv in zip(corners,((0,0),(0,1),(1,1),(1,0))):
         v=(*(p[i]+normal[i]*.002 for i in range(3)),*normal,*uv)
-        vertices.append('VT\t'+'\t'.join(f'{n:.9g}' for n in v))
+        vertices.append('VT\t'+'\t'.join(f'{obj8_fmt(n)}' for n in v))
     return append_geometry(text,vertices,[0,1,2,0,2,3],
         ['ATTR_no_cockpit','ATTR_draw_enable','ATTR_poly_os\t2',
          f'ATTR_cockpit_device\t{SD_DEVICE}\t1\t{SD_CHANNEL}\t1',

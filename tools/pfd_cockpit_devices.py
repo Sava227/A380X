@@ -8,6 +8,7 @@ hidden by `a380x/xp12/xpkit/pfd_devices_active` whenever the devices are unavail
 import re
 from avionics_panel_layout import PFD_SCREEN_SURFACES
 from build_cockpit_controls import mfd_surface_normal
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 PFD_DEVICES = ('a380x.xp12.pfd.captain', 'a380x.xp12.pfd.first_officer')
 PFD_CHANNELS = (19, 20)
@@ -32,7 +33,7 @@ def augment(text, touch):
         draws.append(counts[3] + len(indices))
         for point, uv in zip(corners, ((0, 0), (0, 1), (1, 1), (1, 0))):
             vertex = (*(point[i] + normal[i] * (.006 if touch else .005) for i in range(3)), *normal, *uv)
-            vertices.append('VT\t' + '\t'.join(f'{v:.9g}' for v in vertex))
+            vertices.append('VT\t' + '\t'.join(f'{obj8_fmt(v)}' for v in vertex))
         indices.extend((base, base + 1, base + 2, base, base + 2, base + 3))
     lines[row] = 'POINT_COUNTS\t' + '\t'.join(map(str, (counts[0] + 8, counts[1], counts[2], counts[3] + 12)))
     at = max(i for i, line in enumerate(lines) if line.startswith('VT\t')) + 1

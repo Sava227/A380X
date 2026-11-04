@@ -38,6 +38,7 @@ from isis_cockpit_device import _append
 from patch_center_right_animations import (OLD_GEAR_REF, animation_block, primitive_points, source_targets,
                                            wrap_geometry)
 from patch_efis_animations import vertex_payload
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 PREFIX = 'a380x/xp12/gear/'
 MARKER = '# A380X LG GRVTY V1'
@@ -151,7 +152,7 @@ def oriented_box(points, matrix, margin=CLICK_MARGIN):
         else:
             order = (0, 2, 1, 0, 3, 2)
         base = len(vertices)
-        vertices.extend('VT\t' + '\t'.join(f'{v:.9g}' for v in (*world[k], *normal, 0.0, 0.0)) for k in face)
+        vertices.extend('VT\t' + '\t'.join(f'{obj8_fmt(v)}' for v in (*world[k], *normal, 0.0, 0.0)) for k in face)
         indices.extend(base + k for k in order)
     return vertices, indices, dict(corner_min_local=list(transform_point(matrix, low)),
                                    corner_max_local=list(transform_point(matrix, high)))

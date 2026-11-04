@@ -44,6 +44,7 @@ from ovhd_lamps_contract import (ANN_LT_NODE, CLICKS, LEGENDS, NEW_LEGEND_CELLS,
                                  lamps)
 from patch_center_right_animations import source_targets, wrap_geometry  # noqa: E402
 from patch_efis_animations import vertex_payload  # noqa: E402
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 MARKER = '# A380X OVHD LAMPS V1'
 LAMP_COMMENT = '# OVHD LAMP '
@@ -249,7 +250,7 @@ def controls_block(source_path: Path, decal_text: str, knobs_text: str = ''):
                      'ANIM_begin', f'ANIM_hide\t{LAMP_HIDE[0]}\t{LAMP_HIDE[1]}\t{dataref}']
         if ref:
             commands += [f'ANIM_trans_begin\t{ref}',
-                         *(f'ANIM_trans_key\t{value:.10g}\t' + '\t'.join(f'{v:.10g}' for v in delta)
+                         *(f'ANIM_trans_key\t{obj8_fmt(value)}\t' + '\t'.join(f'{obj8_fmt(v)}' for v in delta)
                            for value, delta in keyed), 'ANIM_trans_end']
         commands += [f'TRIS\t{start}\t6', 'ANIM_end', 'ATTR_light_level_reset', 'ATTR_blend']
         report.append(dict(dataref=dataref, legend=legend, node=node, cell=LEGENDS[legend][2],
@@ -282,7 +283,7 @@ def _append(text, vertices, indices, commands):
             sum(len(line.split()) - 1 for line in lines if re.match(r'^IDX(?:10)?\s', line)) != count[3]:
         raise ValueError('Existing cockpit controls geometry is inconsistent; refusing to rewrite it')
     at = max(i for i, line in enumerate(lines) if line.startswith('VT\t')) + 1
-    lines[at:at] = ['VT\t' + '\t'.join(f'{v:.9g}' for v in vertex) for vertex in vertices]
+    lines[at:at] = ['VT\t' + '\t'.join(f'{obj8_fmt(v)}' for v in vertex) for vertex in vertices]
     at = max(i for i, line in enumerate(lines) if re.match(r'^IDX(?:10)?\s', line)) + 1
     lines[at:at] = ['IDX\t' + str(count[0] + i) for i in indices]
     lines[row] = 'POINT_COUNTS\t' + '\t'.join(map(str, (count[0] + len(vertices), count[1], count[2],
