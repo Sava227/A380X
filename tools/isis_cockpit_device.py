@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 
 from avionics_panel_layout import ISIS_SCREEN_SURFACE, ISIS2_SCREEN_SURFACE
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 ISIS_DEVICE = 'a380x.xp12.isis.1'
 ISIS2_DEVICE = 'a380x.xp12.isis.2'
@@ -118,7 +119,7 @@ def screen_quad(lift, surface=ISIS_SCREEN_SURFACE):
     rows = []
     for point, uv in zip(corners, ((0, 0), (0, 1), (1, 1), (1, 0))):
         vertex = (*(point[i] + normal[i] * lift for i in range(3)), *normal, *uv)
-        rows.append('VT\t' + '\t'.join(f'{v:.9g}' for v in vertex))
+        rows.append('VT\t' + '\t'.join(f'{obj8_fmt(v)}' for v in vertex))
     return rows
 
 
@@ -131,7 +132,7 @@ def _box_rows(lo, hi):
     vertices, indices = [], []
     for face, normal in faces:
         base = len(vertices)
-        vertices.extend('VT\t' + '\t'.join(f'{v:.9g}' for v in (*box[k], *normal, 0, 0)) for k in face)
+        vertices.extend('VT\t' + '\t'.join(f'{obj8_fmt(v)}' for v in (*box[k], *normal, 0, 0)) for k in face)
         indices.extend(base + k for k in (0, 2, 1, 0, 3, 2))  # OBJ8 clockwise fronts (sd_cockpit_device)
     return vertices, indices
 

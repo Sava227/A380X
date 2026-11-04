@@ -74,7 +74,8 @@ class PatchLampDepth(unittest.TestCase):
             self.skipTest('lamp depth patch not installed yet')
         controls, decal = controls_path.read_text(), decal_path.read_text()
         self.assertEqual(controls.count(p.MARKER), 1)
-        self.assertEqual(controls.count(p.NO_BLEND), 297)
+        # the cockpit-feedback lamps (tools/cockpit_feedback.py) append their own opaque block after this patch
+        self.assertEqual(controls.split('# A380X FEEDBACK V1 CONTROLS')[0].count(p.NO_BLEND), 297)
         self.assertEqual(decal.count(p.DECAL_MARKER), 2)
         self.assertEqual(p.patch_controls(controls), (controls, 0))
         self.assertEqual(p.patch_decal(decal, controls), (decal, 0))

@@ -28,6 +28,7 @@ from pathlib import Path
 from patch_center_right_animations import primitive_points, source_targets, wrap_geometry
 from patch_efis_animations import vertex_payload
 from build_cockpit_controls import load_buffer, local_matrix, matrix_multiply, transform_point
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 SIDES = (('CS', 'captain'), ('FO', 'first_officer'))
 ISIS_UNITS = ((1, 'isis'), (2, 'isis2'))
@@ -201,7 +202,7 @@ def add_baro_shaft(text, shaft):
                 sum(1 for line in lines[:begin] if line.strip() == 'ANIM_end') != 0:
             raise ValueError('Legacy baro knob block is nested: world-space travel would be wrong')
         indent = lines[begin][:len(lines[begin]) - len(lines[begin].lstrip())]
-        vec = lambda v: '\t'.join(f'{x:.10g}' for x in v)
+        vec = lambda v: '\t'.join(f'{obj8_fmt(x)}' for x in v)
         block = [f'{indent}{BARO_MARKER}{side}', f'{indent}ANIM_trans_begin\t{ref}',
                  f'{indent}ANIM_trans_key\t-1\t{vec(-x for x in travel)}', f'{indent}ANIM_trans_key\t0\t0\t0\t0',
                  f'{indent}ANIM_trans_key\t1\t{vec(travel)}', f'{indent}ANIM_trans_end']

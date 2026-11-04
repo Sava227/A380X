@@ -13,6 +13,8 @@
  * Unity-build include of a380x_xpkit_adapter.inc (needs xpkit_draw_view,
  * xpkit_uploaded, xpkit_health, mfda_av, refs, du_channels, draw_pfd).
  */
+#include "a380x_du_scale.h"
+#include "a380x_avionics_popup.h"
 typedef struct {
     int side, draw_live, draw_powered;
     unsigned presented_frame, draws, rendered_draws;
@@ -44,8 +46,15 @@ static void xpkit_pfd_draw_device(void *refcon) {
     glClearColor(0, 0, 0, 1);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glClear(GL_COLOR_BUFFER_BIT);
+    /* Keep alpha = 1 (see a380x_xpkit_nd_input.inc): never a see-through screen or pop-up. */
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glPushMatrix();
+    glScalef(A380X_PFD_SCALE, A380X_PFD_SCALE, 1);   /* 768x1024 logical units on the denser device */
     if (plugin_enabled && cds_overlay(d->side ? A380X_ELN_DU_FO_PFD : A380X_ELN_DU_CAPT_PFD, 0, 0, 768, 1024)) {
         d->presented_frame = 0; d->draws++;
+        glPopMatrix();
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
         if (cull) glEnable(GL_CULL_FACE);
         return;
     }
@@ -55,14 +64,16 @@ static void xpkit_pfd_draw_device(void *refcon) {
         /* Native fallback: the translated PFD renders its 320x416 layout. */
         glPushMatrix();
         glScalef(768.0f / 320.0f, 1024.0f / 416.0f, 1);
-        glLineWidth(1.0f);
+        glLineWidth(A380X_PFD_SCALE);
         draw_pfd(&refs.side[d->side], 0, 0, d->side ? "F/O" : "CAPT");
         glPopMatrix();
         glLineWidth(1.0f);
     }
+    glPopMatrix();
     d->presented_frame = rendered ? xpkit_uploaded[d->side] : 0;
     d->draws++; if (rendered) d->rendered_draws++;
     glColor4f(1, 1, 1, 1);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     if (cull) glEnable(GL_CULL_FACE);
 }
 
@@ -74,8 +85,11 @@ static float xpkit_pfd_brightness(float rheo, float ambient, float bus, void *re
 }
 
 static void xpkit_pfd_toggle_popup(XpKitPfd *d) {
-    if (d->device && mfda_av.loaded)
-        mfda_av.set_popup_visible(d->device, !mfda_av.is_popup_visible(d->device));
+    if (d->device && mfda_av.loaded) {
+        int show = !mfda_av.is_popup_visible(d->device);
+        if (show) a380x_fit_popup(d->device, d->side, mfda_av.get_geometry, mfda_av.set_geometry);
+        mfda_av.set_popup_visible(d->device, show);
+    }
 }
 /* The PFD has no touch functions: a click (release) in the 3D cockpit toggles
  * the pop-up, ToLiss-style. Clicks inside the pop-up itself close it again. */
@@ -93,7 +107,10 @@ static int xpkit_pfd_command(XPLMCommandRef cmd, XPLMCommandPhase phase, void *r
     if (phase != xplm_CommandBegin || !plugin_enabled || !d->device || !mfda_av.loaded) return 1;
     if (cmd == d->command[0]) xpkit_pfd_toggle_popup(d);
     else if (cmd == d->command[1]) {
-        if (!mfda_av.is_popup_visible(d->device)) mfda_av.set_popup_visible(d->device, 1);
+        if (!mfda_av.is_popup_visible(d->device)) {
+            a380x_fit_popup(d->device, d->side, mfda_av.get_geometry, mfda_av.set_geometry);
+            mfda_av.set_popup_visible(d->device, 1);
+        }
         mfda_av.pop_out(d->device);
     }
     return 1;
@@ -160,10 +177,11 @@ static void xpkit_pfd_init(void) {
             XPLMCreateAvionics_t p;
             memset(&p, 0, sizeof(p));
             p.structSize = sizeof(p);
-            p.screenWidth = p.bezelWidth = 768;
-            p.screenHeight = p.bezelHeight = 1024;
+            p.screenWidth = p.bezelWidth = A380X_PFD_PX(768);
+            p.screenHeight = p.bezelHeight = A380X_PFD_PX(1024);
             p.drawOnDemand = 1;
             p.drawCallback = xpkit_pfd_draw_device;
+            p.bezelDrawCallback = a380x_black_bezel;
             p.screenTouchCallback = xpkit_pfd_touch;
             p.screenRightTouchCallback = xpkit_pfd_right;
             p.brightnessCallback = xpkit_pfd_brightness;

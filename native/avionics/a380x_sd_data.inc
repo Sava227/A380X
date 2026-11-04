@@ -17,6 +17,7 @@
  * XPLM data access only (no globals of other modules), so test_sd_data.c can drive it with
  * mocked datarefs. Included by a380x_xpkit_sd.inc; the caller provides XpKitJson/xpkit_append.
  */
+#include "a380x_engine_indications.h"
 #include <math.h>
 #include <stdint.h>
 #include <string.h>
@@ -379,13 +380,12 @@ static void sdd_emit(XpKitJson *j, const SddContext *ctx)
         snprintf(name, sizeof(name), "L:A32NX_OVHD_FADEC_%d", n); sdd_flag(j, name, 0);
         snprintf(name, sizeof(name), "L:A32NX_FIRE_BUTTON_ENG%d", n); sdd_flag(j, name, fire_pb[i]);
         snprintf(name, sizeof(name), "L:A32NX_PNEU_ENG_%d_STARTER_VALVE_OPEN", n); sdd_flag(j, name, starter[i]);
-        /* FBW oil quantity: total (FBW 17-20 qt, fixed 18.5) x X-Plane oil ratio, minus the gulp. */
+        /* FBW oil quantity (a380x_engine_indications.h). */
         {
             double thrust_n = sdd_get(SDD_XP "flightmodel/engine/POINT_thrust", i, 0.0);
-            double gulp = (20.1968848 - 1.2270302e-6 * thrust_n + 1.78442e-10 * thrust_n * thrust_n) / 100.0;
             double ratio = sdd_get(SDD_XP "cockpit2/engine/indicators/oil_quantity_ratio", i, NAN);
             snprintf(name, sizeof(name), "L:A32NX_ENGINE_OIL_QTY:%d", n);
-            sdd_num(j, name, 18.5 * sdd_clamp(ratio, 0, 1) * (1.0 - sdd_clamp(gulp, 0, 0.9)));
+            sdd_num(j, name, a380x_eng_oil_quantity_qt(ratio, thrust_n));
         }
         {
             double t = sdd_get(SDD_XP "cockpit2/engine/indicators/oil_temperature_deg_C", i, NAN);

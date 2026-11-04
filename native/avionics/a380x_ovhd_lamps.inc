@@ -150,9 +150,9 @@ static void ovhd_update(float dt)
 }
 
 /* ---------------------------------------------------------------- datarefs */
-enum { OK_LAMP, OK_FAIL, OK_ANN_LT, OK_ANN_SWITCH, OK_SUPPLY, OK_COUNT_LIT };
+enum { OK_LAMP, OK_FAIL, OK_ANN_LT, OK_ANN_SWITCH, OK_SUPPLY, OK_COUNT_LIT, OK_PB };
 typedef struct { char name[128]; int kind, pb, seq, writable, real; XPLMDataRef handle; } OvhdRef;
-static OvhdRef ovhd_refs[A380X_OVHD_PB_COUNT * 3 + 8];
+static OvhdRef ovhd_refs[A380X_OVHD_PB_COUNT * 4 + 8];
 static int ovhd_ref_count;
 
 static float ovhd_ref_value(const OvhdRef *r)
@@ -164,6 +164,7 @@ static float ovhd_ref_value(const OvhdRef *r)
     case OK_ANN_SWITCH: return ovhd.switch_ratio;
     case OK_SUPPLY: return (float)ovhd_in.supply_mode;
     case OK_COUNT_LIT: return (float)ovhd.lit_count;
+    case OK_PB: return ovhd_in.pb[r->pb];
     default: return 0.0f;
     }
 }
@@ -182,6 +183,7 @@ static void ovhd_set_value(OvhdRef *r, float value)
         ovhd_push_ann_lt();
         break;
     case OK_SUPPLY: ovhd_set_supply((int)lroundf(value)); break;
+    case OK_PB: ovhd_in.pb[r->pb] = value >= 0.5f; break;
     default: return;
     }
     if (ovhd.ready) ovhd_read_inputs();
@@ -220,6 +222,36 @@ static void ovhd_build_refs(void)
     ovhd_add_ref("ann_lt_switch", OK_ANN_SWITCH, 0, 0, 0, 1);
     ovhd_add_ref("settings/lamp_supply", OK_SUPPLY, 0, 0, 1, 0);
     ovhd_add_ref("lamp_count", OK_COUNT_LIT, 0, 0, 0, 0);
+    for (pb = 0; pb < A380X_OVHD_PB_COUNT; ++pb) if (a380x_ovhd_has_pb(pb)) {
+        snprintf(name, sizeof(name), "pb/%s", a380x_ovhd_pbs[pb].id);
+        ovhd_add_ref(name, OK_PB, pb, 0, 1, 0);
+    }
+}
+
+/* ---------------------------------------------------------------- pushbutton positions */
+static XPLMCommandRef ovhd_pb_commands[A380X_OVHD_PB_COUNT];
+static int ovhd_pb_handler(XPLMCommandRef handle, XPLMCommandPhase phase, void *refcon)
+{
+    int pb = (int)(intptr_t)refcon;
+    (void)handle;
+    if (phase == xplm_CommandBegin && plugin_enabled && ovhd.ready) ovhd_in.pb[pb] = !ovhd_in.pb[pb];
+    return 1;   /* the cockpit-feedback key travel handler on the same command still runs */
+}
+static void ovhd_pb_defaults(void)
+{
+    int pb;
+    for (pb = 0; pb < A380X_OVHD_PB_COUNT; ++pb) ovhd_in.pb[pb] = (unsigned char)a380x_ovhd_pb_default(pb);
+}
+/* Airbus normal positions of the pushbuttons that drive X-Plane systems (fuel pumps, bleeds, packs):
+ * X-Plane's cold & dark start leaves them off, which lit every OFF legend as soon as a battery was on.
+ * Without AC power the pumps and packs do not run, so this only changes what the cockpit shows. */
+static void ovhd_normal_xplane_positions(void)
+{
+    int on[4] = {1, 1, 1, 1};
+    if (ovhd.raw[OVR_FUEL_PUMP]) XPLMSetDatavi(ovhd.raw[OVR_FUEL_PUMP], on, 0, 4);
+    if (ovhd.raw[OVR_ENG_BLEED]) XPLMSetDatavi(ovhd.raw[OVR_ENG_BLEED], on, 0, 4);
+    if (ovhd.raw[OVR_PACK_L]) XPLMSetDatai(ovhd.raw[OVR_PACK_L], 1);
+    if (ovhd.raw[OVR_PACK_R]) XPLMSetDatai(ovhd.raw[OVR_PACK_R], 1);
 }
 
 /* ---------------------------------------------------------------- commands (ANN LT switch) */
@@ -251,12 +283,18 @@ static void ovhd_shutdown(void)
     for (i = 0; i < ovhd_ref_count; ++i) if (ovhd_refs[i].handle) {
         XPLMUnregisterDataAccessor(ovhd_refs[i].handle); ovhd_refs[i].handle = NULL;
     }
+    for (i = 0; i < A380X_OVHD_PB_COUNT; ++i) if (ovhd_pb_commands[i]) {
+        XPLMUnregisterCommandHandler(ovhd_pb_commands[i], ovhd_pb_handler, 1, (void *)(intptr_t)i);
+        ovhd_pb_commands[i] = NULL;
+    }
 }
 /* Aircraft (re)load: ANN LT BRT, no injected faults; the supply setting is kept. */
 static void ovhd_plane_loaded(void)
 {
     if (!ovhd.ready) return;
     memset(ovhd_in.fault, 0, sizeof(ovhd_in.fault));
+    ovhd_pb_defaults();
+    ovhd_normal_xplane_positions();
     ovhd.ann_lt = A380X_OVHD_ANN_BRT;
     ovhd.switch_ratio = 0.5f;
     ovhd_push_ann_lt();
@@ -289,6 +327,14 @@ static int ovhd_init(void)
         if (!command->handle) { ovhd_shutdown(); return 0; }
         XPLMRegisterCommandHandler(command->handle, ovhd_command_handler, 1, command);
     }
+    for (i = 0; i < A380X_OVHD_PB_COUNT; ++i) if (a380x_ovhd_has_pb(i)) {
+        char name[96];
+        snprintf(name, sizeof(name), "a380x/xp12/ovhd/pb/%s", a380x_ovhd_pbs[i].id);
+        ovhd_pb_commands[i] = XPLMCreateCommand(name, name);
+        if (!ovhd_pb_commands[i]) { ovhd_shutdown(); return 0; }
+        XPLMRegisterCommandHandler(ovhd_pb_commands[i], ovhd_pb_handler, 1, (void *)(intptr_t)i);
+    }
+    ovhd_pb_defaults();
     ovhd.ready = 1;
     /* User decision: OFF/ON legends light as soon as any battery or DC bus is live
      * (simplified supply). lamp_supply = 0 restores FBW's per-legend supply buses. */

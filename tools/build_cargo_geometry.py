@@ -18,6 +18,7 @@ from build_cockpit_controls import (accessor_values, load_buffer, local_matrix,
     matrix_multiply, transform_point, transform_normal)
 from patch_center_right_animations import source_targets, wrap_geometry, primitive_points, animation_block
 from patch_efis_animations import vertex_payload
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = '# CARGO DOOR MOTION '
@@ -132,7 +133,7 @@ def hold_objects(normalized, manifest, targets):
             if key in variant:
                 lines.append(directive+' ../../../textures/interior/cargo/'+Path(variant[key]).name)
         lines.append(f"POINT_COUNTS\t{len(mesh['vertices'])}\t0\t0\t{len(mesh['indices'])}")
-        lines += ['VT\t'+'\t'.join(f'{v:.9g}' for v in row) for row in mesh['vertices']]
+        lines += ['VT\t'+'\t'.join(f'{obj8_fmt(v)}' for v in row) for row in mesh['vertices']]
         for offset in range(0,len(mesh['indices']),10):
             row = mesh['indices'][offset:offset+10]
             lines += ['IDX10\t'+'\t'.join(map(str,row))] if len(row)==10 else ['IDX\t'+str(v) for v in row]

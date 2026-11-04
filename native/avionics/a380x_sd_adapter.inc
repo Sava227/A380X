@@ -2,6 +2,8 @@
  * ECAM SD boundary. Shares only the SDK symbol table and tested GL renderer
  * with the MFD, not its mouse queue, menus, WebKit transport or page controller.
  */
+#include "a380x_avionics_popup.h"
+#include "a380x_du_scale.h"
 #include "a380x_sd.h"
 #include "a380x_ecam_button.h"
 #include "a380x_elec_power.h"
@@ -155,12 +157,16 @@ static void sda_screen_draw(void *refcon)
     glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);
     glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_FALSE);
     glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+    glPushMatrix();glScalef(A380X_MFD_SCALE,A380X_MFD_SCALE,1);   /* 768x1024 canvas on the denser device */
     if(plugin_enabled && !sda.powered && SDA_CDS_OVERLAY()) {
         /* Thales boot / self-test (A380 network) */
     } else if(plugin_enabled && sda.powered) {
-        if(sda.checklist || sda.abnormal || sda.page<2 || !xpkit_draw_sd())mfd_gl_draw(&sda.list,0,0,1,0);
+        /* ENGINE: FBW's page with the FBW-named data (a380x_sd_data.inc) when the xp-kit view is live,
+         * the native page otherwise. APU stays native. */
+        if(sda.checklist || sda.abnormal || sda.page==SD_APU || !xpkit_draw_sd())mfd_gl_draw(&sda.list,0,0,1,0);
         else if(sda.overlay.cmd_count)mfd_gl_draw(&sda.overlay,0,0,1,0);
     }
+    glPopMatrix();
     glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);glColor4f(1,1,1,1);
     if(cull) glEnable(GL_CULL_FACE);
     ++sda.draw_count;
@@ -258,8 +264,9 @@ static int sda_init(void)
     sda_find_inputs();
     if(mfda_av.loaded) {
         XPLMCreateAvionics_t p;memset(&p,0,sizeof(p));p.structSize=sizeof(p);
-        p.screenWidth=MFD_W;p.screenHeight=MFD_H;p.bezelWidth=MFD_W;p.bezelHeight=MFD_H;
-        p.drawOnDemand=1;p.drawCallback=sda_screen_draw;p.deviceID=SDA_DEVICE;
+        p.screenWidth=A380X_MFD_PX(MFD_W);p.screenHeight=A380X_MFD_PX(MFD_H);
+        p.bezelWidth=A380X_MFD_PX(MFD_W);p.bezelHeight=A380X_MFD_PX(MFD_H);
+        p.drawOnDemand=1;p.drawCallback=sda_screen_draw;p.bezelDrawCallback=a380x_black_bezel;p.deviceID=SDA_DEVICE;
         p.deviceName="A380X ECAM System Display";
         sda.device=mfda_av.create(&p);
         if(sda.device) mfda_av.needs_drawing(sda.device);

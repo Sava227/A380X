@@ -15,6 +15,7 @@ from build_cockpit_controls import (accessor_values, load_buffer, local_matrix,
 from isis_cockpit_device import _append, _box_rows
 from patch_center_right_animations import source_targets, wrap_geometry
 from patch_efis_animations import vertex_payload
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 PREFIX='a380x/xp12/trim/'
 MARKER='# A380X TRIM PANEL V1'
@@ -75,7 +76,7 @@ def screen_geometry(source):
     for x,y,z in points:
         # Seated crew: +X is left, +Z is forward/up on the pedestal.
         values=(x,y+.0005,z,0,1,0,(hi[0]-x)/(hi[0]-lo[0]),(z-lo[2])/(hi[2]-lo[2]))
-        vertices.append('VT\t'+'\t'.join(f'{v:.10g}' for v in values))
+        vertices.append('VT\t'+'\t'.join(f'{obj8_fmt(v)}' for v in values))
     # FBW/MSFS stores the opposite front-face winding from X-Plane OBJ8.
     # Reverse each triangle so the display is visible from ABOVE the pedestal.
     exported=[]

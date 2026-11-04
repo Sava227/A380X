@@ -142,6 +142,9 @@ class CockpitControlTests(unittest.TestCase):
                 encoded,
             )
             self.assertIn('ATTR_cockpit_region\t0', encoded)
+            # PFD/ND atlas copies are hidden while their devices are active (both seats).
+            self.assertEqual(encoded.count('ANIM_hide\t0.5\t1.5\ta380x/xp12/xpkit/pfd_devices_active'), 2)
+            self.assertEqual(encoded.count('ANIM_hide\t0.5\t1.5\ta380x/xp12/xpkit/nd_devices_active'), 2)
             self.assertIn(
                 '# A380X FLYPAD ORIENTATION: UV0 TOUCH0 A380_CONTROL_UI_V3',
                 encoded,
@@ -785,13 +788,14 @@ class CockpitControlTests(unittest.TestCase):
 
     def test_mfd_touch_refresh_is_precise_and_idempotent(self):
         from mfd_cockpit_devices import refresh_touch_geometry
+        from obj8_numbers import fmt as obj8_fmt
         from build_cockpit_controls import mfd_device_quads
         encoded, _report = self.overlay_build()
         legacy = encoded
         for (_, _, old), (_, _, new) in zip(mfd_device_quads(.001), mfd_device_quads(.003)):
             for old_vertex, new_vertex in zip(old, new):
-                old_line = 'VT\t' + '\t'.join(f'{v:.9g}' for v in old_vertex)
-                new_line = 'VT\t' + '\t'.join(f'{v:.9g}' for v in new_vertex)
+                old_line = 'VT\t' + '\t'.join(obj8_fmt(v) for v in old_vertex)
+                new_line = 'VT\t' + '\t'.join(obj8_fmt(v) for v in new_vertex)
                 self.assertEqual(legacy.count(new_line), 1)
                 legacy = legacy.replace(new_line, old_line)
         refreshed = refresh_touch_geometry(legacy)

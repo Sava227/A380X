@@ -4,6 +4,7 @@ Keeps all other meshes, attributes, indices and user edits byte-for-byte. The
 matching device/UV/normal contract is checked before any replacement is returned.
 """
 from build_cockpit_controls import MFD_TOUCH_LIFT, mfd_device_quads
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 
 def refresh_touch_geometry(text):
@@ -34,5 +35,5 @@ def refresh_touch_geometry(text):
                 raise ValueError(f'MFD UV/normal mismatch: {device}')
             if sum((a - b) ** 2 for a, b in zip(previous[:3], vertex[:3])) > .005 ** 2:
                 raise ValueError(f'MFD geometry is not the authored screen: {device}')
-            lines[row] = 'VT\t' + '\t'.join(f'{value:.9g}' for value in vertex) + '\n'
+            lines[row] = 'VT\t' + '\t'.join(f'{obj8_fmt(value)}' for value in vertex) + '\n'
     return ''.join(lines)

@@ -23,6 +23,7 @@ from ecam_button_geometry import CONTROLS_PATH, LAMP_MARKER
 from patch_center_right_animations import animation_block
 from patch_fcu_animations import fcu_target_groups, patch_object
 from patch_efis_animations import vertex_payload
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 
 def sha(data):
@@ -71,7 +72,7 @@ def patch_controls(original, groups, config):
         for corner, (u, v) in enumerate(uv):
             index = matches[0]+corner
             at, fields = vertices[index]
-            lines[at] = '\t'.join([*fields[:7], f'{u:.10g}', f'{v:.10g}'])+'\n'
+            lines[at] = '\t'.join([*fields[:7], f'{obj8_fmt(u)}', f'{obj8_fmt(v)}'])+'\n'
             changed_vertices.append(index)
     if len(set(changed_vertices)) != 16:
         raise ValueError('FCU screen vertices overlap unexpectedly')

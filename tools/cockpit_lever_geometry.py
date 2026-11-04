@@ -27,13 +27,14 @@ from build_cockpit_controls import accessor_values, matrix_identity, transform_p
 from grvty_cockpit_panel import Source, anim_depths, non_draw_lines, oriented_box, tris_coverage  # noqa: F401
 from patch_center_right_animations import primitive_points, rotation_keys, transform_vector
 from patch_efis_animations import vertex_payload  # noqa: F401
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 TOLERANCE = 0.000012  # metres; as patch_center_right_animations.wrap_geometry
 
 
 def _num(value: float) -> str:
     """OBJ number; float noise below 1e-9 (axis components, rest poses) is written as 0."""
-    return f'{0.0 if abs(value) < 1e-9 else value:.10g}'
+    return f'{obj8_fmt(0.0 if abs(value) < 1e-9 else value)}'
 
 
 def _vec(values) -> str:

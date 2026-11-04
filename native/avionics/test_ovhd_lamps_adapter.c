@@ -351,7 +351,8 @@ int main(int argc, char **argv)
     if (argc > 1 && !strcmp(argv[1], "--contracts")) {
         assert(elec_init() && eln_init() && ovhd_init());
         for (n = 0; n < command_count; ++n)
-            if (mock_commands[n].callback == ovhd_command_handler) printf("C %s\n", mock_commands[n].name);
+            if (mock_commands[n].callback == ovhd_command_handler || mock_commands[n].callback == ovhd_pb_handler)
+                printf("C %s\n", mock_commands[n].name);
         for (n = 0; n < ovhd_ref_count; ++n) printf("D %s\n", ovhd_refs[n].name);
         for (n = 0; n < OVR_COUNT; ++n) printf("R %s\n", ovhd_raw_names[n]);
         ovhd_shutdown(); eln_shutdown(); elec_shutdown();

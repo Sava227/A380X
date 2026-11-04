@@ -204,6 +204,13 @@ static void test_timers(void)
     for (i = 0; i < 9; ++i) a380x_eln_step(&s, &c, &in);
     CHECK(!K(990XU1));
     run(0.1); CHECK(K(990XU1) && ORIGIN(AC1) == SRC(GEN1));
+    /* Take-off: X-Plane N2 overshoots 100 % at TOGA; the VFGs stay in band (793 Hz) and online. */
+    reset(A380X_ELN_SPAWN_READY); engines(70.0); run(2.0);
+    engines(100.4); in.ias_kt = 110.0; in.adr_lsw_valid = 1; run(2.0);
+    for (i = 0; i < 4; ++i) CHECK(s.gen_avail[i] && s.gen_hz[i] > 790.0 && s.gen_hz[i] <= 800.0);
+    CHECK(ORIGIN(AC1) == SRC(GEN1) && ORIGIN(AC4) == SRC(GEN4));
+    /* Below 45.4 % N2 (357 Hz at 45 %) a VFG still drops out. */
+    engines(45.0); run(1.0); CHECK(!s.gen_avail[0]);
     /* BCRU line contactor holds 3 s, battery contactor opens at 5 s, 108PH holds 10 s */
     reset(A380X_ELN_SPAWN_READY); ext(1); c.ext_on[1] = c.ext_on[2] = 1; run(8.0);
     CHECK(K(990PU1) && K(990PU2) && K(990PB1) && K(990PB2) && ON(DC_ESS_INFLT));

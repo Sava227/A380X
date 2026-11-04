@@ -10,6 +10,7 @@
  *
  * Link with the MFD core objects (a380x_mfd*.c, a380x_fms*.c, a380x_navdata.c, page modules).
  */
+#include "a380x_du_scale.h"
 #include <assert.h>
 #include <math.h>
 #include <stdint.h>
@@ -215,14 +216,19 @@ void glEnable(GLenum cap) { if (cap == GL_CULL_FACE) mock_cull = GL_TRUE; }
 void glClearColor(GLfloat r, GLfloat g, GLfloat b, GLfloat a) { (void)r; (void)g; (void)b; assert(a == 1.0f); }
 static int mock_clears;
 void glClear(GLbitfield m) { (void)m; ++mock_clears; }
+static int mock_matrix_depth;
+void glPushMatrix(void) { ++mock_matrix_depth; }
+void glPopMatrix(void) { assert(mock_matrix_depth > 0); --mock_matrix_depth; }
+void glScalef(GLfloat x, GLfloat y, GLfloat z) { assert(x == A380X_MFD_SCALE && y == A380X_MFD_SCALE && z == 1.0f); }
 void glColorMask(GLboolean r, GLboolean g, GLboolean b, GLboolean a) { (void)r; (void)g; (void)b; (void)a; }
 void glBlendFunc(GLenum a, GLenum b) { (void)a; (void)b; }
 void glColor4f(GLfloat r, GLfloat g, GLfloat b, GLfloat a) { (void)r; (void)g; (void)b; (void)a; }
 void glColor3f(GLfloat r, GLfloat g, GLfloat b) { (void)r; (void)g; (void)b; }
 void glBegin(GLenum m) { (void)m; }
 void glEnd(void) {}
+void glVertex2f(GLfloat x, GLfloat y) { (void)x; (void)y; }
 void glVertex2i(GLint x, GLint y) { (void)x; (void)y; }
-void glGetIntegerv(GLenum p, GLint *v) { (void)p; v[0] = 0; v[1] = 0; v[2] = MFD_W; v[3] = MFD_H; }
+void glGetIntegerv(GLenum p, GLint *v) { (void)p; v[0] = 0; v[1] = 0; v[2] = A380X_MFD_PX(MFD_W); v[3] = A380X_MFD_PX(MFD_H); }
 void glGetFloatv(GLenum p, GLfloat *v) { int i; (void)p; for (i = 0; i < 16; ++i) v[i] = (i % 5 == 0) ? 1.0f : 0.0f; }
 
 /* ---- Avionics API mocks (reached only through XPLMFindSymbol) ------------------------------- */
@@ -351,11 +357,15 @@ static MockDevice *device(int side)
     return NULL;
 }
 
+/* Canvas pixel (y down) -> device texel (y up) on the A380X_MFD_SCALE denser device. */
+#define TX(cx) ((int)(((float)(cx) + 0.5f) * A380X_MFD_SCALE))
+#define TY(cy) ((int)(((float)MFD_H - (float)(cy) - 0.5f) * A380X_MFD_SCALE))
+
 /* Touch at a canvas pixel through the device callback (device texels are y-up). */
 static void touch(int side, float cx, float cy, XPLMMouseStatus st)
 {
     MockDevice *d = device(side);
-    d->p.screenTouchCallback((int)cx, MFD_H - 1 - (int)cy, st, d->p.refcon);
+    d->p.screenTouchCallback(TX((int)cx), TY((int)cy), st, d->p.refcon);
 }
 
 static int contracts(void)
@@ -380,18 +390,25 @@ static void test_devices(void)
         CHECK(d != NULL);
         if (!d) continue;
         CHECK(d->p.structSize == (int)sizeof(XPLMCreateAvionics_t));
-        CHECK(d->p.screenWidth == 768 && d->p.screenHeight == 1024 && d->p.drawOnDemand == 1);
-        CHECK(d->p.bezelWidth == 800 && d->p.bezelHeight == 1080 && d->p.screenOffsetX == 16 && d->p.screenOffsetY == 16);
+        CHECK(d->p.screenWidth == A380X_MFD_PX(768) && d->p.screenHeight == A380X_MFD_PX(1024) && d->p.drawOnDemand == 1);
+        CHECK(d->p.bezelWidth == A380X_MFD_PX(800) && d->p.bezelHeight == A380X_MFD_PX(1080)
+              && d->p.screenOffsetX == A380X_MFD_PX(16) && d->p.screenOffsetY == A380X_MFD_PX(16));
         CHECK(d->p.drawCallback && d->p.bezelDrawCallback && d->p.screenTouchCallback && d->p.screenScrollCallback
               && d->p.screenCursorCallback && d->p.keyboardCallback && d->p.brightnessCallback
               && d->p.screenRightTouchCallback && d->p.bezelClickCallback && d->p.bezelCursorCallback);
         CHECK(!strcmp(d->p.deviceName, s ? "A380X MFD F/O" : "A380X MFD CAPT"));
     }
     /* texel -> canvas at the four corners (device y up, canvas y down, pixel centres) */
-    mfda_to_canvas(0, 0, &cx, &cy); CHECK(cx == 0.5f && cy == 1023.5f);
-    mfda_to_canvas(767, 0, &cx, &cy); CHECK(cx == 767.5f && cy == 1023.5f);
-    mfda_to_canvas(0, 1023, &cx, &cy); CHECK(cx == 0.5f && cy == 0.5f);
-    mfda_to_canvas(767, 1023, &cx, &cy); CHECK(cx == 767.5f && cy == 0.5f);
+    {
+        const int right = A380X_MFD_PX(MFD_W) - 1, top = A380X_MFD_PX(MFD_H) - 1;
+        const float lo = A380X_DU_LOGICAL(0, A380X_MFD_SCALE), hi_x = A380X_DU_LOGICAL(right, A380X_MFD_SCALE), hi_y = A380X_DU_LOGICAL(top, A380X_MFD_SCALE);
+        mfda_to_canvas(0, 0, &cx, &cy); CHECK(cx == lo && cy == MFD_H - lo);
+        mfda_to_canvas(right, 0, &cx, &cy); CHECK(cx == hi_x && cx < MFD_W && cy == MFD_H - lo);
+        mfda_to_canvas(0, top, &cx, &cy); CHECK(cx == lo && cy == MFD_H - hi_y && cy > 0.0f);
+        mfda_to_canvas(right, top, &cx, &cy); CHECK(cx == hi_x && cy == MFD_H - hi_y);
+        /* every canvas pixel is reached by some texel */
+        mfda_to_canvas(TX(120), TY(215), &cx, &cy); CHECK((int)cx == 120 && (int)cy == 215);
+    }
     mfda_to_canvas(-20, 2000, &cx, &cy); CHECK(cx == 0.0f && cy == 0.0f);
     /* drawOnDemand: redraw only on a list change */
     frame(2);
@@ -638,7 +655,7 @@ static void test_arrow_keys_and_held_kccu(void)
     start();
     frame(2);
     MockDevice *d = device(0);
-    d->p.screenCursorCallback(100, MFD_H-1-70, d->p.refcon);
+    d->p.screenCursorCallback(TX(100), TY(70), d->p.refcon);
     frame(1);
     run_command("a380x/xp12/kccu/captain/click", xplm_CommandBegin);
     frame(3); /* No hover callback for several frames while the button is held. */
@@ -662,7 +679,7 @@ static void test_cursor_transport(void)
      * Raw display lists still change, so the local cursor is not frozen. */
     for(int n=0;n<1000;++n) {
         MockDevice *d=device(0);
-        d->p.screenCursorCallback(300+n%80,MFD_H-1-(280+n%100),d->p.refcon);
+        d->p.screenCursorCallback(TX(300+n%80),TY(280+n%100),d->p.refcon);
         frame(1);
         xpkit_mfd_publish();
         if(atomic_load(&mock_shared.mfd[0].sequence)!=before) {

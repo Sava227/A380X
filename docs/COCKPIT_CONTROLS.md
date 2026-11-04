@@ -269,3 +269,22 @@ their drag manipulators. `tools/patch_cockpit_cursors.py` applies the classifica
 installed `a380x_cockpit_controls.obj` (120 existing `hand` click targets changed) and to
 `config/cockpit_controls.json` (73 entries); the ISIS and ECAM generators emit `button` for
 keys. Report: `build/reports/cursor-audit-20261021.json`.
+
+## No exponent notation in OBJ files (November 3 fix)
+
+X-Plane's OBJ8 reader stops a number at its exponent: `4.694689366e-07` is read as 4.69 and
+`3.187809668e-10` as 3.19. The patch tools wrote tiny values with Python's `:g` / `:.9g` / `:.10g`
+formats, which use exponents, so 28,194 numbers in 17 OBJs were misread in the sim:
+
+| Symptom | Misread number |
+| --- | --- |
+| DU and AUTO BRK knobs tip over as they turn; ND inner knob vanishes | rotation axis x component `4.69e-07` read as 4.69 |
+| A-SKID toggle swings sideways | axis `2.7e-06, 1.9e-06` |
+| Flap and speed-brake levers vanish when lifted | lift translation `-7.07e-06` / `-1.16e-06` read as metres |
+| ELEC pushbuttons fly about 3 m when pressed; their click targets sit off the panel | press translation `3.19e-10` |
+| ISIS legends blank, SET/SEL knob cap missing | rest offset `1.73e-18` / `-4.1e-15` |
+| Triple brake-pressure needles, clock, GRVTY, ANN LT, FCU ALT ring, EWD/SD knobs, fans 2/3 | rotation axes |
+
+`tools/obj8_numbers.py` is the shared formatter (`fmt`) every OBJ writer now uses, and its CLI
+repairs existing files (`--fix`) or checks them (`--check`); only whole numeric tokens with an
+exponent change. `tools/validate_aircraft.py` reports any remaining exponent as an error.

@@ -20,6 +20,7 @@
  * a380x_fms_adapter.inc (fmsa_fms). Statics: isis_.
  */
 #include "a380x_elec_power.h"
+#include "a380x_avionics_popup.h"
 #include "a380x_isis.h"
 #include "a380x_isis_font.h"
 #include "a380x_isis.inc"
@@ -401,6 +402,7 @@ static void isis_adapter_init(void)
             p.screenHeight = p.bezelHeight = ISIS_H;
             p.drawOnDemand = 1;
             p.drawCallback = isis_device_draw;
+            p.bezelDrawCallback = a380x_black_bezel;
             p.screenTouchCallback = isis_device_touch;
             p.screenRightTouchCallback = isis_device_right;
             p.brightnessCallback = isis_device_brightness;

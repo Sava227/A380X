@@ -65,7 +65,7 @@ class EngButtonGeometry(unittest.TestCase):
             self.assertEqual(changed[name].count('TRIS\t0\t'), 1)
             self.assertIn(PRESS_REF, changed[name])
             self.assertIn('ANIM_trans_key\t0\t0\t0\t0', changed[name])
-            self.assertIn('ANIM_trans_key\t1\t0\t-0.0006\t4e-05', changed[name])
+            self.assertIn('ANIM_trans_key\t1\t0\t-0.0006\t0.00004', changed[name])
         self.assertEqual(report['source_mesh_indices']['PUSH_ECAM_ENG_SEQ1'], 6)
         self.assertTrue(report['original_mesh_geometry_unchanged'])
 

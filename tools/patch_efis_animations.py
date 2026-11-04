@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 from build_cockpit_controls import accessor_values, load_buffer, local_matrix, matrix_multiply, transform_point
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 
 def legacy_mappings():
@@ -43,7 +44,7 @@ def patch_legacy(text):
         elif active and fields and fields[0] in ("ANIM_rotate_key", "ANIM_trans_key") and active[1]:
             old_min, old_max, new_min, new_max = active[1]
             value = (float(fields[1]) - old_min) / (old_max - old_min) * (new_max - new_min) + new_min
-            line = re.sub(r"(ANIM_(?:rotate|trans)_key\s+)\S+", lambda m: m[1] + f"{value:.9g}", line)
+            line = re.sub(r"(ANIM_(?:rotate|trans)_key\s+)\S+", lambda m: m[1] + f"{obj8_fmt(value)}", line)
         elif fields and fields[0] in ("ANIM_rotate_end", "ANIM_trans_end"):
             active = None
         lines.append(line)
@@ -140,14 +141,14 @@ def wrap_unit_geometry(text, filename, targets):
                 continue
             target = applicable[match]
             counts[match] += run_count
-            pivot = "\t".join(f"{v:.9g}" for v in target["pivot"])
-            inverse = "\t".join(f"{-v:.9g}" for v in target["pivot"])
-            axis = "\t".join(f"{v:.9g}" for v in target["axis"])
+            pivot = "\t".join(f"{obj8_fmt(v)}" for v in target["pivot"])
+            inverse = "\t".join(f"{obj8_fmt(-v)}" for v in target["pivot"])
+            axis = "\t".join(f"{obj8_fmt(v)}" for v in target["axis"])
             ref = f'a380x/xp12/efis/{target["side"]}/baro_inhg'
             # Source rest pose selects inHg. hPa is the final authored pose.
             block = [f'# EFIS BARO UNIT {target["name"]}', "ANIM_begin",
                 f"ANIM_trans\t{pivot}\t{pivot}", f"ANIM_rotate_begin\t{axis}\t{ref}",
-                f'ANIM_rotate_key\t0\t{target["angle"]:.9g}', "ANIM_rotate_key\t1\t0",
+                f'ANIM_rotate_key\t0\t{obj8_fmt(target["angle"])}', "ANIM_rotate_key\t1\t0",
                 "ANIM_rotate_end", f"ANIM_trans\t{inverse}\t{inverse}",
                 f"TRIS\t{run_start}\t{run_count}", "ANIM_end"]
             output.extend(indent + row + "\n" for row in block)

@@ -54,6 +54,7 @@ from build_cockpit_controls import accessor_values, local_matrix, matrix_identit
 from cockpit_lever_geometry import Source, oriented_box, tris_coverage, vertex_payload
 from isis_cockpit_device import _append
 from patch_center_right_animations import transform_vector
+from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notation
 
 PREFIX = 'a380x/xp12/speedbrake/'
 MARKER = '# A380X SPEED BRAKE LEVER V1'
@@ -82,7 +83,7 @@ def sha(path: Path) -> str:
 
 
 def _num(value: float) -> str:
-    return f'{0.0 if abs(value) < 1e-12 else value:.10g}'
+    return f'{obj8_fmt(0.0 if abs(value) < 1e-12 else value)}'
 
 
 def _vec(values) -> str:
