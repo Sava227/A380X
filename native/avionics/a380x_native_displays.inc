@@ -17,6 +17,8 @@
  * before the aircraft OBJs load, or X-Plane drops their click manipulators.
  */
 
+#include "a380x_avionics_popup.h"
+
 #if !defined(A380X_XPKIT)
 
 #define NATIVE_DU_W 768
@@ -123,8 +125,11 @@ static int native_display_touch(int x, int y, XPLMMouseStatus phase, void *refco
 {
     NativeDisplay *d = refcon;
     (void)x; (void)y;
-    if (phase == xplm_MouseUp && plugin_enabled && d->device && mfda_av.loaded)
-        mfda_av.set_popup_visible(d->device, !mfda_av.is_popup_visible(d->device));
+    if (phase == xplm_MouseUp && plugin_enabled && d->device && mfda_av.loaded) {
+        int show = !mfda_av.is_popup_visible(d->device);
+        if (show) a380x_fit_popup(d->device, d->side, mfda_av.get_geometry, mfda_av.set_geometry);
+        mfda_av.set_popup_visible(d->device, show);
+    }
     return 1;
 }
 static int native_display_right(int x, int y, XPLMMouseStatus phase, void *refcon)
@@ -173,6 +178,7 @@ static void native_displays_init(void)
         p.screenHeight = p.bezelHeight = NATIVE_DU_H;
         p.drawOnDemand = 0;   /* the native PFD/ND animate every frame */
         p.drawCallback = native_display_draw;
+        p.bezelDrawCallback = a380x_black_bezel;
         p.brightnessCallback = native_display_brightness;
         if (!d->is_nd) {
             p.screenTouchCallback = native_display_touch;

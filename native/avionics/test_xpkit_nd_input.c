@@ -36,7 +36,16 @@ static struct {
     int (*cursor_over)(XPLMAvionicsID,int *,int *);
     int (*is_bound)(XPLMAvionicsID);
     void (*destroy)(XPLMAvionicsID);
+    void (*get_geometry)(XPLMAvionicsID,int *,int *,int *,int *);
+    void (*set_geometry)(XPLMAvionicsID,int,int,int,int);
 } mfda_av={.loaded=1,.needs_drawing=redraw,.cursor_over=absent,.is_bound=bound};
+/* Pop-up window: X-Plane's default geometry is the whole 1512x982 screen. */
+static int popup_shown,geom[4]={0,982,1512,0};
+static void show_popup(XPLMAvionicsID id,int v){assert(id);popup_shown=v;}
+static int popup_visible(XPLMAvionicsID id){assert(id);return popup_shown;}
+static void get_geom(XPLMAvionicsID id,int *l,int *t,int *r,int *b){assert(id);*l=geom[0];*t=geom[1];*r=geom[2];*b=geom[3];}
+static void set_geom(XPLMAvionicsID id,int l,int t,int r,int b){assert(id);geom[0]=l;geom[1]=t;geom[2]=r;geom[3]=b;}
+void XPLMGetScreenBoundsGlobal(int *l,int *t,int *r,int *b){*l=0;*t=982;*r=1512;*b=0;}
 static int xpkit_draw_view(int side,float x,float y,float w,float h) {
     assert(side==2||side==3);assert(x==0&&y==0&&w==768&&h==1024);++views;
     if(xpkit_health[side+4])xpkit_uploaded[side]=2;
@@ -60,6 +69,7 @@ static void rotate(float angle,float x,float y,float z){assert(angle==-90&&x==0&
 #define glEnable(...) ((void)0)
 #define glClearColor(...) ((void)0)
 #define glColorMask(...) ((void)0)
+#define glBlendFunc(...) ((void)0)
 #define glClear(...) ((void)0)
 #define XPLMSetGraphicsState(...) ((void)0)
 #include "a380x_xpkit_nd_input.inc"
@@ -116,6 +126,12 @@ int main(void) {
     assert(d->zoom==0);
     atomic_store(&memory.zoom_delta[0],99);xpkit_nd_poll();assert(d->zoom==6);
     atomic_store(&memory.zoom_delta[0],-99);xpkit_nd_poll();assert(d->zoom==0);
-    puts("Native ND input: ordered clicks, seven airport zoom levels, native cursor geometry, separate texture/presentation scheduling, no cursor uploads and immediate helper-exit fallback passed");
+    /* Pop-up: 3:4 at 80 % of the screen height instead of X-Plane's full-screen default. */
+    mfda_av.set_popup_visible=show_popup;mfda_av.is_popup_visible=popup_visible;
+    mfda_av.get_geometry=get_geom;mfda_av.set_geometry=set_geom;
+    d->command[0]=(XPLMCommandRef)10;xpkit_nd_command(d->command[0],xplm_CommandBegin,d);
+    assert(popup_shown&&geom[1]-geom[3]==785&&geom[2]-geom[0]==785*768/1024);
+    xpkit_nd_command(d->command[0],xplm_CommandBegin,d);assert(!popup_shown);
+    puts("Native ND input: ordered clicks, seven airport zoom levels, native cursor geometry, separate texture/presentation scheduling, no cursor uploads, immediate helper-exit fallback and 3:4 pop-up passed");
     return 0;
 }

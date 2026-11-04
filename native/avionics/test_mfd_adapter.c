@@ -221,6 +221,7 @@ void glColor4f(GLfloat r, GLfloat g, GLfloat b, GLfloat a) { (void)r; (void)g; (
 void glColor3f(GLfloat r, GLfloat g, GLfloat b) { (void)r; (void)g; (void)b; }
 void glBegin(GLenum m) { (void)m; }
 void glEnd(void) {}
+void glVertex2f(GLfloat x, GLfloat y) { (void)x; (void)y; }
 void glVertex2i(GLint x, GLint y) { (void)x; (void)y; }
 void glGetIntegerv(GLenum p, GLint *v) { (void)p; v[0] = 0; v[1] = 0; v[2] = MFD_W; v[3] = MFD_H; }
 void glGetFloatv(GLenum p, GLfloat *v) { int i; (void)p; for (i = 0; i < 16; ++i) v[i] = (i % 5 == 0) ? 1.0f : 0.0f; }
