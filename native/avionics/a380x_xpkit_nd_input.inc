@@ -21,6 +21,9 @@ typedef struct {
 } XpKitNd;
 static XpKitNd xpkit_nd[2];
 static const char *xpkit_nd_actions[]={"popup","map_data","center","zoom_in","zoom_out"};
+/* Shown in X-Plane's keyboard / joystick settings: one description per command. */
+static const char *xpkit_nd_descriptions[]={"A380X ND: pop-up window toggle","A380X ND/OANS: MAP DATA menu",
+    "A380X ND/OANS: centre the airport map","A380X ND/OANS: zoom in","A380X ND/OANS: zoom out"};
 static int xpkit_nd_du(const XpKitNd *d) { return d->side ? A380X_ELN_DU_FO_ND : A380X_ELN_DU_CAPT_ND; }
 /* ND display unit On (A380 network); without the network the EFIS power as before. */
 static int xpkit_nd_on(XpKitNd *d) {
@@ -159,7 +162,9 @@ static void xpkit_nd_init(void) {
         char name[128];
         for(int a=0;a<5;++a) {
             snprintf(name,sizeof(name),"a380x/xp12/nd/%s/%s",s?"first_officer":"captain",xpkit_nd_actions[a]);
-            d->command[a]=XPLMCreateCommand(name,"A380X FlyByWire ND/OANS control");
+            static char what[2][5][96];   /* kept for the command's lifetime */
+            snprintf(what[s][a],sizeof(what[s][a]),"%s (%s)",xpkit_nd_descriptions[a],s?"F/O":"CAPT");
+            d->command[a]=XPLMCreateCommand(name,what[s][a]);
             XPLMRegisterCommandHandler(d->command[a],xpkit_nd_command,1,d);
         }
         for(int a=0;a<3;++a) {
