@@ -490,6 +490,11 @@ def validate_native_panel(
     if not screens_path.is_file():
         errors.append(f'Missing visible MFD screen object: {MFD_SCREENS_ATTACHMENT}')
         return errors, report
+    # The RMP screens are not touchscreens either (keys and knobs are their own click targets).
+    if provider and provider.get('cockpit_feedback', {}).get('cockpit_devices'):
+        from cockpit_feedback_contract import RMP_CHANNELS, RMP_DEVICES
+        expected_devices.extend(RMP_DEVICES)
+        expected_attributes.update({device: {('1', str(channel), '1')} for device, channel in zip(RMP_DEVICES, RMP_CHANNELS)})
     # SD is not a touchscreen: its ENGINE/APU selection uses the physical ECP
     # command meshes. Require a visible quad, not an ATTR_manip_device twin.
     if provider and provider.get('ecam_sd'):
@@ -598,6 +603,11 @@ def validate(root: Path, datarefs: Path | None = None, commands: Path | None = N
             custom_refs.update(avionics_provider['xpkit_pfd']['datarefs'])
         if avionics_provider.get('ecam_sd'):
             packaged_devices.update(avionics_provider['ecam_sd']['cockpit_devices'])
+        if avionics_provider.get('cockpit_feedback'):
+            cfb = avionics_provider['cockpit_feedback']
+            packaged_commands.update(cfb['commands'], cfb.get('rmp_commands', ()))
+            custom_refs.update(cfb['datarefs'], cfb.get('rmp_datarefs', ()))
+            packaged_devices.update(cfb.get('cockpit_devices', ()))
         if avionics_provider.get('isis'):
             packaged_devices.update(avionics_provider['isis']['cockpit_devices'])
             packaged_commands.update(avionics_provider['isis']['commands'])

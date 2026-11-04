@@ -50,7 +50,7 @@ ANY_DC = "DC_ESS|DC1|DC2"
 SOURCES = (
     "test", "fault", "apu_master_on", "apu_master_fault", "apu_start_on", "apu_avail", "apu_bleed_on",
     "eng_bleed_off", "eng_bleed_fault", "pack_off", "eng_ai_on", "eng_ai_fault", "wing_ai_on",
-    "wing_ai_fault", "window_heat_on", "feed_pump_off", "crew_oxy_off",
+    "wing_ai_fault", "window_heat_on", "feed_pump_off", "crew_oxy_off", "pb_off", "pb_on",
 )
 
 # id, panel caption, FBW pushbutton node, upper (SEQ1) legend, lower (SEQ2) legend,
@@ -195,6 +195,33 @@ PUSHBUTTONS = (
     ("cab_data_to_nss", "CABIN DATA TO NSS", "PUSH_OVHD_CAB_DATA_TO_NSS", None, "on_white", ANY_DC, None, "test"),
 )
 SEQ_POSITION = {1: "upper", 2: "lower"}
+
+# Pushbutton position (dark cockpit, 2026-11-03). A legend whose system is not simulated used to light in
+# ANN LT TEST only, so nothing happened when the pushbutton was used. Such a pushbutton now has its own
+# latched position (a380x/xp12/ovhd/pb/<id>, toggled by the same-named command, 1 = pressed in) and its
+# legends follow it like FBW's FBW_Push_Toggle: an OFF legend lights while the pushbutton is released,
+# an ON / MAN / OVRD / DISC / DISCH legend while it is pressed in, an X FEED / JETTISON OPEN legend while
+# it is pressed in. FAULT, SMOKE, SQUIB, CALL, EVAC and BTL legends keep their conditions. Defaults are the
+# Airbus normal positions, so a normal cockpit is dark: OFF-type pushbuttons in, ON-type out.
+PB_OFF_LEGENDS = ("off", "off_red")
+PB_UPPER_ON_LEGENDS = ("open",)
+
+
+def effective_sources(row: tuple) -> tuple[str | None, str | None]:
+    _pid, _caption, _node, upper, lower, _supply, src1, src2 = row
+    if src2 == "test" and lower:
+        src2 = "pb_off" if lower in PB_OFF_LEGENDS else "pb_on"
+    if src1 == "test" and upper in PB_UPPER_ON_LEGENDS:
+        src1 = "pb_on"
+    return src1, src2
+
+
+def pb_state_ids() -> tuple[str, ...]:
+    return tuple(r[0] for r in PUSHBUTTONS if any(s in ("pb_off", "pb_on") for s in effective_sources(r)))
+
+
+def pb_default(pid: str) -> int:
+    return 1 if effective_sources(row(pid))[1] == "pb_off" else 0
 # Click targets added with the lamps (pushbuttons the port had no 3D click for).
 CLICKS = (("crew_oxy", "sim/oxy/crew_valve_toggle", "CREW OXY SUPPLY - ON / OFF"),)
 ANN_LT_NODE = "SWITCH_OVHD_INTLT_ANNLT"
@@ -241,11 +268,12 @@ def parse_source(token: str | None) -> tuple[str, int]:
     return kind, int(index or 0)
 
 
-COMMANDS = (PREFIX + "ann_lt_up", PREFIX + "ann_lt_down")
+COMMANDS = (PREFIX + "ann_lt_up", PREFIX + "ann_lt_down", *(PREFIX + f"pb/{pid}" for pid in pb_state_ids()))
 DATAREFS = (
     *(row_[0] for row_ in lamps()),
     *(PREFIX + f"fail/{pid}" for pid in fault_ids()),
     PREFIX + "ann_lt", PREFIX + "ann_lt_switch", PREFIX + "settings/lamp_supply", PREFIX + "lamp_count",
+    *(PREFIX + f"pb/{pid}" for pid in pb_state_ids()),
 )
 
 
@@ -271,6 +299,7 @@ def emit_c_table() -> str:
         return " | ".join(f"A380X_ELN_BIT({BUSES[n]})" for n in names) or "0u"
 
     for pid, _caption, node, upper, lower, supply, src1, src2 in PUSHBUTTONS:
+        src1, src2 = effective_sources((pid, _caption, node, upper, lower, supply, src1, src2))
         any_of, all_of = parse_supply(supply)
         k1, i1 = parse_source(src1)
         k2, i2 = parse_source(src2)

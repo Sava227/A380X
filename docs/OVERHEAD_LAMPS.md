@@ -1,5 +1,15 @@
 # Overhead annunciator lamps
 
+> **Pushbutton positions / dark cockpit (2026-11-03):** the 104 pushbuttons whose system is not simulated
+> used to light only in ANN LT TEST, so nothing happened when they were used. Each now has a latched
+> position `a380x/xp12/ovhd/pb/<id>` (1 = pressed in), toggled by the command of the same name and clicked
+> on its 3D cap (press travel from `tools/cockpit_feedback.py`). Their legends follow it as in FBW's
+> FBW_Push_Toggle: OFF lights while released; ON / MAN / OVRD / DISC / DISCH and X FEED / JETTISON OPEN
+> while pressed in. FAULT, SMOKE, SQUIB, CALL, EVAC and BTL keep their conditions. Defaults are the Airbus
+> normal positions (OFF-type pressed in, ON-type released), and on aircraft load the fuel pumps, engine
+> bleeds and packs are set ON, so a normal cockpit is dark instead of showing OFF on every pump and bleed.
+> In the tables below, "ANN LT TEST only" lower legends now read "pushbutton position".
+
 > **Default supply (user decision, 2026-10-21):** `a380x/xp12/ovhd/settings/lamp_supply` defaults to **1**:
 > every overhead legend (ELEC included) lights as soon as any battery is AUTO or any DC bus is live,
 > so OFF legends show with BAT 1 + BAT 2. Set it to 0 for FBW's per-legend supply buses.

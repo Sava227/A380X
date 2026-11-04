@@ -17,6 +17,7 @@ static void network(A380XOvhdInputs *in, uint32_t buses)
     in->network = 1; in->buses = buses; in->ann_lt = A380X_OVHD_ANN_BRT;
     /* FBW running-aircraft normal positions: bleeds, packs, feed pumps and crew oxygen ON */
     memset(in->eng_bleed, 1, 4); memset(in->pack, 1, 2); memset(in->feed_pump, 1, 4); in->crew_oxy = 1;
+    for (int i = 0; i < A380X_OVHD_PB_COUNT; ++i) in->pb[i] = (unsigned char)a380x_ovhd_pb_default(i);  /* normal positions */
 }
 
 static void test_table(void)
@@ -83,7 +84,15 @@ static void test_supply_and_conditions(void)
     in.eng_bleed_failed[3] = 1; assert(up(&in, "eng4_bleed") == 1.0f);         /* selected on + failure */
     in.eng_bleed[3] = 0; assert(up(&in, "eng4_bleed") == 0.0f && lo(&in, "eng4_bleed") == 1.0f);
     in.fault[pb("feed2_stby")] = 1; assert(up(&in, "feed2_stby") == 1.0f && lo(&in, "feed2_stby") == 0.0f);
-    assert(lo(&in, "xfeed1") == 0.0f && up(&in, "fire_eng1_agent1") == 0.0f);   /* not simulated: test only */
+    assert(lo(&in, "xfeed1") == 0.0f && up(&in, "fire_eng1_agent1") == 0.0f);   /* normal positions: dark */
+    /* pushbutton positions (dark cockpit): normal positions dark, OFF while released, ON while pressed in */
+    assert(lo(&in, "hyd_eng1a") == 0.0f && lo(&in, "prim1") == 0.0f && lo(&in, "man_start1") == 0.0f);
+    in.pb[pb("hyd_eng1a")] = 0; assert(lo(&in, "hyd_eng1a") == 1.0f);           /* ENG 1 PUMP A OFF */
+    in.pb[pb("man_start1")] = 1; assert(lo(&in, "man_start1") == 1.0f);         /* MAN START ON (AC ESS) */
+    in.pb[pb("xfeed1")] = 1; assert(lo(&in, "xfeed1") == 1.0f && up(&in, "xfeed1") == 1.0f);   /* ON + OPEN */
+    in.pb[pb("fire_eng1_agent1")] = 1; assert(up(&in, "fire_eng1_agent1") == 0.0f);          /* SQUIB stays test */
+    assert(a380x_ovhd_has_pb(pb("prim1")) && !a380x_ovhd_has_pb(pb("feed1_main")) && a380x_ovhd_pb_default(pb("prim1")));
+    in.pb[pb("xfeed1")] = 0;
     in.ann_lt = A380X_OVHD_ANN_DIM;
     assert(fabsf(lo(&in, "feed1_main") - A380X_OVHD_DIM_LEVEL) < 1e-6f && lo(&in, "feed2_main") == 0.0f);
     in.ann_lt = A380X_OVHD_ANN_TEST;
