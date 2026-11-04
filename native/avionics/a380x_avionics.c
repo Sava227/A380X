@@ -279,6 +279,7 @@ static int xpkit_draw_sd(void);
 #define MFDA_CDS_OVERLAY(side) cds_overlay((side) ? A380X_ELN_DU_FO_MFD : A380X_ELN_DU_CAPT_MFD, 0, 0, 768, 1024)
 #define SDA_CDS_OVERLAY() cds_overlay(A380X_ELN_DU_SD, 0, 0, 768, 1024)
 #include "a380x_mfd_adapter.inc"
+#include "a380x_engine_indications.inc"
 #include "a380x_sd_adapter.inc"
 #include "a380x_fms_adapter.inc"
 #include "a380x_isis_adapter.inc"
@@ -623,6 +624,7 @@ PLUGIN_API int XPluginStart(char *name, char *signature, char *description)
                  "%d ECAM procedures)\n", fws_signals_alert_count(), FWS_ABNORMAL_PROCEDURE_COUNT);
         XPLMDebugString(fws_line);
     }
+    engi_init();
     if (!sda_init()) XPLMDebugString("A380X ECAM SD: registration failed; existing avionics remain available\n");
     /* L/G GRVTY panel datarefs before the aircraft OBJs bind them (cover, guards, switch). */
     if (!lgg_init()) XPLMDebugString("A380X L/G GRVTY: registration failed; gravity extension unavailable, the lever drives the gear\n");
@@ -639,6 +641,7 @@ PLUGIN_API int XPluginStart(char *name, char *signature, char *description)
         lgg_shutdown();
         isis_adapter_shutdown();
         sda_shutdown();
+        engi_shutdown();
         mfda_shutdown(); fmsa_shutdown();
         adirs_window_shutdown(); adirs_shutdown();
         a380x_efb_shutdown();
@@ -675,6 +678,7 @@ PLUGIN_API void XPluginStop(void)
     XPLMUnregisterDrawCallback(draw_panel, xplm_Phase_Gauges, 0, NULL);
     isis_adapter_shutdown();
     sda_shutdown();
+    engi_shutdown();
     mfda_shutdown(); fmsa_shutdown();
     adirs_window_shutdown(); adirs_shutdown();
     ewd_font_shutdown();
