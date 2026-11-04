@@ -404,6 +404,16 @@ def validate_avionics_provider(root: Path) -> tuple[dict | None, list[str]]:
             if (sd.get('cockpit_devices')!=list(SD_DEVICES) or sd.get('commands')!=list(SD_COMMANDS)
                     or sd.get('datarefs')!=list(SD_DATAREFS)):
                 raise ValueError('invalid native ECAM SD contracts')
+        if document.get('cockpit_feedback'):
+            from cockpit_feedback_contract import COMMANDS as CFB_COMMANDS, DATAREFS as CFB_DATAREFS
+            cfb=document['cockpit_feedback']
+            from cockpit_feedback_contract import RMP_COMMANDS, RMP_DATAREFS, RMP_DEVICES
+            if cfb.get('commands')!=list(CFB_COMMANDS) or cfb.get('datarefs')!=list(CFB_DATAREFS):
+                raise ValueError('invalid native cockpit-feedback contracts')
+            if cfb.get('rmp_commands', list(RMP_COMMANDS))!=list(RMP_COMMANDS) or \
+                    cfb.get('rmp_datarefs', list(RMP_DATAREFS))!=list(RMP_DATAREFS) or \
+                    cfb.get('cockpit_devices', list(RMP_DEVICES)) not in ([], list(RMP_DEVICES)):
+                raise ValueError('invalid native RMP contracts')
         rows = document.get("files")
         if not isinstance(rows, list) or len(rows) != len(FILES):
             raise ValueError("expected Mac, Windows, voice, and build-report files")

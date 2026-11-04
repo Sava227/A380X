@@ -46,6 +46,7 @@ OVHD_ADAPTER_TEST = HERE / "test_ovhd_lamps_adapter.c"
 # L/G GRVTY panel (docs/LG_GRVTY.md): XPLM-free core a380x_lg_grvty.h, X-Plane adapter a380x_lg_grvty.inc
 # (tested together with the production center-right adapter against a mock XPLM).
 LG_GRVTY_TEST = HERE / "test_lg_grvty.c"
+RMP_TEST = HERE / "test_rmp.c"
 LG_GRVTY_ADAPTER_TEST = HERE / "test_lg_grvty_adapter.c"
 # Thrust / reverse levers, FADEC rating + FLEX, instinctive disconnect (docs/THRUST_LEVERS.md): XPLM-free
 # cores a380x_detent_lever.h + a380x_thrust.h, adapters a380x_cockpit_lever.inc + a380x_thrust.inc (tested
@@ -296,6 +297,10 @@ def main() -> None:
     lg_grvty_binary = output / "test_lg_grvty"
     run([clang, *warnings, str(LG_GRVTY_TEST), "-lm", "-o", str(lg_grvty_binary)])
     lg_grvty_result = run([str(lg_grvty_binary)]).strip().splitlines()[-1]
+    rmp_binary = output / "test_rmp"
+    run([clang, *warnings, str(RMP_TEST), "-lm", "-o", str(rmp_binary)])
+    rmp_result = run([str(rmp_binary)]).strip().splitlines()[-1]
+    run([mingw, *warnings, "-c", str(RMP_TEST), "-o", str(output / "test_rmp_win_check.o")])
     # gcc-only warnings must not first appear at the Windows link (the adapter itself is compiled
     # with -Werror into win.xpl by the unity build below).
     run([mingw, *warnings, "-c", str(LG_GRVTY_TEST), "-o", str(output / "test_lg_grvty_win_check.o")])
@@ -615,6 +620,15 @@ def main() -> None:
             or [line[2:] for line in ovhd_contracts if line.startswith("D ")] != list(OVHD_DATAREFS)
             or set(OVHD_DATAREFS) & (set(ELEC_DATAREFS) | set(ELEC_NETWORK_DATAREFS))):
         raise RuntimeError("Overhead lamp native registry disagrees with tools/ovhd_lamps_contract.py")
+    from cockpit_feedback_contract import emit_c_table as feedback_table
+    if (HERE / "a380x_cockpit_feedback_table.h").read_text() != feedback_table():
+        raise RuntimeError("a380x_cockpit_feedback_table.h is stale: python3 tools/cockpit_feedback_contract.py --emit-c")
+    from cockpit_feedback_contract import RMP_KEYS, RMP_KNOBS
+    rmp_source = (HERE / "a380x_rmp_adapter.inc").read_text()
+    rmp_keys = re.findall(r'"([a-z0-9_]+)"', rmp_source.split("rmp_key_names[] = {", 1)[1].split("};", 1)[0])
+    rmp_knobs = re.findall(r'"([a-z0-9_]+)"', rmp_source.split("rmp_knob_names[RMP_KNOB_COUNT] = {", 1)[1].split("};", 1)[0])
+    if rmp_keys != [key for _node, key in RMP_KEYS] or rmp_knobs != [ch for _node, ch in RMP_KNOBS]:
+        raise RuntimeError("RMP native key / knob names disagree with tools/cockpit_feedback_contract.py")
     adapter = (HERE / "a380x_fcu_adapter.inc").read_text()
     command_names = {"a380x/xp12/fcu/" + name for name in re.findall(r'FCUC\("([^"\n]+)"', adapter)}
     dataref_names = {"a380x/xp12/fcu/" + name for name in re.findall(r'FCUR\("([^"\n]+)"', adapter)}
@@ -847,6 +861,7 @@ def main() -> None:
         "ovhd_lamps_test_result": ovhd_result,
         "ovhd_lamps_adapter_test_result": ovhd_adapter_result,
         "lg_grvty_test_result": lg_grvty_result,
+        "rmp_test_result": rmp_result,
         "lg_grvty_adapter_test_result": lg_grvty_adapter_result,
         "lg_grvty": {"commands": list(GRVTY_COMMANDS), "datarefs": list(GRVTY_DATAREFS),
                      "raw_inputs": [line[2:] for line in lg_grvty_contracts if line.startswith("R ")],
