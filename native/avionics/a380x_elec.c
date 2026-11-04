@@ -265,7 +265,8 @@ static void eln_evaluate(A380XElnState *s, const A380XElnControls *c, const A380
         double n2 = isfinite(in->eng_n2[i]) ? in->eng_n2[i] : 0.0;
         int normal;
         s->drive_connected[i] = !c->drive_disc[i];
-        s->gen_hz[i] = activated && s->drive_connected[i] ? fmax(0.0, n2) * A380X_ELN_VFG_HZ_PER_N2_PCT : 0.0;
+        s->gen_hz[i] = activated && s->drive_connected[i]
+            ? fmin(fmax(0.0, n2), A380X_ELN_VFG_N2_CAP_PCT) * A380X_ELN_VFG_HZ_PER_N2_PCT : 0.0;
         normal = s->gen_hz[i] >= A380X_ELN_VFG_HZ_MIN && s->gen_hz[i] <= A380X_ELN_VFG_HZ_MAX;
         if (!activated) s->vfg_stable_s[i] = 0.0;
         else s->vfg_stable_s[i] = normal ? fmin(A380X_ELN_VFG_STABLE_S, s->vfg_stable_s[i] + dt) : 0.0;

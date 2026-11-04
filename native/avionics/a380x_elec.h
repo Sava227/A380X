@@ -98,7 +98,13 @@ typedef enum { A380X_ELN_SPAWN_COLD_DARK = 0, A380X_ELN_SPAWN_TURNAROUND = 1, A3
 #define A380X_ELN_VFG_STABLE_S 0.5          /* H EGEN */
 #define A380X_ELN_VFG_HZ_MIN 360.0          /* H */
 #define A380X_ELN_VFG_HZ_MAX 800.0          /* H */
-#define A380X_ELN_VFG_HZ_PER_N2_PCT 8.0     /* L: X-Plane has no gearbox speed; 45 % N2 = 360 Hz */
+/* VFG frequency = gearbox rpm * 1.95 * 4 / 120 (EGEN DirectDrive). FBW's Trent 900 gearbox runs on
+ * the HP spool, 100 % = 12200 rpm (trent_engine.rs); X-Plane's N2 is that spool, so 7.93 Hz per %
+ * (H) and 793 Hz at 100 %. X-Plane's spool model overshoots 100 % slightly at TOGA, which a real
+ * Trent does not: the N2 used here is capped at 100 % (L), or all four VFGs left 360-800 Hz together
+ * during the take-off roll. */
+#define A380X_ELN_VFG_HZ_PER_N2_PCT (12200.0 / 100.0 * 1.95 * 4.0 / 120.0)
+#define A380X_ELN_VFG_N2_CAP_PCT 100.0     /* L */
 #define A380X_ELN_APU_GEN_MIN_N 77.0        /* H PW980 */
 #define A380X_ELN_BCRU_LINE_HOLD_S 3.0      /* H */
 #define A380X_ELN_BCRU_BAT_OPEN_S 5.0       /* H */

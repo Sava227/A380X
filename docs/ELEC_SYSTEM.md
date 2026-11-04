@@ -112,7 +112,9 @@ ADIRS Align Now.
 The network evaluates FBW's union-find graph in FBW statement order, in sub-steps of 50 ms or
 less. It freezes in pause/replay and runs in simulator time.
 
-* **Sources:** four VFGs. X-Plane has no gearbox speed, so f = 8 Hz × N2 %. A generator is
+* **Sources:** four VFGs. f = 12200 rpm × N2 % / 100 × 1.95 × 4 / 120 (FBW's Trent 900 HP-spool
+  gearbox, 7.93 Hz per %), with N2 capped at 100 % because X-Plane's spool model overshoots it at
+  TOGA (all four VFGs used to leave the band together during the take-off roll). A generator is
   normal at 360-800 Hz once stable for 0.5 s. GEN pb ON, DRIVE connected and no failure are
   required. Also: APU GEN A/B (N ≥ 77 %), EXT 1-4 (connected and EXT pb ON), the emergency
   generator (RAT), the static inverter, BAT 1/2/ESS/APU, BCRU 1/2/ESS and TR APU.
@@ -245,7 +247,7 @@ removes the GPU. The GPU disconnects when airborne or above 1 m/s ground speed.
 6. ADIRU supplies follow the spec 6.4 proposal. The hot-bus backup needs DC ESS live, so an
    ADIRU left in NAV does not run a cold & dark aircraft (L).
 7. **BAT OFF with the APU turning** commands an APU emergency shutdown (spec 8.2, L).
-8. The VFG frequency is mapped from N2 (8 Hz per %, L), and the APU flap opens in 8 s (FBW
+8. The VFG frequency is mapped from N2 (FBW Trent 900 gearbox, N2 capped at 100 %, L), and the APU flap opens in 8 s (FBW
    uses 6-12 s at random).
 9. EMER GEN TEST, GEN 1 LINE and the BAT selector have no panel controls in the FBW model. The
    BAT voltmeter is published as `bat/selector` (writable, 0 ESS, 1 APU, 2 OFF, 3 BAT 1,
