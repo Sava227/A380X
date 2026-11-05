@@ -50,7 +50,9 @@ offsetof(A380XXpKitShared,state),offsetof(A380XXpKitShared,ready),
 offsetof(A380XXpKitShared,pixels),offsetof(A380XXpKitShared,nd_pixels),
 offsetof(A380XXpKitShared,mfd_pixels),offsetof(A380XXpKitShared,mfd),
 offsetof(A380XXpKitShared,sd),offsetof(A380XXpKitShared,nd_profile),
-offsetof(A380XXpKitShared,efb_pixels),offsetof(A380XXpKitShared,efb),sizeof(A380XXpKitEfb)};
+offsetof(A380XXpKitShared,efb_pixels),offsetof(A380XXpKitShared,efb),sizeof(A380XXpKitEfb),
+offsetof(A380XXpKitShared,surface_id),offsetof(A380XXpKitShared,surface_mode),offsetof(A380XXpKitShared,surface_front),
+XPKIT_VERSION};
 '''
     signatures=[]
     for extension,compiler in [('c',cc),('cpp',cxx)]:

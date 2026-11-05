@@ -2,6 +2,17 @@
  * Actual xp-kit PFDs, composited into the existing A380 cockpit atlas.
  * Only the native aircraft controller is authoritative. No HTTP, stock AP
  * mode mirroring, synthetic flight state, or WebKit code in X-Plane's process.
+ *
+ * Frames (protocol v9, a380x_xpkit_shared.h): on macOS the helper writes each captured page into
+ * IOSurfaces created here and the cockpit devices sample them directly (zero-copy, after a one-time
+ * GL probe); otherwise frames are uploaded with glTexSubImage2D, at most XPKIT_UPLOADS_PER_FRAME
+ * PFD/ND uploads per simulator frame, oldest pending first.
+ * PFD/ND state is published at up to 75 Hz, the MFD/SD/EFB publishers keep their 45 ms cadence, and
+ * every presentation poll (health, device redraw requests, ND cursor sampling) runs every frame.
+ * The helper is supervised: an exited helper is restarted after 2 s (at most 3 times per enable), an
+ * unresponsive one (no PFD frame or heartbeat for 15 s) is killed and restarted. The PFD/ND devices
+ * hold their last web frame meanwhile; the native PFD/ND renderers draw only when no web renderer
+ * can run (helper absent, spawn failure, Windows without a host, restarts used up).
  */
 #if (APL || IBM) && defined(A380X_XPKIT)
 #include "a380x_xpkit_shared.h"
@@ -9,23 +20,26 @@
 #if APL
 #include <spawn.h>
 #include <signal.h>
+#include <errno.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <time.h>
+#include "a380x_xpkit_surface.h"
 extern char **environ;
 static A380XXpKitShared *xpkit_shared;
 static pid_t xpkit_pid;
 static char xpkit_shared_path[128];
+static char xpkit_helper_path[2304], xpkit_assets_path[2304], xpkit_system_path[2048];
 #else
 static A380XXpKitShared *xpkit_shared;
 static HANDLE xpkit_pid, xpkit_mapping, xpkit_job;
 static wchar_t xpkit_shared_name[128];
 #endif
 static GLuint xpkit_texture[XPKIT_VIEWS];
-static unsigned xpkit_uploaded[XPKIT_VIEWS];
+static unsigned xpkit_uploaded[XPKIT_VIEWS];   /* frame_seq of the frame each view presents (0: none) */
 static unsigned char xpkit_staging[XPKIT_MAX_VIEW_BYTES];
 static int xpkit_health[26]; /* Existing PFD/ND contracts retain their indices; 22..25 = EFB tablets. */
 static XPLMDataRef xpkit_health_refs[26];
@@ -35,7 +49,19 @@ static const char *xpkit_health_names[]={"helper_running","captain_active","firs
     "captain_mfd_active","first_officer_mfd_active","captain_mfd_presented_frames","first_officer_mfd_presented_frames","sd_active","sd_presented_frames",
     "pfd_devices_active","captain_pfd_bound","first_officer_pfd_bound",
     "captain_efb_active","first_officer_efb_active","captain_efb_presented_frames","first_officer_efb_presented_frames"};
+/* Web renderer of this plugin enable: running, waiting for a restart, or impossible (native PFD/ND). */
+enum { XPKIT_WEB_NONE, XPKIT_WEB_RUNNING, XPKIT_WEB_RESTARTING };
+#define XPKIT_MAX_RESTARTS 3
+#define XPKIT_RESTART_DELAY 2.0
+#define XPKIT_WATCHDOG 15.0              /* seconds without a PFD frame or heartbeat */
+#define XPKIT_STATE_PERIOD (1.0 / 75.0)   /* PFD/ND state publication */
+#define XPKIT_SLOW_PERIOD .045            /* MFD/SD/EFB publishers (unchanged) */
+#define XPKIT_UPLOADS_PER_FRAME 2         /* upload path: PFD/ND uploads per simulator frame... */
+#define XPKIT_UPLOAD_BYTES_PER_FRAME (16u << 20)   /* ...and bytes (one PFD or ND frame is 7.1 MB) */
+static int xpkit_web;
+static int xpkit_web_possible(void) { return xpkit_web != XPKIT_WEB_NONE; }
 static int xpkit_draw_view(int view,float x,float y,float width,float height);
+static void xpkit_device_draw_begin(void);   /* top of the PFD/ND device draws: one-time zero-copy probe */
 static double xpkit_now(void);
 static void draw_nd(const Side *side,float x,float y,const char *name);
 static void draw_pfd(const Side *side,float x,float y,const char *name);
@@ -43,8 +69,25 @@ static void draw_pfd(const Side *side,float x,float y,const char *name);
 #include "a380x_xpkit_pfd.inc"
 #include "a380x_xpkit_efb.inc"
 static XPLMDataRef xpkit_clock;
-static double xpkit_last_update;
+static double xpkit_last_state, xpkit_last_slow, xpkit_loop_time;
+static double xpkit_watch_since, xpkit_watch_progress, xpkit_restart_at;
+static int xpkit_restarts;
 static int xpkit_logged;
+/* What xpkit_uploaded[] names per view: 0 nothing, 1 the uploaded 2D texture, 2 surface xpkit_front[]. */
+static unsigned char xpkit_kind[XPKIT_VIEWS];
+static unsigned xpkit_requested[XPKIT_VIEWS];      /* MFD/SD/EFB: frame a redraw was requested for */
+static double xpkit_requested_at[XPKIT_VIEWS];
+/* Upload budget of the PFD/ND views (upload path only). */
+static unsigned xpkit_frame_no, xpkit_grant[4], xpkit_waiting_since[4];
+static unsigned char xpkit_grant_used[4];
+/* Zero-copy for this X-Plane session: 0 not probed yet, 1 probe passed, -1 upload path only. */
+static int xpkit_zero_copy;
+#if APL
+static unsigned char xpkit_front[XPKIT_VIEWS];
+static XpKitSurface xpkit_surface[XPKIT_VIEWS][XPKIT_SURFACES];
+static GLuint xpkit_surface_tex[XPKIT_VIEWS][XPKIT_SURFACES];
+static XpKitSurface xpkit_surface_bound[XPKIT_VIEWS][XPKIT_SURFACES];   /* surface each texture samples */
+#endif
 static double xpkit_now(void) {
 #if IBM
     LARGE_INTEGER counter, frequency;
@@ -74,6 +117,83 @@ static int xpkit_prepare_helper(const char *path) {
     close(fd);
     return access(path,X_OK)==0;
 }
+static int xpkit_spawn(void) {
+    char *argv[]={xpkit_helper_path,xpkit_shared_path,xpkit_assets_path,xpkit_system_path,NULL};
+    if(posix_spawn(&xpkit_pid,xpkit_helper_path,NULL,NULL,argv,environ)) { xpkit_pid=0; return 0; }
+    return 1;
+}
+/* 1 when the helper is gone (reaped here, or no longer our child); status for the log. */
+static int xpkit_helper_gone(int *status) {
+    pid_t r=waitpid(xpkit_pid,status,WNOHANG);
+    return r==xpkit_pid || (r<0 && errno==ECHILD);
+}
+static void xpkit_kill_helper(void) {
+    int status;
+    if(xpkit_pid>0 && waitpid(xpkit_pid,&status,WNOHANG)==0) { kill(xpkit_pid,SIGKILL); waitpid(xpkit_pid,&status,0); }
+}
+
+/* ---- zero-copy surfaces (a380x_xpkit_surface.h) ---- */
+static void xpkit_surfaces_release(void) {
+    for(int v=0;v<XPKIT_VIEWS;++v) for(int i=0;i<XPKIT_SURFACES;++i) {
+        if(xpkit_surface_tex[v][i]) { glDeleteTextures(1,&xpkit_surface_tex[v][i]); xpkit_surface_tex[v][i]=0; }
+        xpkit_surface_bound[v][i]=NULL;
+        if(xpkit_surface[v][i]) { xpkit_surface_release(xpkit_surface[v][i]); xpkit_surface[v][i]=NULL; }
+        if(xpkit_shared) atomic_store(&xpkit_shared->surface_id[v][i],0);
+    }
+    if(xpkit_shared) for(int v=0;v<XPKIT_VIEWS;++v) atomic_store(&xpkit_shared->surface_mode[v],0);
+}
+/* Once per enable, before the helper starts. surface_mode turns 1 only once the probe has passed. */
+static void xpkit_surfaces_create(void) {
+    if(xpkit_zero_copy<0 || !xpkit_shared) return;
+    for(int v=0;v<XPKIT_VIEWS;++v) for(int i=0;i<XPKIT_SURFACES;++i) {
+        XpKitSurface s=xpkit_surface_create(xpkit_view_width(v),xpkit_view_height(v));
+        if(!s) {
+            xpkit_surfaces_release(); xpkit_zero_copy=-1;
+            XPLMDebugString("A380X xp-kit: IOSurfaceCreate failed; display path: texture upload.\n");
+            return;
+        }
+        xpkit_surface[v][i]=s;
+        atomic_store(&xpkit_shared->surface_id[v][i],(uint32_t)xpkit_surface_id(s));
+    }
+    if(xpkit_zero_copy>0) {
+        for(int v=0;v<XPKIT_VIEWS;++v) atomic_store_explicit(&xpkit_shared->surface_mode[v],1,memory_order_release);
+        XPLMDebugString("A380X xp-kit: display path: zero-copy IOSurface frames (GL probe passed earlier this session).\n");
+    }
+}
+/* Zero-copy off for the session: the helper re-captures every view into the pixel arrays. Surfaces a
+ * texture may still reference stay allocated until the plugin is disabled. */
+static void xpkit_zero_copy_off(const char *why) {
+    char line[320];
+    xpkit_zero_copy=-1;
+    if(xpkit_shared) for(int v=0;v<XPKIT_VIEWS;++v) atomic_store_explicit(&xpkit_shared->surface_mode[v],0,memory_order_release);
+    for(int v=0;v<XPKIT_VIEWS;++v) if(xpkit_kind[v]==2) { xpkit_kind[v]=0; xpkit_uploaded[v]=0; }
+    snprintf(line,sizeof(line),"A380X xp-kit: zero-copy display frames unavailable (%s); display path: texture upload "
+             "(at most %d PFD/ND uploads per frame).\n",why,XPKIT_UPLOADS_PER_FRAME);
+    XPLMDebugString(line);
+}
+/* First device draw (GL current): prove that this context samples a CPU-written IOSurface. */
+static void xpkit_zero_copy_probe(void) {
+    char why[160]; int names[2]; unsigned textures[2]; int passed;
+    if(xpkit_zero_copy || !xpkit_surface[0][0]) return;
+    XPLMGenerateTextureNumbers(names,2); textures[0]=(unsigned)names[0]; textures[1]=(unsigned)names[1];
+    passed=xpkit_surface_probe(getenv("A380X_XPKIT_FORCE_UPLOAD")!=NULL,textures,why,sizeof(why));
+    glDeleteTextures(2,(const GLuint *)textures);
+    /* No texture samples a surface before the probe passed: free them (about 200 MB) right away. */
+    if(!passed) { xpkit_zero_copy_off(why); xpkit_surfaces_release(); return; }
+    xpkit_zero_copy=1;
+    if(xpkit_shared) for(int v=0;v<XPKIT_VIEWS;++v) atomic_store_explicit(&xpkit_shared->surface_mode[v],1,memory_order_release);
+    XPLMDebugString("A380X xp-kit: display path: zero-copy IOSurface frames (GL probe passed, no texture uploads).\n");
+}
+/* The rectangle texture sampling surface [view][index], attached lazily with CGLTexImageIOSurface2D. */
+static GLuint xpkit_surface_texture(int view,int index) {
+    XpKitSurface s=xpkit_surface[view][index];
+    if(!s) return 0;
+    if(xpkit_surface_tex[view][index] && xpkit_surface_bound[view][index]==s) return xpkit_surface_tex[view][index];
+    if(!xpkit_surface_tex[view][index]) { int name; XPLMGenerateTextureNumbers(&name,1); xpkit_surface_tex[view][index]=(GLuint)name; }
+    if(!xpkit_surface_attach(xpkit_surface_tex[view][index],s,xpkit_view_width(view),xpkit_view_height(view))) return 0;
+    xpkit_surface_bound[view][index]=s;
+    return xpkit_surface_tex[view][index];
+}
 #endif
 static void xpkit_init(void) {
     int i; char name[128];
@@ -94,12 +214,14 @@ static void xpkit_stop(void) {
     if(xpkit_pid>0) {
         int status, n; kill(xpkit_pid,SIGTERM);
         for(n=0;n<20;++n) {
-            if(waitpid(xpkit_pid,&status,WNOHANG)!=0) break;
+            pid_t r=waitpid(xpkit_pid,&status,WNOHANG);
+            if(r!=0) break;
             struct timespec pause={0,5000000}; nanosleep(&pause,NULL);
         }
         if(n==20) { kill(xpkit_pid,SIGKILL); waitpid(xpkit_pid,&status,0); }
     }
     xpkit_pid=0;
+    xpkit_surfaces_release();
     if(xpkit_shared) munmap(xpkit_shared,sizeof(*xpkit_shared));
     xpkit_shared=NULL;
     if(xpkit_shared_path[0]) unlink(xpkit_shared_path);
@@ -110,11 +232,17 @@ static void xpkit_stop(void) {
     xpkit_efb_reset();
     xpkit_nd_reset();
     memset(xpkit_uploaded,0,sizeof(xpkit_uploaded));
+    memset(xpkit_kind,0,sizeof(xpkit_kind));
+    memset(xpkit_requested,0,sizeof(xpkit_requested));
+    memset(xpkit_waiting_since,0,sizeof(xpkit_waiting_since));
     xpkit_logged=0;
+    xpkit_web=XPKIT_WEB_NONE; xpkit_restarts=0;
 }
 static void xpkit_start(void) {
-    char plugin[2048], helper[2304], assets[2304], system[2048], *slash;
-#if APL
+    char plugin[2048], *slash;
+#if IBM
+    char helper[2304], assets[2304], system[2048];
+#else
     int fd;
 #endif
     xpkit_stop();
@@ -130,14 +258,14 @@ static void xpkit_start(void) {
     snprintf(assets,sizeof(assets),"%s/xp-kit",plugin);
     XPLMGetSystemPath(system);
     if(!xpkit_windows_start(helper,assets,system)) {
-        XPLMDebugString("A380X xp-kit: Windows helper could not start; inspect aircraft plugin files and display-host.log.\n");
+        XPLMDebugString("A380X xp-kit: Windows helper could not start; native PFD/ND (inspect aircraft plugin files and display-host.log).\n");
         xpkit_stop();return;
     }
 #else
-    snprintf(helper,sizeof(helper),"%s/A380XDisplayHost",plugin);
-    snprintf(assets,sizeof(assets),"%s/xp-kit",plugin);
-    if(!xpkit_prepare_helper(helper)) {
-        XPLMDebugString("A380X xp-kit: display helper absent; native PFD fallback.\n"); return;
+    snprintf(xpkit_helper_path,sizeof(xpkit_helper_path),"%s/A380XDisplayHost",plugin);
+    snprintf(xpkit_assets_path,sizeof(xpkit_assets_path),"%s/xp-kit",plugin);
+    if(!xpkit_prepare_helper(xpkit_helper_path)) {
+        XPLMDebugString("A380X xp-kit: display helper absent; native PFD/ND.\n"); return;
     }
     strcpy(xpkit_shared_path,"/tmp/a380x-cockpit-XXXXXX");
     fd=mkstemp(xpkit_shared_path);
@@ -148,11 +276,17 @@ static void xpkit_start(void) {
     if(xpkit_shared==MAP_FAILED) { xpkit_shared=NULL; xpkit_stop(); return; }
     memset(xpkit_shared,0,sizeof(*xpkit_shared));
     xpkit_shared->magic=XPKIT_MAGIC; xpkit_shared->version=XPKIT_VERSION;
-    XPLMGetSystemPath(system);
-    char *argv[]={helper,xpkit_shared_path,assets,system,NULL};
-    if(posix_spawn(&xpkit_pid,helper,NULL,NULL,argv,environ)) { xpkit_pid=0; xpkit_stop(); return; }
+    for(int v=0;v<XPKIT_VIEWS;++v) atomic_store(&xpkit_shared->surface_front[v],XPKIT_SURFACE_PIXELS);
+    xpkit_surfaces_create();
+    XPLMGetSystemPath(xpkit_system_path);
+    if(!xpkit_spawn()) {
+        XPLMDebugString("A380X xp-kit: display helper could not be started; native PFD/ND.\n");
+        xpkit_stop(); return;
+    }
 #endif
-    xpkit_health[0]=1; xpkit_last_update=0;
+    xpkit_web=XPKIT_WEB_RUNNING; xpkit_restarts=0;
+    xpkit_health[0]=1; xpkit_last_state=xpkit_last_slow=0;
+    xpkit_watch_since=xpkit_now(); xpkit_watch_progress=0;
     XPLMDebugString("A380X xp-kit: aircraft-local display renderer started (no web server).\n");
 }
 static void xpkit_shutdown(void) {
@@ -285,34 +419,262 @@ static void xpkit_guidance_words(XpKitJson *j) {
 #include "a380x_xpkit_nd_data.inc"
 #include "a380x_xpkit_mfd.inc"
 #include "a380x_xpkit_sd.inc"
-static void xpkit_update(void) {
-    if(!xpkit_shared || !xpkit_pid) return;
-#if APL
-    int status;
-    int child_exited=waitpid(xpkit_pid,&status,WNOHANG)==xpkit_pid;
-#else
-    int child_exited=WaitForSingleObject(xpkit_pid,0)!=WAIT_TIMEOUT;
-#endif
-    if(child_exited) {
+/* ---- helper supervision ---- */
+static void xpkit_helper_lost(double now,const char *what) {
+    char line[320];
 #if IBM
-        CloseHandle(xpkit_pid);
-        if(xpkit_job){CloseHandle(xpkit_job);xpkit_job=NULL;}
+    CloseHandle(xpkit_pid);
+    if(xpkit_job){CloseHandle(xpkit_job);xpkit_job=NULL;}
 #endif
-        xpkit_pid=0; xpkit_health[0]=xpkit_health[1]=xpkit_health[2]=xpkit_health[6]=xpkit_health[7]=xpkit_health[13]=xpkit_health[14]=xpkit_health[17]=0;
-        xpkit_health[XPKIT_EFB_HEALTH]=xpkit_health[XPKIT_EFB_HEALTH+1]=0;
-        a380x_efb_needs_drawing(0); a380x_efb_needs_drawing(1);   /* repaint the native fallback */
-        xpkit_nd_renderer_lost();
-        xpkit_pfd_renderer_lost();
-        XPLMDebugString("A380X xp-kit: helper exited; native PFD fallback.\n"); return;
+    xpkit_pid=0; xpkit_health[0]=xpkit_health[1]=xpkit_health[2]=xpkit_health[6]=xpkit_health[7]=xpkit_health[13]=xpkit_health[14]=xpkit_health[17]=0;
+    xpkit_health[XPKIT_EFB_HEALTH]=xpkit_health[XPKIT_EFB_HEALTH+1]=0;
+    if(xpkit_restarts<XPKIT_MAX_RESTARTS) {
+        xpkit_web=XPKIT_WEB_RESTARTING; xpkit_restart_at=now+XPKIT_RESTART_DELAY;
+        snprintf(line,sizeof(line),"A380X xp-kit: display helper %s; restart %d/%d in %.0f s (PFD/ND keep their last frame).\n",
+                 what,xpkit_restarts+1,XPKIT_MAX_RESTARTS,XPKIT_RESTART_DELAY);
+    } else {
+        xpkit_web=XPKIT_WEB_NONE;
+        snprintf(line,sizeof(line),"A380X xp-kit: display helper %s; %d restarts used, native PFD/ND until the plugin is re-enabled.\n",
+                 what,XPKIT_MAX_RESTARTS);
     }
-    double now=xpkit_now(); if(now-xpkit_last_update<.045) return;
-    xpkit_last_update=now;
+    XPLMDebugString(line);
+    a380x_efb_needs_drawing(0); a380x_efb_needs_drawing(1);   /* repaint the native fallback */
+    xpkit_nd_renderer_lost();
+    xpkit_pfd_renderer_lost();
+}
+/* Same mapping, same surfaces: the restarted helper continues the sequences and writes the next
+ * surface, so the last presented frame stays valid. A frame the dead helper left half-written (odd
+ * sequence) is closed and never presented. */
+static void xpkit_restart(double now) {
+    char line[200];
+    A380XXpKitShared *s=xpkit_shared;
+    int started;
+    ++xpkit_restarts;
+    if(s) for(int v=0;v<XPKIT_VIEWS;++v) {
+        atomic_store(&s->ready[v],0);
+        unsigned seq=atomic_load(&s->frame_seq[v]);
+        if(seq&1) { atomic_store(&s->frame_seq[v],seq+1); xpkit_uploaded[v]=seq+1; }
+    }
+#if IBM
+    started=s && xpkit_windows_spawn();
+#else
+    started=s && xpkit_spawn();
+#endif
+    if(!started) {
+        xpkit_web=XPKIT_WEB_NONE;
+        XPLMDebugString("A380X xp-kit: display helper restart failed; native PFD/ND until the plugin is re-enabled.\n");
+        xpkit_nd_renderer_lost(); xpkit_pfd_renderer_lost();
+        return;
+    }
+    xpkit_web=XPKIT_WEB_RUNNING; xpkit_health[0]=1;
+    xpkit_watch_since=now; xpkit_watch_progress=s->frame_time[0];
+    snprintf(line,sizeof(line),"A380X xp-kit: display helper restarted (%d/%d).\n",xpkit_restarts,XPKIT_MAX_RESTARTS);
+    XPLMDebugString(line);
+}
+static void xpkit_supervise(double now) {
+    if(xpkit_web==XPKIT_WEB_RUNNING && xpkit_pid) {
+        char what[96];
+        int exited;
+#if APL
+        int status=0;
+        exited=xpkit_helper_gone(&status);
+        if(exited) {
+            if(WIFSIGNALED(status)) snprintf(what,sizeof(what),"exited (signal %d)",WTERMSIG(status));
+            else snprintf(what,sizeof(what),"exited (status %d)",WIFEXITED(status)?WEXITSTATUS(status):-1);
+        }
+#else
+        DWORD code=0;
+        exited=WaitForSingleObject(xpkit_pid,0)!=WAIT_TIMEOUT;
+        if(exited) { GetExitCodeProcess(xpkit_pid,&code); snprintf(what,sizeof(what),"exited (code %lu)",(unsigned long)code); }
+#endif
+        if(!exited && xpkit_shared) {
+            /* Progress = a PFD frame or heartbeat. A stalled simulator loop (loading) is not the helper's fault. */
+            double progress=xpkit_shared->frame_time[0];
+            if(progress!=xpkit_watch_progress) { xpkit_watch_progress=progress; xpkit_watch_since=now; }
+            if(xpkit_loop_time>0 && now-xpkit_loop_time>1.0) xpkit_watch_since=now;
+            if(now-xpkit_watch_since>XPKIT_WATCHDOG) {
+#if APL
+                xpkit_kill_helper();
+#else
+                xpkit_windows_kill();
+#endif
+                snprintf(what,sizeof(what),"unresponsive (no PFD frame or heartbeat for %.0f s), killed",XPKIT_WATCHDOG);
+                exited=1;
+            }
+        }
+        if(exited) xpkit_helper_lost(now,what);
+    }
+    if(xpkit_web==XPKIT_WEB_RESTARTING && now>=xpkit_restart_at) xpkit_restart(now);
+    xpkit_loop_time=now;
+}
+
+/* ---- frames: acquire (surface or upload) and present ---- */
+static void xpkit_presented(int view,unsigned seq) {
+    xpkit_uploaded[view]=seq;
+    xpkit_health[view<2?view+4:view<4?view+6:view<6?view+11:view<XPKIT_EFB_VIEW0?18:XPKIT_EFB_HEALTH+2+view-XPKIT_EFB_VIEW0]=(int)(seq/2);
+}
+/* Take the newest complete frame of a view, if it is new: a surface index (zero-copy) or an upload
+ * (PFD/ND only with this frame's upload grant). Otherwise the view keeps presenting its last frame. */
+static void xpkit_acquire(int view) {
+    if(!xpkit_shared) return;
+    unsigned seq=atomic_load_explicit(&xpkit_shared->frame_seq[view],memory_order_acquire);
+    if((seq&1) || seq==xpkit_uploaded[view]) return;
+    uint32_t front=atomic_load_explicit(&xpkit_shared->surface_front[view],memory_order_acquire);
+    if(front<XPKIT_SURFACES) {
+#if APL
+        if(xpkit_zero_copy>0 && atomic_load_explicit(&xpkit_shared->frame_seq[view],memory_order_acquire)==seq) {
+            if(!xpkit_surface_texture(view,(int)front)) { xpkit_zero_copy_off("CGLTexImageIOSurface2D failed for a display surface"); return; }
+            xpkit_kind[view]=2; xpkit_front[view]=(unsigned char)front; xpkit_presented(view,seq);
+        }
+#endif
+        return;   /* a surface frame this session cannot sample: the helper re-captures into the pixel arrays */
+    }
+    if(view<4 && (xpkit_grant[view]!=xpkit_frame_no || xpkit_grant_used[view])) return;
+    memcpy(xpkit_staging,xpkit_view_pixels(xpkit_shared,view),xpkit_view_bytes(view));
+    atomic_thread_fence(memory_order_acquire);
+    if(atomic_load_explicit(&xpkit_shared->frame_seq[view],memory_order_acquire)!=seq) return;
+    if(!xpkit_texture[view]) {
+        int texture; XPLMGenerateTextureNumbers(&texture,1); xpkit_texture[view]=(GLuint)texture;
+        XPLMBindTexture2d(texture,0);
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D,0,view>=2&&view<4?GL_RGBA8:GL_RGBA,
+            xpkit_view_width(view),xpkit_view_height(view),0,GL_RGBA,GL_UNSIGNED_BYTE,xpkit_staging);
+    } else {
+        XPLMBindTexture2d((int)xpkit_texture[view],0);
+        glTexSubImage2D(GL_TEXTURE_2D,0,0,0,xpkit_view_width(view),xpkit_view_height(view),GL_RGBA,GL_UNSIGNED_BYTE,xpkit_staging);
+    }
+    if(view<4) { xpkit_grant_used[view]=1; xpkit_waiting_since[view]=0; }
+    if(view>=2 && view<4) {
+        atomic_fetch_add_explicit(&xpkit_shared->nd_profile[view-2].upload_count,1,memory_order_relaxed);
+        atomic_fetch_add_explicit(&xpkit_shared->nd_profile[view-2].upload_bytes,xpkit_view_bytes(view),memory_order_relaxed);
+    }
+    xpkit_kind[view]=1; xpkit_presented(view,seq);
+}
+static int xpkit_present(int view,float x,float y,float width,float height) {
+#if APL
+    if(xpkit_kind[view]==2) {
+        GLuint texture=xpkit_surface_texture(view,xpkit_front[view]);
+        if(!texture) return 0;
+        XPLMSetGraphicsState(0,0,0,0,1,0,0);
+        xpkit_surface_quad(texture,xpkit_view_width(view),xpkit_view_height(view),x,y,width,height);
+        return 1;
+    }
+#endif
+    if(xpkit_kind[view]!=1 || !xpkit_texture[view]) return 0;
+    XPLMSetGraphicsState(0,1,0,0,1,0,0); XPLMBindTexture2d((int)xpkit_texture[view],0);
+    glColor4f(1,1,1,1); glBegin(GL_QUADS);
+    glTexCoord2f(0,1);glVertex2f(x,y);glTexCoord2f(1,1);glVertex2f(x+width,y);
+    glTexCoord2f(1,0);glVertex2f(x+width,y+height);glTexCoord2f(0,0);glVertex2f(x,y+height);
+    glEnd(); XPLMSetGraphicsState(0,0,0,0,1,0,0); return 1;
+}
+/* PFD/ND (views 0..3) present their last frame whatever its age; the MFD/SD/EFB views only a fresh
+ * frame of a live helper (their callers then draw the native page). device: a cockpit-device draw
+ * callback (runs the one-time zero-copy probe), not the panel atlas. */
+static int xpkit_draw_view_from(int view,float x,float y,float width,float height,int device) {
+#if APL
+    if(device) xpkit_zero_copy_probe();
+#else
+    (void)device;
+#endif
+    if(view>=4) {
+        int health=view<6?view+9:view<XPKIT_EFB_VIEW0?17:XPKIT_EFB_HEALTH+view-XPKIT_EFB_VIEW0;
+        if(!xpkit_shared || !xpkit_health[0] || !xpkit_health[health] ||
+           xpkit_now()-xpkit_shared->frame_time[view]>=1.0) return 0;
+    }
+    xpkit_acquire(view);
+    return xpkit_present(view,x,y,width,height);
+}
+static int xpkit_draw_view(int view,float x,float y,float width,float height) {
+    return xpkit_draw_view_from(view,x,y,width,height,1);
+}
+static void xpkit_device_draw_begin(void) {
+#if APL
+    xpkit_zero_copy_probe();
+#endif
+}
+static int xpkit_draw(int side,float x,float y) { return xpkit_web_possible() && xpkit_draw_view_from(side,x,y,320,416,0); }
+static int xpkit_draw_nd(int side,float x,float y) { return xpkit_web_possible() && xpkit_draw_view_from(side+2,x,y,180,234,0); }
+static int xpkit_draw_mfd(int side,float x,float y,float scale) { return xpkit_draw_view(side+4,x,y,768*scale,1024*scale); }
+static int xpkit_draw_sd(void) { return xpkit_draw_view(6,0,0,768,1024); }
+/* The panel-atlas PFD/ND regions are drawn only while their cockpit devices are not active: exactly
+ * the values a380x_mfd_screens.obj / a380x_cockpit_controls.obj hide them with. */
+static int xpkit_pfd_atlas_needed(void) { return !xpkit_health[19]; }
+static int xpkit_nd_atlas_needed(void) { return !xpkit_health[10]; }
+
+/* ---- per-frame presentation polls ---- */
+/* Upload path: grant at most XPKIT_UPLOADS_PER_FRAME PFD/ND uploads (XPKIT_UPLOAD_BYTES_PER_FRAME) to
+ * the views whose frame has waited longest. A grant its device did not draw sends the view to the back. */
+static void xpkit_grant_uploads(void) {
+    int order[4], n=0, granted=0; size_t bytes=0;
+    ++xpkit_frame_no;
+    for(int v=0;v<4;++v) {
+        unsigned seq=xpkit_shared?atomic_load(&xpkit_shared->frame_seq[v]):0;
+        int pending=seq && !(seq&1) && seq!=xpkit_uploaded[v] &&
+                    atomic_load(&xpkit_shared->surface_front[v])>=XPKIT_SURFACES;
+        if(!pending) { xpkit_waiting_since[v]=0; continue; }
+        if(!xpkit_waiting_since[v] || (xpkit_grant[v]==xpkit_frame_no-1 && !xpkit_grant_used[v]))
+            xpkit_waiting_since[v]=xpkit_frame_no;
+        int k=n++;
+        while(k>0 && xpkit_waiting_since[order[k-1]]>xpkit_waiting_since[v]) { order[k]=order[k-1]; --k; }
+        order[k]=v;
+    }
+    for(int k=0;k<n;++k) {
+        int v=order[k]; size_t size=xpkit_view_bytes(v);
+        if(granted>=XPKIT_UPLOADS_PER_FRAME || (granted && bytes+size>XPKIT_UPLOAD_BYTES_PER_FRAME)) break;
+        xpkit_grant[v]=xpkit_frame_no; xpkit_grant_used[v]=0; bytes+=size; ++granted;
+    }
+}
+/* MFD/SD/EFB: request one device redraw per new frame (retried every 250 ms while not drawn). */
+static int xpkit_frame_unclaimed(int view,double now) {
+    unsigned seq=xpkit_shared?atomic_load(&xpkit_shared->frame_seq[view]):0;
+    if(!seq || (seq&1) || seq==xpkit_uploaded[view]) return 0;
+    if(seq==xpkit_requested[view] && now-xpkit_requested_at[view]<.25) return 0;
+    xpkit_requested[view]=seq; xpkit_requested_at[view]=now;
+    return 1;
+}
+static int xpkit_view_live(int view,double now) {
+    A380XXpKitShared *s=xpkit_shared;
+    return s && atomic_load(&s->ready[view]) && atomic_load(&s->frame_seq[view])>0 && now-s->frame_time[view]<1.0;
+}
+static void xpkit_present_poll(double now) {
+    int web=xpkit_web_possible();
+    if(xpkit_shared) xpkit_health[3]=(int)atomic_load_explicit(&xpkit_shared->errors,memory_order_acquire);
+    for(int i=0;i<2;++i) xpkit_health[i+1]=xpkit_health[0] && xpkit_view_live(i,now);
+    for(int i=0;i<2;++i) xpkit_health[i+6]=xpkit_health[0] && xpkit_view_live(i+2,now);
+    for(int i=0;i<2;++i) {
+        xpkit_health[i+13]=xpkit_health[0] && xpkit_view_live(i+4,now);
+        /* mfda_update requests page/cursor redraws; only a newly completed
+         * texture needs another request here (not an unconditional per-frame draw). */
+        if(mfda_dev[i].handle && mfda_av.loaded && xpkit_frame_unclaimed(i+4,now))
+            mfda_av.needs_drawing(mfda_dev[i].handle);
+    }
+    for(int i=0;i<2;++i) {
+        /* power value also changes with the CDS boot / self-test state (device redraw) */
+        XpKitNd *d=&xpkit_nd[i]; int live=xpkit_health[i+6],powered=xpkit_nd_on(d)?8:a380x_power_du_state(xpkit_nd_du(d))+1;
+        unsigned seq=xpkit_shared?atomic_load(&xpkit_shared->frame_seq[i+2]):0;
+        /* Native ND (no web renderer): drawOnDemand device, animated every frame. */
+        if(d->device && mfda_av.loaded &&
+           (xpkit_nd_frame_pending(d,seq,live,powered) || (!web && powered==8)))
+            mfda_av.needs_drawing(d->device);
+        d->draw_live=live;d->draw_powered=powered;
+    }
+    xpkit_health[17]=xpkit_view_live(6,now);
+    if(sda.device&&mfda_av.loaded&&xpkit_frame_unclaimed(6,now))mfda_av.needs_drawing(sda.device);
+    xpkit_efb_poll(now);
+    xpkit_pfd_poll();
+    xpkit_grant_uploads();
+    if(!xpkit_logged && xpkit_health[1] && xpkit_health[2]) {
+        char line[200];
+        snprintf(line,sizeof(line),"A380X xp-kit: BOTH FlyByWire library PFDs active (%dx%d cockpit devices, %s).\n",
+                 xpkit_view_width(0),xpkit_view_height(0),xpkit_zero_copy>0?"zero-copy frames":"texture uploads");
+        XPLMDebugString(line); xpkit_logged=1;
+    }
+}
+static void xpkit_publish_state(double now) {
     static XpKitJson j; j.size=0;j.failed=0; float bus[1]={0};
-    xpkit_nd_poll();
-    xpkit_mfd_publish();
-    xpkit_sd_publish();
-    xpkit_efb_drain();
-    xpkit_efb_publish();
     XPLMGetDatavf(adirs_raw[AR_BUS],bus,0,1);
     xpkit_append(&j,"{\"ok\":true,\"mode\":\"native\",\"values\":{");
     xpkit_append(&j,"\"sim/cockpit2/electrical/bus_volts\":[%.5g],",isfinite(bus[0])?bus[0]:0);
@@ -357,77 +719,27 @@ static void xpkit_update(void) {
     memcpy(xpkit_shared->state,j.data,j.size+1); xpkit_shared->state_size=(uint32_t)j.size;
     xpkit_shared->state_time=now;
     atomic_store_explicit(&xpkit_shared->state_seq,seq+2,memory_order_release);
-    xpkit_health[3]=(int)atomic_load_explicit(&xpkit_shared->errors,memory_order_acquire);
-    for(int i=0;i<2;++i) xpkit_health[i+1]=xpkit_health[0] && atomic_load(&xpkit_shared->ready[i]) &&
-        atomic_load(&xpkit_shared->frame_seq[i])>0 && now-xpkit_shared->frame_time[i]<1.0;
-    for(int i=0;i<2;++i) xpkit_health[i+6]=xpkit_health[0] && atomic_load(&xpkit_shared->ready[i+2]) &&
-        atomic_load(&xpkit_shared->frame_seq[i+2])>0 && now-xpkit_shared->frame_time[i+2]<1.0;
-    for(int i=0;i<2;++i) {
-        xpkit_health[i+13]=xpkit_health[0] && atomic_load(&xpkit_shared->ready[i+4]) &&
-            atomic_load(&xpkit_shared->frame_seq[i+4])>0 && now-xpkit_shared->frame_time[i+4]<1.0;
-        /* mfda_update requests page/cursor redraws; only a newly completed
-         * texture needs another request here (not an unconditional 20 Hz draw). */
-        if(mfda_dev[i].handle && mfda_av.loaded &&
-           atomic_load(&xpkit_shared->frame_seq[i+4])!=xpkit_uploaded[i+4])
-            mfda_av.needs_drawing(mfda_dev[i].handle);
-    }
-    for(int i=0;i<2;++i) {
-        /* power value also changes with the CDS boot / self-test state (device redraw) */
-        XpKitNd *d=&xpkit_nd[i]; int live=xpkit_health[i+6],powered=xpkit_nd_on(d)?8:a380x_power_du_state(xpkit_nd_du(d))+1;
-        if(d->device && mfda_av.loaded &&
-           xpkit_nd_frame_pending(d,atomic_load(&xpkit_shared->frame_seq[i+2]),live,powered))
-            mfda_av.needs_drawing(d->device);
-        d->draw_live=live;d->draw_powered=powered;
-    }
-    xpkit_health[17]=atomic_load(&xpkit_shared->ready[6])&&atomic_load(&xpkit_shared->frame_seq[6])>0&&now-xpkit_shared->frame_time[6]<1.0;
-    if(sda.device&&mfda_av.loaded&&atomic_load(&xpkit_shared->frame_seq[6])!=xpkit_uploaded[6])mfda_av.needs_drawing(sda.device);
-    xpkit_efb_poll(now);
-    xpkit_pfd_poll();
-    if(!xpkit_logged && xpkit_health[1] && xpkit_health[2]) {
-        XPLMDebugString("A380X xp-kit: BOTH FlyByWire library PFDs active (768x1024 cockpit devices, atlas fallback).\n"); xpkit_logged=1;
-    }
 }
-static int xpkit_draw_view(int side,float x,float y,float width,float height) {
-    int health=side<2?side+1:side<4?side+4:side<6?side+9:side<XPKIT_EFB_VIEW0?17:XPKIT_EFB_HEALTH+side-XPKIT_EFB_VIEW0;
-    if(!xpkit_shared || !xpkit_health[0] || !xpkit_health[health] ||
-       xpkit_now()-xpkit_shared->frame_time[side]>=1.0) return 0;
-    unsigned seq=atomic_load_explicit(&xpkit_shared->frame_seq[side],memory_order_acquire);
-    if(!(seq&1) && seq!=xpkit_uploaded[side]) {
-        memcpy(xpkit_staging,xpkit_view_pixels(xpkit_shared,side),xpkit_view_bytes(side));
-        atomic_thread_fence(memory_order_acquire);
-        if(atomic_load_explicit(&xpkit_shared->frame_seq[side],memory_order_acquire)==seq) {
-            if(!xpkit_texture[side]) {
-                int texture; XPLMGenerateTextureNumbers(&texture,1); xpkit_texture[side]=(GLuint)texture;
-                XPLMBindTexture2d(texture,0);
-                glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
-                glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-                glTexImage2D(GL_TEXTURE_2D,0,side>=2&&side<4?GL_RGBA8:GL_RGBA,
-                    xpkit_view_width(side),xpkit_view_height(side),0,GL_RGBA,GL_UNSIGNED_BYTE,xpkit_staging);
-            } else {
-                XPLMBindTexture2d((int)xpkit_texture[side],0);
-                glTexSubImage2D(GL_TEXTURE_2D,0,0,0,xpkit_view_width(side),xpkit_view_height(side),GL_RGBA,GL_UNSIGNED_BYTE,xpkit_staging);
-            }
-            xpkit_uploaded[side]=seq;
-            if(side>=2 && side<4) {
-                atomic_fetch_add_explicit(&xpkit_shared->nd_profile[side-2].upload_count,1,memory_order_relaxed);
-                atomic_fetch_add_explicit(&xpkit_shared->nd_profile[side-2].upload_bytes,xpkit_view_bytes(side),memory_order_relaxed);
-            }
-            xpkit_health[side<2?side+4:side<4?side+6:side<6?side+11:side<XPKIT_EFB_VIEW0?18:XPKIT_EFB_HEALTH+2+side-XPKIT_EFB_VIEW0]=(int)(seq/2);
+/* Every flight loop: supervision, ND cursor sampling, publication (PFD/ND state up to 75 Hz, the
+ * MFD/SD/EFB publishers every 45 ms) and the presentation polls - also without a helper, so the
+ * on-demand devices are still redrawn (native PFD/ND every frame). */
+static void xpkit_update(void) {
+    double now=xpkit_now();
+    xpkit_supervise(now);
+    xpkit_nd_poll();
+    if(xpkit_shared && xpkit_pid) {
+        if(now-xpkit_last_slow>=XPKIT_SLOW_PERIOD) {
+            xpkit_last_slow=now;
+            xpkit_mfd_publish();
+            xpkit_sd_publish();
+            xpkit_efb_drain();
+            xpkit_efb_publish();
         }
+        /* 0.5 ms tolerance: a 75 Hz simulator frame publishes every frame despite timer jitter. */
+        if(now-xpkit_last_state>=XPKIT_STATE_PERIOD-.0005) { xpkit_last_state=now; xpkit_publish_state(now); }
     }
-    if(!xpkit_uploaded[side]) return 0;
-    XPLMSetGraphicsState(0,1,0,0,1,0,0); XPLMBindTexture2d((int)xpkit_texture[side],0);
-    glColor4f(1,1,1,1); glBegin(GL_QUADS);
-    glTexCoord2f(0,1);glVertex2f(x,y);glTexCoord2f(1,1);glVertex2f(x+width,y);
-    glTexCoord2f(1,0);glVertex2f(x+width,y+height);glTexCoord2f(0,0);glVertex2f(x,y+height);
-    glEnd(); XPLMSetGraphicsState(0,0,0,0,1,0,0); return 1;
+    xpkit_present_poll(now);
 }
-static int xpkit_draw(int side,float x,float y) { return xpkit_draw_view(side,x,y,320,416); }
-static int xpkit_draw_nd(int side,float x,float y) { return xpkit_draw_view(side+2,x,y,180,234); }
-static int xpkit_draw_mfd(int side,float x,float y,float scale) { return xpkit_draw_view(side+4,x,y,768*scale,1024*scale); }
-static int xpkit_draw_sd(void) { return xpkit_draw_view(6,0,0,768,1024); }
 #else
 static void xpkit_init(void) {}
 static void xpkit_start(void) {}
@@ -435,7 +747,6 @@ static void xpkit_update(void) {}
 static void xpkit_stop(void) {}
 static void xpkit_shutdown(void) {}
 static int xpkit_draw(int side,float x,float y) { (void)side;(void)x;(void)y;return 0; }
-static int xpkit_pfd_atlas_needed(int side) { (void)side; return 1; }
 static int xpkit_draw_nd(int side,float x,float y) { (void)side;(void)x;(void)y;return 0; }
 static int xpkit_draw_mfd(int side,float x,float y,float scale) { (void)side;(void)x;(void)y;(void)scale;return 0; }
 static int xpkit_draw_sd(void) { return 0; }

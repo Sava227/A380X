@@ -4,6 +4,7 @@
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
 #import <Accelerate/Accelerate.h>
+#import <IOSurface/IOSurface.h>
 #import <objc/message.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -43,7 +44,7 @@ static uint64_t fnv1a(const void *bytes, size_t length) {
     for (size_t i = 0; i < length; ++i) hash = (hash ^ p[i]) * 1099511628211ULL;
     return hash;
 }
-/* v9 capture path. WebKit paints a snapshot at the window's backing scale (2 on a Retina Mac), so a
+/* Exact-scale capture. WebKit paints a snapshot at the window's backing scale (2 on a Retina Mac), so a
  * 768x1024 PFD used to be painted as 1536x2048 (an ND at 1.5 as 2304x3072) and then resampled on the
  * CPU: four times the paint work plus a slow high-quality downscale per frame. With the page's device
  * scale factor set to the view's own capture scale, WebKit paints exactly the texture size and the
@@ -55,33 +56,44 @@ static BOOL exact_scale_capture(WKWebView *view, CGFloat scale) {
     ((void (*)(id, SEL, CGFloat))objc_msgSend)(view, setter, scale);
     return YES;
 }
-/* A same-size 32-bit snapshot -> RGBA in dst. NO when the image needs scaling or has another layout. */
-static BOOL copy_exact(CGImageRef cg, unsigned char *dst, int width, int height) {
+/* A same-size 32-bit snapshot -> dst (row stride dst_row) as RGBA (v8 pixel arrays) or BGRA (v9
+ * 'BGRA' IOSurface). A snapshot already in the wanted byte order is copied row by row, otherwise its
+ * channels are permuted (vImage). NO when the image needs scaling or has another layout. */
+static BOOL copy_exact(CGImageRef cg, unsigned char *dst, size_t dst_row, int width, int height, BOOL bgra) {
     if (!cg || CGImageGetWidth(cg) != (size_t)width || CGImageGetHeight(cg) != (size_t)height ||
         CGImageGetBitsPerPixel(cg) != 32 || CGImageGetBitsPerComponent(cg) != 8) return NO;
     CGImageAlphaInfo alpha = CGImageGetAlphaInfo(cg);
     uint32_t order = CGImageGetBitmapInfo(cg) & kCGBitmapByteOrderMask;
-    uint8_t map[4];
+    BOOL source_bgra;
     if (order == kCGBitmapByteOrder32Little && (alpha == kCGImageAlphaPremultipliedFirst ||
-        alpha == kCGImageAlphaNoneSkipFirst || alpha == kCGImageAlphaFirst)) {
-        map[0] = 2; map[1] = 1; map[2] = 0; map[3] = 3;          /* B,G,R,A bytes -> R,G,B,A */
-    } else if ((order == kCGBitmapByteOrder32Big || order == kCGBitmapByteOrderDefault) &&
-               (alpha == kCGImageAlphaPremultipliedLast || alpha == kCGImageAlphaNoneSkipLast ||
-                alpha == kCGImageAlphaLast)) {
-        map[0] = 0; map[1] = 1; map[2] = 2; map[3] = 3;          /* already R,G,B,A */
-    } else return NO;
+        alpha == kCGImageAlphaNoneSkipFirst || alpha == kCGImageAlphaFirst)) source_bgra = YES;   /* B,G,R,A bytes */
+    else if ((order == kCGBitmapByteOrder32Big || order == kCGBitmapByteOrderDefault) &&
+             (alpha == kCGImageAlphaPremultipliedLast || alpha == kCGImageAlphaNoneSkipLast ||
+              alpha == kCGImageAlphaLast)) source_bgra = NO;                                     /* R,G,B,A bytes */
+    else return NO;
     CGColorSpaceRef space = CGImageGetColorSpace(cg);
     if (space && CGColorSpaceGetModel(space) != kCGColorSpaceModelRGB) return NO;
     CFDataRef data = CGDataProviderCopyData(CGImageGetDataProvider(cg));
     if (!data) return NO;
-    vImage_Buffer source = {(void *)CFDataGetBytePtr(data), (vImagePixelCount)height, (vImagePixelCount)width,
-                            CGImageGetBytesPerRow(cg)};
-    vImage_Buffer target = {dst, (vImagePixelCount)height, (vImagePixelCount)width, (size_t)width * 4};
-    BOOL ok = (size_t)CFDataGetLength(data) >= source.rowBytes * (size_t)height &&
-              vImagePermuteChannels_ARGB8888(&source, &target, map, kvImageNoFlags) == kvImageNoError;
+    size_t source_row = CGImageGetBytesPerRow(cg);
+    BOOL ok = (size_t)CFDataGetLength(data) >= source_row * (size_t)height;
+    if (ok && source_bgra == bgra) {
+        const unsigned char *from = CFDataGetBytePtr(data);
+        for (int y = 0; y < height; ++y) memcpy(dst + (size_t)y * dst_row, from + (size_t)y * source_row, (size_t)width * 4);
+    } else if (ok) {
+        static const uint8_t swap[4] = {2, 1, 0, 3};             /* B,G,R,A <-> R,G,B,A */
+        vImage_Buffer source = {(void *)CFDataGetBytePtr(data), (vImagePixelCount)height, (vImagePixelCount)width, source_row};
+        vImage_Buffer target = {dst, (vImagePixelCount)height, (vImagePixelCount)width, dst_row};
+        ok = vImagePermuteChannels_ARGB8888(&source, &target, swap, kvImageNoFlags) == kvImageNoError;
+    }
     CFRelease(data);
     return ok;
 }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+/* v9: the plugin's global surface (IOSurfaceLookup by ID; deprecated API, present on every macOS 11+). */
+static IOSurfaceRef lookup_surface(uint32_t identifier) { return identifier ? IOSurfaceLookup(identifier) : NULL; }
+#pragma clang diagnostic pop
 
 /* The native page controller owns validation, focus and all aircraft writes.
  * Only bounded drawing primitives cross this boundary. No JS FMC is started.
@@ -134,17 +146,83 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
 @property(nonatomic) BOOL exactScale;           /* WebKit paints at the view's capture scale */
 @property(nonatomic) uint64_t lastStateHash;    /* PFD/ND: state already applied and captured */
 @property(nonatomic) CGContextRef scaleContext; /* fallback resampler, drawing into shared memory */
+@property(nonatomic) uint32_t lastSurfaceMode;  /* v9 surface_mode seen by the last tick */
+@property(nonatomic) BOOL forceCapture;         /* capture the next tick even if the page is unchanged */
 @end
 
-@implementation A380XLibraryView
+@implementation A380XLibraryView {
+    IOSurfaceRef _surface[XPKIT_SURFACES];      /* the plugin's surfaces of this view (v9) */
+    uint32_t _surfaceId[XPKIT_SURFACES];
+    BOOL _surfaceReported;
+}
 - (void)dealloc {
     if (self.scaleContext) CGContextRelease(self.scaleContext);
+    for (int i = 0; i < XPKIT_SURFACES; ++i) if (_surface[i]) CFRelease(_surface[i]);
+}
+/* The plugin's surfaces for this view, looked up again whenever an ID changes; NO unless all exist
+ * with this view's size and 4 bytes per element. */
+- (BOOL)surfacesReady {
+    int side = (int)self.side, width = xpkit_view_width(side), height = xpkit_view_height(side);
+    BOOL ready = YES;
+    for (int i = 0; i < XPKIT_SURFACES; ++i) {
+        uint32_t identifier = atomic_load_explicit(&shared->surface_id[side][i], memory_order_acquire);
+        if (identifier != _surfaceId[i] || (identifier && !_surface[i])) {
+            if (_surface[i]) CFRelease(_surface[i]);
+            _surface[i] = lookup_surface(identifier);
+            _surfaceId[i] = identifier;
+            _surfaceReported = NO;
+        }
+        IOSurfaceRef s = _surface[i];
+        if (!s || IOSurfaceGetWidth(s) != (size_t)width || IOSurfaceGetHeight(s) != (size_t)height ||
+            IOSurfaceGetBytesPerElement(s) != 4) ready = NO;
+    }
+    if (!ready && !_surfaceReported) {
+        _surfaceReported = YES;
+        report_error([NSString stringWithFormat:@"Display surfaces of view %d unavailable; pixel frames", side]);
+    }
+    return ready;
+}
+/* v9 zero-copy: the frame goes into the surface after the presented one; the seqlock publishes it. */
+- (BOOL)storeSurface:(CGImageRef)cg {
+    int side = (int)self.side, width = xpkit_view_width(side), height = xpkit_view_height(side);
+    uint32_t front = atomic_load_explicit(&shared->surface_front[side], memory_order_acquire);
+    uint32_t back = front < XPKIT_SURFACES ? (front + 1) % XPKIT_SURFACES : 0;
+    IOSurfaceRef s = _surface[back];
+    uint32_t seed = 0;
+    if (IOSurfaceLock(s, 0, &seed) != kIOReturnSuccess) return NO;
+    unsigned char *base = IOSurfaceGetBaseAddress(s);
+    size_t row = IOSurfaceGetBytesPerRow(s);
+    BOOL stored = copy_exact(cg, base, row, width, height, YES);
+    if (!stored) {   /* not the capture size (no exact-scale painting): resample into the surface */
+        CGColorSpaceRef color = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        CGContextRef context = CGBitmapContextCreate(base, width, height, 8, row, color,
+                                                     kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+        CGColorSpaceRelease(color);
+        if (context) {
+            CGContextSetBlendMode(context, kCGBlendModeCopy);
+            CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+            CGContextDrawImage(context, CGRectMake(0, 0, width, height), cg);
+            CGContextRelease(context);
+            stored = YES;
+        }
+    }
+    IOSurfaceUnlock(s, 0, &seed);
+    if (!stored) return NO;
+    uint32_t sequence = atomic_load_explicit(&shared->frame_seq[side], memory_order_relaxed);
+    if (sequence & 1) ++sequence;   /* left odd by a helper that died while publishing */
+    atomic_store_explicit(&shared->frame_seq[side], sequence + 1, memory_order_release);
+    atomic_store_explicit(&shared->surface_front[side], back, memory_order_release);
+    shared->frame_time[side] = monotonic_seconds();
+    atomic_store_explicit(&shared->frame_seq[side], sequence + 2, memory_order_release);
+    return YES;
 }
 /* Store a snapshot as this view's RGBA frame (seqlock: odd while writing). */
 - (BOOL)storeImage:(CGImageRef)cg {
     int side = (int)self.side, width = xpkit_view_width(side), height = xpkit_view_height(side);
     unsigned char *pixels = xpkit_view_pixels(shared, side);
     if (!cg) return NO;
+    if (atomic_load_explicit(&shared->surface_mode[side], memory_order_acquire) == 1 && [self surfacesReady] &&
+        [self storeSurface:cg]) return YES;
     BOOL exact = CGImageGetWidth(cg) == (size_t)width && CGImageGetHeight(cg) == (size_t)height;
     if (!exact && !self.scaleContext) {
         CGColorSpaceRef color = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
@@ -156,13 +234,17 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
         CGContextSetInterpolationQuality(self.scaleContext, kCGInterpolationHigh);
     }
     uint32_t sequence = atomic_load_explicit(&shared->frame_seq[side], memory_order_relaxed);
+    if (sequence & 1) ++sequence;   /* left odd by a helper that died while publishing */
     atomic_store_explicit(&shared->frame_seq[side], sequence + 1, memory_order_release);
-    BOOL stored = exact && copy_exact(cg, pixels, width, height);
+    BOOL stored = exact && copy_exact(cg, pixels, (size_t)width * 4, width, height, NO);
     if (!stored && self.scaleContext) {
         CGContextDrawImage(self.scaleContext, CGRectMake(0, 0, width, height), cg);
         stored = YES;
     }
-    if (stored) shared->frame_time[side] = monotonic_seconds();
+    if (stored) {
+        atomic_store_explicit(&shared->surface_front[side], XPKIT_SURFACE_PIXELS, memory_order_release);
+        shared->frame_time[side] = monotonic_seconds();
+    }
     atomic_store_explicit(&shared->frame_seq[side], sequence + 2, memory_order_release);
     return stored;
 }
@@ -254,6 +336,12 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
     if (getppid() == 1) { [NSApp terminate:nil]; return; }
     maintain_display_activity();
     if (!self.loaded || self.busy) return;
+    /* v9: the plugin switched this view between surfaces and pixel arrays (zero-copy probe passed or
+     * failed): capture again even if the page did not change, so its last frame exists in the new place. */
+    uint32_t surfaceMode = atomic_load_explicit(&shared->surface_mode[self.side], memory_order_acquire);
+    if (surfaceMode != self.lastSurfaceMode) {
+        self.lastSurfaceMode = surfaceMode; self.lastStateHash = 0; self.lastMfdSequence = 0; self.forceCapture = YES;
+    }
     uint32_t before = atomic_load_explicit(&shared->state_seq, memory_order_acquire);
     if ((before & 1) || !before || !shared->state_size || shared->state_size >= XPKIT_JSON_CAP) return;
     NSData *data = self.side<4?[NSData dataWithBytes:shared->state length:shared->state_size]:nil;
@@ -264,7 +352,7 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
     /* PFD/ND: the plugin republishes every frame; identical content (paused sim, a timer firing between
      * two publications) keeps the completed texture with a heartbeat instead of a repaint. */
     uint64_t stateHash=self.side<4&&inputValid?fnv1a(data.bytes,data.length):0;
-    if(self.side<4 && stateHash==self.lastStateHash && inputValid==self.lastInputValid &&
+    if(self.side<4 && !self.forceCapture && stateHash==self.lastStateHash && inputValid==self.lastInputValid &&
        atomic_load_explicit(&shared->frame_seq[self.side],memory_order_acquire)) {
         shared->frame_time[self.side]=monotonic_seconds();
         return;
@@ -277,7 +365,7 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
     if(self.side>=4) {
         uint32_t seq=self.side<6?atomic_load_explicit(&shared->mfd[self.side-4].sequence,memory_order_acquire):atomic_load_explicit(&shared->sd.sequence,memory_order_acquire);
         if(!seq || (seq&1))return;
-        if(seq==self.lastMfdSequence && inputValid==self.lastInputValid &&
+        if(!self.forceCapture && seq==self.lastMfdSequence && inputValid==self.lastInputValid &&
            atomic_load_explicit(&shared->frame_seq[self.side],memory_order_acquire)) {
             /* The texture is unchanged, not dead. Heartbeat without snapshots
              * or frame-sequence bumps; a stopped helper cannot renew this. */
@@ -330,7 +418,7 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
             A380XXpKitNdProfile *profile=&shared->nd_profile[self.side-2];
             atomic_fetch_add_explicit(&profile->apply_count,1,memory_order_relaxed);
             atomic_fetch_add_explicit(&profile->apply_ns,(uint64_t)((monotonic_seconds()-applyStarted)*1e9),memory_order_relaxed);
-            if([result isKindOfClass:[NSNumber class]] && ![result boolValue] &&
+            if([result isKindOfClass:[NSNumber class]] && ![result boolValue] && !self.forceCapture &&
                inputValid==self.lastInputValid && atomic_load_explicit(&shared->frame_seq[self.side],memory_order_acquire)) {
                 /* Cursor-only/unchanged content keeps its completed texture and
                  * liveness heartbeat. Actual pointer paint is native geometry. */
@@ -349,6 +437,7 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
         double captureStarted=monotonic_seconds();
         [self captureThen:^(BOOL stored) {
             if (stored) {
+                self.forceCapture=NO;
                 if(mfdSequence)self.lastMfdSequence=mfdSequence;
                 self.lastInputValid=inputValid;
                 if(self.side<4)self.lastStateHash=stateHash;
@@ -383,10 +472,10 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
         if(error){report_error(error.localizedDescription);self.busy=NO;return;}
         if(applied){self.lastMfdSequence=applied;self.lastInputValid=inputValid;}
         BOOL changed=[result isKindOfClass:[NSNumber class]]&&[result boolValue];
-        if(!changed&&atomic_load_explicit(&shared->frame_seq[self.side],memory_order_acquire)) {
+        if(!changed&&!self.forceCapture&&atomic_load_explicit(&shared->frame_seq[self.side],memory_order_acquire)) {
             shared->frame_time[self.side]=monotonic_seconds();self.busy=NO;return;
         }
-        [self captureThen:^(BOOL stored) { (void)stored; self.busy = NO; }];
+        [self captureThen:^(BOOL stored) { if(stored)self.forceCapture=NO; self.busy = NO; }];
     }];
 }
 @end

@@ -1,7 +1,10 @@
-"""Protocol v8 shared-memory layout, matching a380x_xpkit_shared.h exactly.
+"""Protocol v9 shared-memory layout, matching a380x_xpkit_shared.h exactly.
 
-v7: every display unit is captured at its kind's scale (a380x_du_scale.h defaults: PFD 1, ND 3/2,
+v7: every display unit is captured at its kind's scale (a380x_du_scale.h defaults: PFD 3/2, ND 3/2,
 MFD and ECAM SD 7/4) times its 768x1024 layout. v8: plus views 7/8, the two EFB tablets (1440x1000).
+v9: plus the macOS zero-copy fields after the v8 ones: per view SURFACES IOSurface IDs (plugin),
+surface_mode (plugin: 1 = the helper writes surfaces) and surface_front (helper: the surface holding
+the published frame, or SURFACE_PIXELS when the frame is in the pixel arrays).
 """
 import ctypes as C
 import re
@@ -20,9 +23,10 @@ def _scale(kind, defaults):
         return defaults
 
 
-PFD_SCALE, ND_SCALE, MFD_SCALE = _scale('PFD', (1, 1)), _scale('ND', (3, 2)), _scale('MFD', (7, 4))
+PFD_SCALE, ND_SCALE, MFD_SCALE = _scale('PFD', (3, 2)), _scale('ND', (3, 2)), _scale('MFD', (7, 4))
 _px = lambda v, scale: v * scale[0] // scale[1]
-CAP, VERSION = 262144, 8
+CAP, VERSION = 262144, 9
+SURFACES = SURFACE_PIXELS = 3
 W, H = _px(768, PFD_SCALE), _px(1024, PFD_SCALE)
 ND_W, ND_H = _px(768, ND_SCALE), _px(1024, ND_SCALE)
 MFD_W, MFD_H = _px(768, MFD_SCALE), _px(1024, MFD_SCALE)
@@ -81,7 +85,8 @@ class Shared(C.Structure):
                 ('nd_pixels', (C.c_ubyte * (ND_W * ND_H * 4)) * 2),
                 ('mfd_pixels', (C.c_ubyte * (MFD_W * MFD_H * 4)) * 3), ('mfd', MfdFrame * 2), ('sd', SdFrame),
                 ('nd_profile', NdProfile * 2), ('efb_pixels', (C.c_ubyte * (EFB_W * EFB_H * 4)) * 2),
-                ('efb', EfbFrame * 2)]
+                ('efb', EfbFrame * 2), ('surface_id', (C.c_uint32 * SURFACES) * VIEWS),
+                ('surface_mode', C.c_uint32 * VIEWS), ('surface_front', C.c_uint32 * VIEWS)]
 
 
 def view_dimensions(view):

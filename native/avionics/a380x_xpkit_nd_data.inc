@@ -3,6 +3,10 @@
  * actual sensor/EFIS state. Never imports X-Plane's stock FMS route/map.
  */
 static void xpkit_string(XpKitJson *j,const char *text) {
+    const unsigned char *c=(const unsigned char *)text;
+    while(*c && *c!='"' && *c!='\\' && *c>=32) ++c;
+    /* Nothing to escape (the usual ident): one append. The state is now published at up to 75 Hz. */
+    if(!*c) { xpkit_append(j,"\"%s\"",text); return; }
     xpkit_append(j,"\"");
     for(const unsigned char *p=(const unsigned char *)text;*p;++p) {
         if(*p=='"'||*p=='\\')xpkit_append(j,"\\%c",*p);

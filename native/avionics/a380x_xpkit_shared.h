@@ -15,8 +15,17 @@
 /* v7 (GitHub): every PFD/ND/MFD/SD view is captured at its kind's scale (a380x_du_scale.h).
  * v8: v7 plus views 7/8, the two cockpit EFB tablets (1440x1000 at scale 1, the aspect of the old
  * 720x500 atlas region), each with its own JSON frame and a page -> plugin action ring
- * (docs/EFB_DEVELOPMENT.md). Both helpers and tools/xp_kit_transport.py must agree on this layout. */
-#define XPKIT_VERSION 8u
+ * (docs/EFB_DEVELOPMENT.md).
+ * v9: v8 plus zero-copy frames (macOS), appended after the v8 fields so every v8 offset is kept.
+ *     Per view XPKIT_SURFACES IOSurface IDs, created by the PLUGIN (global, 'BGRA', 4 bytes per
+ *     element, view width x height) once per plugin enable and kept across helper restarts.
+ *     surface_mode[view] = 1 (set by the plugin only after its GL capability probe passed): the helper
+ *     writes each frame into back = (surface_front + 1) % XPKIT_SURFACES under IOSurfaceLock and
+ *     publishes it with the frame seqlock (frame_seq odd -> surface_front = back -> frame_time ->
+ *     frame_seq even). surface_mode 0: the helper writes the pixel arrays as in v8 and publishes
+ *     surface_front = XPKIT_SURFACE_PIXELS. The Windows host never uses surfaces.
+ * Both helpers and tools/xp_kit_transport.py must agree on this layout. */
+#define XPKIT_VERSION 9u
 #define XPKIT_VIEWS 9
 #define XPKIT_SD_CAP 65536
 /* v6: PFDs are captured at their full 768x1024 logical size (were 384x512).
@@ -39,6 +48,8 @@
 #define XPKIT_EFB_CAP 49152
 #define XPKIT_EFB_ACTIONS 32
 #define XPKIT_EFB_ACTION_LEN 128
+#define XPKIT_SURFACES 3
+#define XPKIT_SURFACE_PIXELS XPKIT_SURFACES   /* surface_front: this frame is in the v8 pixel arrays */
 typedef struct {
     XPKIT_ATOMIC(uint32_t) sequence;
     uint32_t powered;
@@ -81,6 +92,10 @@ typedef struct {
     A380XXpKitNdProfile nd_profile[2];
     unsigned char efb_pixels[2][XPKIT_EFB_BYTES];
     A380XXpKitEfb efb[2];
+    /* v9: plugin writes surface_id and surface_mode; helper writes surface_front (see above). */
+    XPKIT_ATOMIC(uint32_t) surface_id[XPKIT_VIEWS][XPKIT_SURFACES];
+    XPKIT_ATOMIC(uint32_t) surface_mode[XPKIT_VIEWS];
+    XPKIT_ATOMIC(uint32_t) surface_front[XPKIT_VIEWS];
 } A380XXpKitShared;
 /* The largest view sizes the plugin's texture staging buffer (an MFD/SD at its v7 scale, or an EFB). */
 #define XPKIT_MAX_VIEW_BYTES (XPKIT_EFB_BYTES > XPKIT_MFD_BYTES ? XPKIT_EFB_BYTES : XPKIT_MFD_BYTES)

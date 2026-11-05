@@ -484,24 +484,25 @@ static int draw_panel(XPLMDrawingPhase phase, int before, void *refcon)
     }
     XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
     glLineWidth(1.0f);
-    /* With a bound 768x1024 PFD cockpit device (xp-kit builds) the device
-     * presents the PFD and covers this atlas region: skip the atlas work. */
-    if (xpkit_pfd_atlas_needed(0)) {
+    /* The 320x416 PFD and 180x234 ND panel-atlas copies are drawn only while their cockpit
+     * devices are not active: the same a380x/xp12/xpkit/pfd_devices_active / nd_devices_active
+     * values with which the cockpit OBJs hide those atlas quads (xp-kit and native builds). */
+    if (du_atlas_pfd_needed()) {
         if (!xpkit_draw(0, 0.0f, 32.0f)) draw_pfd(&refs.side[0], 0.0f, 32.0f, "CAPT");
         cds_overlay(A380X_ELN_DU_CAPT_PFD, 0.0f, 32.0f, 320.0f, 416.0f);
         du_dim_display(0, DU_PFD, 0.0f, 32.0f, 320.0f, 416.0f);
-    }
-    if (xpkit_pfd_atlas_needed(1)) {
         if (!xpkit_draw(1, 704.0f, 32.0f)) draw_pfd(&refs.side[1], 704.0f, 32.0f, "F/O");
         cds_overlay(A380X_ELN_DU_FO_PFD, 704.0f, 32.0f, 320.0f, 416.0f);
         du_dim_display(1, DU_PFD, 704.0f, 32.0f, 320.0f, 416.0f);
     }
-    if (!xpkit_draw_nd(0,328.0f,230.0f)) draw_nd(&refs.side[0], 328.0f, 230.0f, "CAPT");
-    cds_overlay(A380X_ELN_DU_CAPT_ND, 328.0f, 230.0f, 180.0f, 234.0f);
-    du_dim_display(0, DU_ND, 328.0f, 230.0f, 180.0f, 234.0f);
-    if (!xpkit_draw_nd(1,516.0f,230.0f)) draw_nd(&refs.side[1], 516.0f, 230.0f, "F/O");
-    cds_overlay(A380X_ELN_DU_FO_ND, 516.0f, 230.0f, 180.0f, 234.0f);
-    du_dim_display(1, DU_ND, 516.0f, 230.0f, 180.0f, 234.0f);
+    if (du_atlas_nd_needed()) {
+        if (!xpkit_draw_nd(0,328.0f,230.0f)) draw_nd(&refs.side[0], 328.0f, 230.0f, "CAPT");
+        cds_overlay(A380X_ELN_DU_CAPT_ND, 328.0f, 230.0f, 180.0f, 234.0f);
+        du_dim_display(0, DU_ND, 328.0f, 230.0f, 180.0f, 234.0f);
+        if (!xpkit_draw_nd(1,516.0f,230.0f)) draw_nd(&refs.side[1], 516.0f, 230.0f, "F/O");
+        cds_overlay(A380X_ELN_DU_FO_ND, 516.0f, 230.0f, 180.0f, 234.0f);
+        du_dim_display(1, DU_ND, 516.0f, 230.0f, 180.0f, 234.0f);
+    }
     EwdData filtered_ewd;sda_filter_ewd(&filtered_ewd,&ewd);
     ewd_brightness=sda.ewd_brightness;
     draw_ewd(&filtered_ewd, 1024.0f, 0.0f);

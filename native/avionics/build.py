@@ -82,6 +82,7 @@ JSC = Path("/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current
 TEST = HERE / "test_avionics_core.c"
 GUIDANCE = HERE / "a380x_guidance.c"
 AURALS = HERE / "a380x_aurals.c"
+XPKIT_SURFACE = HERE / "a380x_xpkit_surface.c"   # macOS zero-copy display frames (xp-kit protocol v9)
 AURALS_TEST = HERE / "test_aurals.c"
 GUIDANCE_TEST = HERE / "test_guidance.c"
 PFD_TEST = HERE / "test_pfd_render.c"
@@ -138,7 +139,7 @@ MFD_TESTS = (("test_mfd_formats", "core"), ("test_fms_core", "core"), ("test_nav
              ("test_mfd_ui", "core"), ("test_mfd_render", "render"), ("test_sd", "render"))
 MFD_OPTIONAL_TESTS = (("test_mfd_pages_a", "render"), ("test_mfd_page_perf", "render"),
                       ("test_mfd_page_fpln", "render"), ("test_mfd_pages_h", "render"))
-EXTRA_INPUTS = [EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
+EXTRA_INPUTS = [EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", HERE / "test_xpkit_zero_copy.c", XPKIT_SURFACE, ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
     EWD_DATA_TEST, EWD_RENDER_TEST, FCU_MOTION_TEST, FCU_LIGHT_TEST, ISIS_TEST, CONTROL_MOTION_TEST,
     *CXX_SOURCES, *[p for p in HERE.glob("*.h") if not p.name.startswith("._")],
     *[p for p in HERE.glob("*.inc") if not p.name.startswith("._")],
@@ -745,10 +746,12 @@ def main() -> None:
     mac = output / "mac.xpl"
     run([clang, *common, *(["-DA380X_XPKIT=1"] if args.xpkit else []), "-DAPL=1", "-arch", "arm64", "-arch", "x86_64",
          "-mmacosx-version-min=11.0", "-dynamiclib", str(PLUGIN), str(CORE), str(EFB), str(EFB_CORE), str(GUIDANCE), str(AURALS), str(ADIRS),
+         *([str(XPKIT_SURFACE)] if args.xpkit else []),
          *map(str, ELEC_NETWORK_SOURCES), *map(str, FWS_SOURCES),
          *map(str, MFD_SOURCES), *mac_laws, "-lc++",
          "-F", str(sdk / "Libraries/Mac"), "-framework", "XPLM",
-         "-framework", "OpenGL", "-Wl,-install_name,A380XAvionics.xpl",
+         "-framework", "OpenGL", "-framework", "IOSurface", "-framework", "CoreFoundation",
+         "-Wl,-install_name,A380XAvionics.xpl",
          "-o", str(mac)])
     run(["codesign", "--force", "--sign", "-", str(mac)])
     run(["codesign", "--verify", "--strict", str(mac)])
@@ -762,6 +765,7 @@ def main() -> None:
 
     xpkit_manifest = None
     nd_input_result = None
+    zero_copy_result = None
     if args.xpkit:
         nd_input_binary=output / "test_xpkit_nd_input"
         run([clang,*warnings,"-Wno-unused-function","-Wno-deprecated-declarations","-DAPL=1",
@@ -774,9 +778,16 @@ def main() -> None:
         host = output / "A380XDisplayHost"
         run([clang, *warnings, "-fobjc-arc", "-arch", "arm64", "-arch", "x86_64",
              "-mmacosx-version-min=11.0", str(HERE / "a380x_xpkit_host.m"),
-             "-framework", "Cocoa", "-framework", "WebKit", "-framework", "CoreGraphics", "-framework", "Accelerate", "-o", str(host)])
+             "-framework", "Cocoa", "-framework", "WebKit", "-framework", "CoreGraphics", "-framework", "Accelerate",
+             "-framework", "IOSurface", "-o", str(host)])
         run(["codesign", "--force", "--sign", "-", str(host)])
         run(["codesign", "--verify", "--strict", str(host)])
+        # Protocol v9 zero-copy frames: the plugin's GL capability probe (a380x_xpkit_surface.h) in a legacy
+        # CGL context, success and forced failure. The full helper run is test_xpkit_zero_copy <helper> ...
+        zero_copy_binary = output / "test_xpkit_zero_copy"
+        run([clang, *warnings, "-I", str(HERE), str(HERE / "test_xpkit_zero_copy.c"), str(XPKIT_SURFACE), "-framework", "OpenGL",
+             "-framework", "IOSurface", "-framework", "CoreFoundation", "-o", str(zero_copy_binary)])
+        zero_copy_result = run([str(zero_copy_binary), "--probe"]).strip()
         xpkit_manifest = json.loads((output / "xp-kit/manifest.json").read_text())
         xpkit_manifest["helper_sha256"] = digest(host)
         xpkit_manifest["architectures"] = run(["lipo", "-archs", str(host)]).split()
@@ -830,6 +841,7 @@ def main() -> None:
     report = {
         "format": 1,
         "xp_kit_nd_input_test_result": nd_input_result,
+        "xp_kit_zero_copy_probe_test_result": zero_copy_result,
         "source_revision": "2baa2b35eadaf4c78e172ce41bbe6b40b4aeafb2",
         "logic_sources": [
             "fbw-a380x/src/systems/instruments/src/PFD/FMADefinitions.ts",

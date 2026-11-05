@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Device texels are A380X_ND_SCALE x 768x1024, bottom-left; every position below is in the
  * 768x1024 logical units the JS client uses (top-left).
- * Every ordered button event is retained across host frames; hover is sampled.
+ * Every ordered button event is retained across host frames; hover is sampled (every frame).
+ * A late web frame or a helper restart keeps the last ND frame (black before the first); the native
+ * ND renderer draws only when no web renderer can run (xpkit_web_possible, from the adapter).
  */
 #include "a380x_du_scale.h"
 #include "a380x_elec_power.h"
@@ -45,8 +47,8 @@ static void xpkit_nd_renderer_lost(void) {
         xpkit_health[side+6]=0;
         d->inside=d->down=d->seen=d->draw_live=0;
         d->presented_frame=0;
-        /* A dead helper cannot publish another frame. Explicitly repaint the
-         * on-demand surface so it presents fallback instead of its last ND. */
+        /* A dead helper cannot publish another frame. Repaint the on-demand surface: it holds the
+         * last ND while a restart is pending and draws the native ND once none can run. */
         if(d->device&&mfda_av.loaded)mfda_av.needs_drawing(d->device);
     }
 }
@@ -120,7 +122,7 @@ static void xpkit_nd_draw_cursor(XpKitNd *d) {
 }
 static void xpkit_nd_draw_device(void *refcon) {
     XpKitNd *d=refcon;
-    GLboolean cull=glIsEnabled(GL_CULL_FACE);glDisable(GL_CULL_FACE);
+    GLboolean cull=glIsEnabled(GL_CULL_FACE);xpkit_device_draw_begin();glDisable(GL_CULL_FACE);
     XPLMSetGraphicsState(0,0,0,0,1,0,0);
     glClearColor(0,0,0,1);glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);glClear(GL_COLOR_BUFFER_BIT);
     /* Keep alpha = 1, as the MFD/SD do: the device is drawn with X-Plane's leftover blend state,
@@ -129,8 +131,12 @@ static void xpkit_nd_draw_device(void *refcon) {
     glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_FALSE);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     glPushMatrix();glScalef(A380X_ND_SCALE,A380X_ND_SCALE,1);  /* 768x1024 logical units */
     if(XPKIT_ND_OVERLAY(d->side)) { d->presented_frame=0; glPopMatrix(); glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE); if(cull)glEnable(GL_CULL_FACE); return; }
-    int rendered=plugin_enabled && xpkit_draw_view(d->side+2,0,0,768,1024);
-    if(plugin_enabled && !rendered) {
+    int web=xpkit_web_possible();
+    /* Web renderer possible: its last frame (black before the first, and while the DU is off with no
+     * live helper to capture the page's own unpowered state). */
+    int rendered=plugin_enabled && web && (xpkit_nd_on(d) || xpkit_health[d->side+6]) &&
+                 xpkit_draw_view(d->side+2,0,0,768,1024);
+    if(plugin_enabled && !web) {
         glPushMatrix();glScalef(768.0f/180.0f,1024.0f/234.0f,1);
         draw_nd(&refs.side[d->side],0,0,d->side?"F/O":"CAPT");glPopMatrix();
     }

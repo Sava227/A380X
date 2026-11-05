@@ -147,8 +147,11 @@ struct View {
             if(SUCCEEDED(hr))hr=c->Initialize(s,GUID_WICPixelFormat32bppRGBA,WICBitmapDitherTypeNone,nullptr,0,WICBitmapPaletteTypeCustom);
             if(SUCCEEDED(hr))hr=c->CopyPixels(nullptr,width*4,(UINT)bytes,bitmap.data());
             if(okay(hr,"Decode display pixels")){
-                auto seq=shared->frame_seq[side].load();shared->frame_seq[side].store(seq+1,std::memory_order_release);
-                memcpy(xpkit_view_pixels(shared,side),bitmap.data(),bytes);shared->frame_time[side]=seconds();
+                // Protocol v9: Windows frames are always in the pixel arrays (no zero-copy surfaces);
+                // an odd sequence left by a helper that died while publishing is closed first.
+                auto seq=shared->frame_seq[side].load();if(seq&1)++seq;shared->frame_seq[side].store(seq+1,std::memory_order_release);
+                memcpy(xpkit_view_pixels(shared,side),bitmap.data(),bytes);
+                shared->surface_front[side].store(XPKIT_SURFACE_PIXELS,std::memory_order_release);shared->frame_time[side]=seconds();
                 shared->frame_seq[side].store(seq+2,std::memory_order_release);
                 last_sequence=page_sequence;last_valid=valid;
                 if(side>=2&&side<4){auto &p=shared->nd_profile[side-2];p.snapshot_count.fetch_add(1);p.snapshot_ns.fetch_add(uint64_t((seconds()-began)*1e9));}

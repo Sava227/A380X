@@ -80,14 +80,16 @@ static void xpkit_efb_publish(void)
     }
 }
 
+/* Every frame (xpkit_present_poll), also without a helper. */
+static int xpkit_frame_unclaimed(int view, double now);
 static void xpkit_efb_poll(double now)
 {
     for (int t = 0; t < 2; ++t) {
         int view = XPKIT_EFB_VIEW0 + t;
-        int live = xpkit_health[0] && atomic_load(&xpkit_shared->ready[view]) &&
+        int live = xpkit_shared && xpkit_health[0] && atomic_load(&xpkit_shared->ready[view]) &&
                    atomic_load(&xpkit_shared->frame_seq[view]) > 0 && now - xpkit_shared->frame_time[view] < 1.0;
         xpkit_health[XPKIT_EFB_HEALTH + t] = live;
-        /* A newly captured page texture: the on-demand device draws (and uploads) it once. */
-        if (live && atomic_load(&xpkit_shared->frame_seq[view]) != xpkit_uploaded[view]) a380x_efb_needs_drawing(t);
+        /* A newly captured page frame: the on-demand device draws (and presents) it once. */
+        if (live && xpkit_frame_unclaimed(view, now)) a380x_efb_needs_drawing(t);
     }
 }

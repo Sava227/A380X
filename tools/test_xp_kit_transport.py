@@ -29,7 +29,8 @@ class TransportTests(unittest.TestCase):
         compiler = shutil.which('clang') or shutil.which('cc')
         if not compiler:
             self.skipTest('C compiler unavailable')
-        fields = ['ready', 'frame_time', 'pixels', 'nd_pixels', 'mfd_pixels', 'mfd', 'sd', 'nd_profile', 'efb_pixels', 'efb']
+        fields = ['ready', 'frame_time', 'pixels', 'nd_pixels', 'mfd_pixels', 'mfd', 'sd', 'nd_profile', 'efb_pixels', 'efb',
+                  'surface_id', 'surface_mode', 'surface_front']
         prints = ','.join('\\"%s\\":%%zu' % field for field in fields)
         offsets = ','.join('offsetof(A380XXpKitShared,%s)' % field for field in fields)
         dims = ','.join('xpkit_view_width(%d),xpkit_view_height(%d)' % (v, v) for v in range(9))
