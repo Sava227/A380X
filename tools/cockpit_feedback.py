@@ -28,7 +28,8 @@ from pathlib import Path
 
 from build_cockpit_controls import (FCU_LABEL_COLUMNS, FCU_LABEL_ROWS, accessor_values, load_buffer,
                                     local_matrix, matrix_identity, matrix_multiply, transform_point)
-from cockpit_feedback_contract import COMMANDS, CONTROLS, DATAREFS, Control, click_manipulator, hooked_commands
+from cockpit_feedback_contract import (COMMANDS, CONTROLS, DATAREFS, REMOVED_CONTROL_IDS, Control, click_manipulator,
+                                       hooked_commands)
 from obj8_numbers import fmt as obj8_fmt
 from patch_center_right_animations import rotation_keys, transform_vector
 from patch_efis_animations import vertex_payload
@@ -642,10 +643,35 @@ def lamp_geometry(source: Source, lamp, cell: int, lift: float = 0.0):
     return vertices, indices
 
 
+def unwrap_removed(text: str, ids=REMOVED_CONTROL_IDS) -> tuple[str, int]:
+    """Undo patch_panel for controls taken out of the contract: each of their blocks (marker, ANIM_begin,
+    motion, TRIS, ANIM_end) becomes its bare TRIS line again. Returns (text, blocks unwrapped)."""
+    if not any(f"{MARKER} {cid} " in text for cid in ids):
+        return text, 0
+    lines, out, count, i = text.splitlines(keepends=True), [], 0, 0
+    while i < len(lines):
+        words = lines[i].split()
+        if lines[i].lstrip().startswith(f"{MARKER} ") and len(words) >= 5 and words[4] in ids:
+            j = i + 1
+            while j < len(lines) and lines[j].split()[:1] != ["ANIM_end"]:
+                j += 1
+            tris = [line for line in lines[i:j] if line.split()[:1] == ["TRIS"]]
+            if lines[i + 1].split()[:1] != ["ANIM_begin"] or len(tris) != 1 or any(
+                    line.split()[:1] == ["ANIM_begin"] for line in lines[i + 2:j]):
+                raise ValueError(f"unexpected block layout at line {i + 1}")
+            out.append(tris[0])
+            count += 1
+            i = j + 1
+            continue
+        out.append(lines[i])
+        i += 1
+    return "".join(out), count
+
+
 def prune_clicks(text: str, motions: list[dict]) -> tuple[str, list[str]]:
     """Remove the click blocks of controls that no longer have a click target (their vertices stay,
     unreferenced). A block runs from its '# ... CLICK <id>' marker to its ANIM_end."""
-    gone = {m["control"].id for m in motions if click_manipulator(m["control"]) is None}
+    gone = {m["control"].id for m in motions if click_manipulator(m["control"]) is None} | set(REMOVED_CONTROL_IDS)
     lines, out, removed, i = text.split("\n"), [], [], 0
     while i < len(lines):
         words = lines[i].split()
@@ -814,7 +840,10 @@ def run(aircraft: Path, source_path: Path, dry_run: bool, controls=CONTROLS) -> 
             if path.name.startswith("._"):
                 continue
             original = path.read_bytes().decode("latin-1")
-            patched, rows = patch_panel(original, path.name, targets)
+            unwrapped, report_unwrapped = unwrap_removed(original)
+            patched, rows = patch_panel(unwrapped, path.name, targets)
+            if report_unwrapped:
+                report.setdefault("unwrapped", []).append(dict(file=path.name, blocks=report_unwrapped))
             if patched != original:
                 staged[path] = (original, patched)
             report["panels"] += [dict(file=path.name, **r) for r in rows]
