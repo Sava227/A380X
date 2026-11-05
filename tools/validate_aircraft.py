@@ -8,7 +8,7 @@ import math
 import re
 import struct
 from pathlib import Path
-from aileron_visual_provider import validate_provider
+from aileron_visual_provider import MANIFEST as AILERON_MANIFEST, validate_provider
 from avionics_provider import validate_avionics_provider
 from avionics_panel_layout import (
     EFB_PANEL_RECT, EWD_PANEL_RECT, FCU_PANEL_RECT, FCU_LCD_PANEL_RECTS,
@@ -591,7 +591,13 @@ def validate(root: Path, datarefs: Path | None = None, commands: Path | None = N
     custom_refs, provider_errors = validate_provider(root)
     errors.extend(provider_errors)
     if custom_refs:
-        warnings.append('Aileron dance requires global FlyWithLua visual driver; package validation does not prove runtime execution')
+        try:
+            native_driver = 'native_driver' in json.loads((root / AILERON_MANIFEST).read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            native_driver = False
+        warnings.append('Control surfaces are driven by the native A380XAileronDatarefs flight loop; package validation does not prove runtime execution'
+                        if native_driver else
+                        'Aileron dance requires global FlyWithLua visual driver; package validation does not prove runtime execution')
     acf = root / 'A380X-XP12.acf'
     text = acf.read_text(encoding='latin1')
     attachments = acf_attachments(text)

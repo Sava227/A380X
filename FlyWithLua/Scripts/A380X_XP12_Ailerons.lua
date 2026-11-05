@@ -35,6 +35,29 @@ for _, name in ipairs({"XPLMFindDataRef", "XPLMGetDataRefTypes", "dataref_table"
         return
     end
 end
+-- Never a second writer: the aircraft-local A380XAileronDatarefs plugin has its own native driver
+-- (a C port of this script and its module, run from a flight loop). It publishes
+-- a380x/xp12/hydraulics/native_driver = 1 while it drives these datarefs; then this script stands
+-- down without writing anything. The flag is looked up once at load (aircraft plugins start before
+-- FlyWithLua loads its scripts) and read every frame. Absent or 0: this Lua driver runs as before.
+local NATIVE_DRIVER = "a380x/xp12/hydraulics/native_driver"
+local native_flag = nil
+do
+    local found, reference = pcall(XPLMFindDataRef, NATIVE_DRIVER)
+    if found and reference ~= nil and reference ~= false and reference ~= 0 then
+        local bound, handle = pcall(dataref_table, NATIVE_DRIVER)
+        if bound and type(handle) == "table" then native_flag = handle end
+    end
+end
+local function native_driver_active()
+    if native_flag == nil then return false end
+    local ok, value = pcall(function() return native_flag[0] end)
+    return ok and value == 1
+end
+if native_driver_active() then
+    message("native A380XAileronDatarefs driver active (" .. NATIVE_DRIVER .. " = 1); Lua driver stands down")
+    return
+end
 
 local keys = {"l_inboard_ratio", "l_midboard_ratio", "l_outboard_ratio",
               "r_inboard_ratio", "r_midboard_ratio", "r_outboard_ratio"}
@@ -174,6 +197,12 @@ local function disable(reason)
     message(reason .. "; provider disabled (native flight controls unchanged)")
 end
 local function frame()
+    if native_driver_active() then
+        -- The native driver took over: stop without clearing (its values stay published).
+        provider.enabled, active = false, false
+        message("native A380XAileronDatarefs driver active; Lua driver stands down")
+        return
+    end
     if not target_aircraft() then
         if active then
             core.reset(state, neutral)

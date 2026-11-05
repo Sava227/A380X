@@ -48,6 +48,26 @@ class AileronProviderTests(unittest.TestCase):
                              (0, 65) if row["name"].endswith("_deg") else (-1, 1))
         self.assertEqual(errors, [])
 
+    def test_native_driver_contract(self):
+        from aileron_visual_provider import NATIVE_DRIVER, NATIVE_DRIVER_FLAG
+        document = self.package_files()
+        self.assertEqual(document["native_driver"], NATIVE_DRIVER)
+        self.assertEqual(NATIVE_DRIVER["flag_dataref"], NATIVE_DRIVER_FLAG)
+        self.assertFalse(NATIVE_DRIVER["writes_simulator_datarefs"])
+        self.assertEqual(NATIVE_DRIVER["ports"], [source for source, _, _ in FILES])
+        self.assertIn("native_driver = 1", (self.package / "INSTALL_AILERON_VISUALS.txt").read_text())
+        for change in (lambda d: d["native_driver"].update(flag_dataref="a380x/other"),
+                       lambda d: d["native_driver"].update(writes_simulator_datarefs=True)):
+            self.package_files()
+            self.mutate_manifest(change)
+            refs, errors = validate_provider(self.package)
+            self.assertEqual(refs, set())
+            self.assertIn("native driver", errors[0])
+        # A manifest written before the native driver (no key) is still valid.
+        self.package_files()
+        self.mutate_manifest(lambda d: d.pop("native_driver"))
+        self.assertEqual(validate_provider(self.package), (set(ALL_DATAREFS), []))
+
     def test_absent_manifest_does_not_allow_custom_refs(self):
         self.assertEqual(validate_provider(self.package), (set(), []))
 
