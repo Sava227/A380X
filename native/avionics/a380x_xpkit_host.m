@@ -3,6 +3,8 @@
  */
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
+#import <Accelerate/Accelerate.h>
+#import <objc/message.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -35,6 +37,50 @@ static void maintain_display_activity(void) {
 static void report_error(NSString *text) {
     snprintf(shared->error, sizeof(shared->error), "%s", text.UTF8String ?: "WebKit error");
     atomic_fetch_add_explicit(&shared->errors, 1, memory_order_release);
+}
+static uint64_t fnv1a(const void *bytes, size_t length) {
+    const unsigned char *p = bytes; uint64_t hash = 1469598103934665603ULL;
+    for (size_t i = 0; i < length; ++i) hash = (hash ^ p[i]) * 1099511628211ULL;
+    return hash;
+}
+/* v9 capture path. WebKit paints a snapshot at the window's backing scale (2 on a Retina Mac), so a
+ * 768x1024 PFD used to be painted as 1536x2048 (an ND at 1.5 as 2304x3072) and then resampled on the
+ * CPU: four times the paint work plus a slow high-quality downscale per frame. With the page's device
+ * scale factor set to the view's own capture scale, WebKit paints exactly the texture size and the
+ * pixels only need a BGRA -> RGBA channel swap (vImage, straight into shared memory).
+ * Measured with the real helper and live-moving PFD/ND content: ND capture 80 -> 14 ms. */
+static BOOL exact_scale_capture(WKWebView *view, CGFloat scale) {
+    SEL setter = NSSelectorFromString(@"_setOverrideDeviceScaleFactor:");
+    if (![view respondsToSelector:setter]) return NO;
+    ((void (*)(id, SEL, CGFloat))objc_msgSend)(view, setter, scale);
+    return YES;
+}
+/* A same-size 32-bit snapshot -> RGBA in dst. NO when the image needs scaling or has another layout. */
+static BOOL copy_exact(CGImageRef cg, unsigned char *dst, int width, int height) {
+    if (!cg || CGImageGetWidth(cg) != (size_t)width || CGImageGetHeight(cg) != (size_t)height ||
+        CGImageGetBitsPerPixel(cg) != 32 || CGImageGetBitsPerComponent(cg) != 8) return NO;
+    CGImageAlphaInfo alpha = CGImageGetAlphaInfo(cg);
+    uint32_t order = CGImageGetBitmapInfo(cg) & kCGBitmapByteOrderMask;
+    uint8_t map[4];
+    if (order == kCGBitmapByteOrder32Little && (alpha == kCGImageAlphaPremultipliedFirst ||
+        alpha == kCGImageAlphaNoneSkipFirst || alpha == kCGImageAlphaFirst)) {
+        map[0] = 2; map[1] = 1; map[2] = 0; map[3] = 3;          /* B,G,R,A bytes -> R,G,B,A */
+    } else if ((order == kCGBitmapByteOrder32Big || order == kCGBitmapByteOrderDefault) &&
+               (alpha == kCGImageAlphaPremultipliedLast || alpha == kCGImageAlphaNoneSkipLast ||
+                alpha == kCGImageAlphaLast)) {
+        map[0] = 0; map[1] = 1; map[2] = 2; map[3] = 3;          /* already R,G,B,A */
+    } else return NO;
+    CGColorSpaceRef space = CGImageGetColorSpace(cg);
+    if (space && CGColorSpaceGetModel(space) != kCGColorSpaceModelRGB) return NO;
+    CFDataRef data = CGDataProviderCopyData(CGImageGetDataProvider(cg));
+    if (!data) return NO;
+    vImage_Buffer source = {(void *)CFDataGetBytePtr(data), (vImagePixelCount)height, (vImagePixelCount)width,
+                            CGImageGetBytesPerRow(cg)};
+    vImage_Buffer target = {dst, (vImagePixelCount)height, (vImagePixelCount)width, (size_t)width * 4};
+    BOOL ok = (size_t)CFDataGetLength(data) >= source.rowBytes * (size_t)height &&
+              vImagePermuteChannels_ARGB8888(&source, &target, map, kvImageNoFlags) == kvImageNoError;
+    CFRelease(data);
+    return ok;
 }
 
 /* The native page controller owns validation, focus and all aircraft writes.
@@ -85,13 +131,56 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
 @property(nonatomic) BOOL diagnosed;
 @property(nonatomic) uint32_t lastMfdSequence;
 @property(nonatomic) BOOL lastInputValid;
-@property(nonatomic) NSMutableData *bitmap;
-@property(nonatomic) CGContextRef bitmapContext;
+@property(nonatomic) BOOL exactScale;           /* WebKit paints at the view's capture scale */
+@property(nonatomic) uint64_t lastStateHash;    /* PFD/ND: state already applied and captured */
+@property(nonatomic) CGContextRef scaleContext; /* fallback resampler, drawing into shared memory */
 @end
 
 @implementation A380XLibraryView
 - (void)dealloc {
-    if (self.bitmapContext) CGContextRelease(self.bitmapContext);
+    if (self.scaleContext) CGContextRelease(self.scaleContext);
+}
+/* Store a snapshot as this view's RGBA frame (seqlock: odd while writing). */
+- (BOOL)storeImage:(CGImageRef)cg {
+    int side = (int)self.side, width = xpkit_view_width(side), height = xpkit_view_height(side);
+    unsigned char *pixels = xpkit_view_pixels(shared, side);
+    if (!cg) return NO;
+    BOOL exact = CGImageGetWidth(cg) == (size_t)width && CGImageGetHeight(cg) == (size_t)height;
+    if (!exact && !self.scaleContext) {
+        CGColorSpaceRef color = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        self.scaleContext = CGBitmapContextCreate(pixels, width, height, 8, (size_t)width * 4, color,
+                                                  kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+        CGColorSpaceRelease(color);
+        if (!self.scaleContext) { report_error(@"Unable to allocate display bitmap"); return NO; }
+        CGContextSetBlendMode(self.scaleContext, kCGBlendModeCopy);
+        CGContextSetInterpolationQuality(self.scaleContext, kCGInterpolationHigh);
+    }
+    uint32_t sequence = atomic_load_explicit(&shared->frame_seq[side], memory_order_relaxed);
+    atomic_store_explicit(&shared->frame_seq[side], sequence + 1, memory_order_release);
+    BOOL stored = exact && copy_exact(cg, pixels, width, height);
+    if (!stored && self.scaleContext) {
+        CGContextDrawImage(self.scaleContext, CGRectMake(0, 0, width, height), cg);
+        stored = YES;
+    }
+    if (stored) shared->frame_time[side] = monotonic_seconds();
+    atomic_store_explicit(&shared->frame_seq[side], sequence + 2, memory_order_release);
+    return stored;
+}
+/* Snapshot the page and store it; done() runs on the main thread. */
+- (void)captureThen:(void (^)(BOOL stored))done {
+    int side = (int)self.side;
+    WKSnapshotConfiguration *config = [WKSnapshotConfiguration new];
+    /* v7+: the page keeps its CSS layout (768x1024, EFB 1440x1000); the capture is scale times that. */
+    config.rect = CGRectMake(0, 0, xpkit_view_css_width(side), xpkit_view_css_height(side));
+    config.snapshotWidth = @(self.exactScale ? xpkit_view_css_width(side) : xpkit_view_width(side));
+    config.afterScreenUpdates = YES;
+    [self.view takeSnapshotWithConfiguration:config completionHandler:^(NSImage *image, NSError *captureError) {
+        if (captureError || !image) {
+            report_error(captureError.localizedDescription ?: @"No WebKit snapshot");
+            done(NO); return;
+        }
+        done([self storeImage:[image CGImageForProposedRect:NULL context:nil hints:nil]]);
+    }];
 }
 - (void)userContentController:(WKUserContentController *)controller didReceiveScriptMessage:(WKScriptMessage *)message {
     (void)controller;
@@ -172,6 +261,14 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
     atomic_thread_fence(memory_order_acquire);
     if (atomic_load_explicit(&shared->state_seq, memory_order_acquire) != before) return;
     BOOL inputValid=monotonic_seconds()-sent<1.5;
+    /* PFD/ND: the plugin republishes every frame; identical content (paused sim, a timer firing between
+     * two publications) keeps the completed texture with a heartbeat instead of a repaint. */
+    uint64_t stateHash=self.side<4&&inputValid?fnv1a(data.bytes,data.length):0;
+    if(self.side<4 && stateHash==self.lastStateHash && inputValid==self.lastInputValid &&
+       atomic_load_explicit(&shared->frame_seq[self.side],memory_order_acquire)) {
+        shared->frame_time[self.side]=monotonic_seconds();
+        return;
+    }
     BOOL efbView=self.side>=XPKIT_EFB_VIEW0;
     if(efbView) {
         [self tickEfb:inputValid];
@@ -239,6 +336,7 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
                  * liveness heartbeat. Actual pointer paint is native geometry. */
                 shared->frame_time[self.side]=monotonic_seconds();
                 atomic_fetch_add_explicit(&profile->skipped_count,1,memory_order_relaxed);
+                self.lastStateHash=stateHash;
                 self.busy=NO; return;
             }
         }
@@ -248,43 +346,12 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
                 fprintf(stderr, "display %ld: %s %s\n", (long)self.side, [value description].UTF8String, problem.localizedDescription.UTF8String ?: "");
             }];
         }
-        WKSnapshotConfiguration *config = [WKSnapshotConfiguration new];
-        int width=xpkit_view_width((int)self.side),height=xpkit_view_height((int)self.side);
-        /* v7/v8: the page keeps its CSS layout (768x1024); the capture is the view's scale times that. */
-        config.rect = CGRectMake(0, 0, xpkit_view_css_width((int)self.side), xpkit_view_css_height((int)self.side));
-        size_t bytes=xpkit_view_bytes((int)self.side);
-        if(!self.bitmapContext) {
-            self.bitmap=[NSMutableData dataWithLength:bytes];
-            CGColorSpaceRef color=CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-            self.bitmapContext=CGBitmapContextCreate(self.bitmap.mutableBytes,width,height,8,width*4,
-                color,kCGImageAlphaPremultipliedLast|kCGBitmapByteOrder32Big);
-            CGColorSpaceRelease(color);
-            if(!self.bitmapContext) {report_error(@"Unable to allocate display bitmap");self.busy=NO;return;}
-            CGContextSetBlendMode(self.bitmapContext,kCGBlendModeCopy);
-        }
-        config.snapshotWidth = @(width);
-        config.afterScreenUpdates = YES;
         double captureStarted=monotonic_seconds();
-        [self.view takeSnapshotWithConfiguration:config completionHandler:^(NSImage *image, NSError *captureError) {
-            if (captureError || !image) {
-                report_error(captureError.localizedDescription ?: @"No WebKit snapshot");
-                self.busy = NO; return;
-            }
-            CGImageRef cg = [image CGImageForProposedRect:NULL context:nil hints:nil];
-            CGContextRef ctx=self.bitmapContext;
-            if (ctx && cg) {
-                /* A 1:1 capture needs no filtering. Retina WebKit can return a
-                 * larger CGImage; resolve those vector samples once here. */
-                if(self.side<4)CGContextSetInterpolationQuality(ctx,CGImageGetWidth(cg)==(size_t)width &&
-                    CGImageGetHeight(cg)==(size_t)height?kCGInterpolationNone:kCGInterpolationHigh);
-                CGContextDrawImage(ctx, CGRectMake(0, 0, width, height), cg);
-                uint32_t sequence = atomic_load_explicit(&shared->frame_seq[self.side], memory_order_relaxed);
-                atomic_store_explicit(&shared->frame_seq[self.side], sequence + 1, memory_order_release);
-                memcpy(xpkit_view_pixels(shared,(int)self.side), self.bitmap.bytes, bytes);
-                shared->frame_time[self.side] = monotonic_seconds();
-                atomic_store_explicit(&shared->frame_seq[self.side], sequence + 2, memory_order_release);
+        [self captureThen:^(BOOL stored) {
+            if (stored) {
                 if(mfdSequence)self.lastMfdSequence=mfdSequence;
                 self.lastInputValid=inputValid;
+                if(self.side<4)self.lastStateHash=stateHash;
                 if(nd) {
                     A380XXpKitNdProfile *profile=&shared->nd_profile[self.side-2];
                     atomic_fetch_add_explicit(&profile->snapshot_count,1,memory_order_relaxed);
@@ -319,44 +386,7 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
         if(!changed&&atomic_load_explicit(&shared->frame_seq[self.side],memory_order_acquire)) {
             shared->frame_time[self.side]=monotonic_seconds();self.busy=NO;return;
         }
-        [self capture:0];
-    }];
-}
-- (void)capture:(uint32_t)mfdSequence {
-    WKSnapshotConfiguration *config = [WKSnapshotConfiguration new];
-    int width=xpkit_view_width((int)self.side),height=xpkit_view_height((int)self.side);
-    size_t bytes=xpkit_view_bytes((int)self.side);
-    config.rect = CGRectMake(0, 0, xpkit_view_css_width((int)self.side), xpkit_view_css_height((int)self.side));
-    if(!self.bitmapContext) {
-        self.bitmap=[NSMutableData dataWithLength:bytes];
-        CGColorSpaceRef color=CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-        self.bitmapContext=CGBitmapContextCreate(self.bitmap.mutableBytes,width,height,8,width*4,
-            color,kCGImageAlphaPremultipliedLast|kCGBitmapByteOrder32Big);
-        CGColorSpaceRelease(color);
-        if(!self.bitmapContext) {report_error(@"Unable to allocate display bitmap");self.busy=NO;return;}
-        CGContextSetBlendMode(self.bitmapContext,kCGBlendModeCopy);
-    }
-    config.snapshotWidth = @(width);
-    config.afterScreenUpdates = YES;
-    [self.view takeSnapshotWithConfiguration:config completionHandler:^(NSImage *image, NSError *captureError) {
-        if (captureError || !image) {
-            report_error(captureError.localizedDescription ?: @"No WebKit snapshot");
-            self.busy = NO; return;
-        }
-        CGImageRef cg = [image CGImageForProposedRect:NULL context:nil hints:nil];
-        CGContextRef ctx=self.bitmapContext;
-        if (ctx && cg) {
-            CGContextSetInterpolationQuality(ctx,CGImageGetWidth(cg)==(size_t)width &&
-                CGImageGetHeight(cg)==(size_t)height?kCGInterpolationNone:kCGInterpolationHigh);
-            CGContextDrawImage(ctx, CGRectMake(0, 0, width, height), cg);
-            uint32_t sequence = atomic_load_explicit(&shared->frame_seq[self.side], memory_order_relaxed);
-            atomic_store_explicit(&shared->frame_seq[self.side], sequence + 1, memory_order_release);
-            memcpy(xpkit_view_pixels(shared,(int)self.side), self.bitmap.bytes, bytes);
-            shared->frame_time[self.side] = monotonic_seconds();
-            atomic_store_explicit(&shared->frame_seq[self.side], sequence + 2, memory_order_release);
-            if(mfdSequence)self.lastMfdSequence=mfdSequence;
-        }
-        self.busy = NO;
+        [self captureThen:^(BOOL stored) { (void)stored; self.busy = NO; }];
     }];
 }
 @end
@@ -386,6 +416,7 @@ int main(int argc, const char **argv) {
             int width=xpkit_view_css_width((int)side),height=xpkit_view_css_height((int)side);   /* CSS size */
             owner.view = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, width, height) configuration:configuration];
             owner.view.navigationDelegate = owner;
+            owner.exactScale = exact_scale_capture(owner.view, xpkit_view_scale((int)side));
             owner.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(-20000 - side * 2000, -20000, width, height)
                 styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
             owner.window.releasedWhenClosed = NO;
@@ -395,9 +426,11 @@ int main(int argc, const char **argv) {
             NSURLComponents *url = [NSURLComponents componentsWithURL:[NSURL fileURLWithPath:[root stringByAppendingPathComponent:side<2?@"pfd.html":side<4?@"nd.html":side<6?@"mfd.html":side<XPKIT_EFB_VIEW0?@"sd.html":@"efb.html"]] resolvingAgainstBaseURL:NO];
             url.query = side == 0 ? @"index=1&duID=0" : side==1?@"index=2&duID=3":side==2?@"index=1&duID=1":side==3?@"index=2&duID=4":side==4?@"index=1&duID=2":side<XPKIT_EFB_VIEW0?@"index=2&duID=5":side==XPKIT_EFB_VIEW0?@"tablet=0":@"tablet=1";
             [owner.view loadFileURL:url.URL allowingReadAccessToURL:[NSURL fileURLWithPath:root]];
-            /* PFDs move continuously (attitude, tapes): 30 Hz. Event-driven views keep 20 Hz. */
-            owner.timer = [NSTimer scheduledTimerWithTimeInterval:side<2?1.0/30.0:0.05 target:owner selector:@selector(tick) userInfo:nil repeats:YES];
-            owner.timer.tolerance = side<2?0.004:0.01;
+            /* PFDs and NDs move continuously (attitude, tapes, heading, map): polled at 60 Hz and
+             * captured whenever the plugin's state changed and the previous capture has finished, so
+             * their rate follows the simulator's publication rate. Event-driven views keep 20 Hz. */
+            owner.timer = [NSTimer scheduledTimerWithTimeInterval:side<4?1.0/60.0:0.05 target:owner selector:@selector(tick) userInfo:nil repeats:YES];
+            owner.timer.tolerance = side<4?0.002:0.01;
             [views addObject:owner];
         }
         [NSApp run];
