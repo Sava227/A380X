@@ -109,6 +109,17 @@ struct View {
         XpJson data=XpJson::parse(value);std::string type=data.value("type","");
         if(type=="a380x-loaded"){loaded=data.value("ok",false);shared->ready[side].store(loaded);}
         else if(type=="a380x-error")error(data.value("text","Display script error"));
+        else if(type=="a380x-efb-action"&&side>=XPKIT_EFB_VIEW0&&data.contains("id")&&data["id"].is_number_unsigned()&&data.contains("action")&&data["action"].is_string()){
+            // Page -> plugin ring (single producer: this UI thread). The native EFB validates again.
+            std::string line=std::to_string(data["id"].get<unsigned long long>())+" "+data["action"].get<std::string>();
+            if(line.size()>=XPKIT_EFB_ACTION_LEN)return;
+            for(unsigned char c:line)if(c<32||c>126)return;
+            auto &efb=shared->efb[side-XPKIT_EFB_VIEW0];
+            uint32_t head=efb.action_head.load(std::memory_order_relaxed),tail=efb.action_tail.load(std::memory_order_acquire);
+            if(head-tail>=XPKIT_EFB_ACTIONS){efb.actions_dropped.fetch_add(1);return;}
+            memset(efb.action[head%XPKIT_EFB_ACTIONS],0,XPKIT_EFB_ACTION_LEN);memcpy(efb.action[head%XPKIT_EFB_ACTIONS],line.data(),line.size());
+            efb.action_head.store(head+1,std::memory_order_release);
+        }
         else if(side>=2&&side<4){
             if(type=="a380x-nd-command"){auto action=data.value("action","");shared->zoom_delta[side-2].fetch_add(action=="zoom_in"?-1:action=="zoom_out"?1:0);}
             else if(type=="a380x-nd-status"&&data.contains("values")&&data["values"].is_array()&&data["values"].size()==8)
@@ -153,6 +164,7 @@ struct View {
         double sent=shared->state_time;std::string state(shared->state,shared->state_size);
         std::atomic_thread_fence(std::memory_order_acquire);if(shared->state_seq.load()!=before)return;
         bool valid=seconds()-sent<1.5;uint32_t page_sequence=0;
+        if(side>=XPKIT_EFB_VIEW0){tick_efb(valid);return;}
         if(side>=4){page_sequence=side<6?shared->mfd[side-4].sequence.load():shared->sd.sequence.load();
             if(!page_sequence||(page_sequence&1))return;
             if(page_sequence==last_sequence&&valid==last_valid&&shared->frame_seq[side].load()){
@@ -187,6 +199,25 @@ struct View {
         });
         if(!okay(script(source,done.get()),"Execute display update"))busy=false;
     }
+    // EFB tablet: apply a new native frame (or a stale notice) and capture only when the page reports
+    // a visual change; otherwise renew the texture heartbeat (as the MFD/SD views do).
+    void tick_efb(bool valid) {
+        auto &efb=shared->efb[side-XPKIT_EFB_VIEW0];
+        uint32_t sequence=efb.sequence.load(std::memory_order_acquire);std::string source;uint32_t applied=0;
+        if(sequence&&!(sequence&1)&&(sequence!=last_sequence||valid!=last_valid)&&efb.size>0&&efb.size<XPKIT_EFB_CAP){
+            std::string json(efb.json,efb.size);std::atomic_thread_fence(std::memory_order_acquire);
+            if(efb.sequence.load()!=sequence)return;
+            source="window.__a380Efb.apply("+XpJson::parse(json).dump()+","+(valid?"true":"false")+")";applied=sequence;
+        }else source="window.__a380Efb.idle()";
+        busy=true;
+        auto done=callback<ICoreWebView2ExecuteScriptCompletedHandler,HRESULT,LPCWSTR>([this,applied,valid](HRESULT hr,LPCWSTR result){
+            if(!okay(hr,"Apply native EFB frame")){busy=false;return S_OK;}
+            if(applied){last_sequence=applied;last_valid=valid;}
+            if(!(result&&wcscmp(result,L"true")==0)&&shared->frame_seq[side].load()){shared->frame_time[side]=seconds();busy=false;return S_OK;}
+            capture(applied?applied:last_sequence,last_valid,seconds());return S_OK;
+        });
+        if(!okay(script(source,done.get()),"Execute EFB update"))busy=false;
+    }
     void configure(ICoreWebView2Controller *value) {
         controller=value;controller->AddRef();controller->get_CoreWebView2(&web);
         ICoreWebView2Controller3 *c3=nullptr;
@@ -218,8 +249,8 @@ struct View {
         const wchar_t *shim=L"window.webkit={messageHandlers:{a380:{postMessage:data=>window.chrome.webview.postMessage(JSON.stringify(data))}}};";
         auto injected=callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler,HRESULT,LPCWSTR>([this](HRESULT result,LPCWSTR){
             if(!okay(result,"Install native IPC bridge"))return S_OK;
-            const wchar_t *file=side<2?L"pfd.html":side<4?L"nd.html":side<6?L"mfd.html":L"sd.html";
-            const wchar_t *query=side==0?L"?index=1&duID=0":side==1?L"?index=2&duID=3":side==2?L"?index=1&duID=1":side==3?L"?index=2&duID=4":side==4?L"?index=1&duID=2":L"?index=2&duID=5";
+            const wchar_t *file=side<2?L"pfd.html":side<4?L"nd.html":side<6?L"mfd.html":side<XPKIT_EFB_VIEW0?L"sd.html":L"efb.html";
+            const wchar_t *query=side==0?L"?index=1&duID=0":side==1?L"?index=2&duID=3":side==2?L"?index=1&duID=1":side==3?L"?index=2&duID=4":side==4?L"?index=1&duID=2":side<XPKIT_EFB_VIEW0?L"?index=2&duID=5":side==XPKIT_EFB_VIEW0?L"?tablet=0":L"?tablet=1";
             okay(web->Navigate((origin+file+query).c_str()),"Open aircraft display");return S_OK;
         });okay(web->AddScriptToExecuteOnDocumentCreated(shim,injected.get()),"Add native bridge");
     }
@@ -295,7 +326,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         if(!okay(hr,"WebView2 initialization (install Microsoft Evergreen Runtime)")){PostQuitMessage(9);return S_OK;}
         environment=env;environment->AddRef();
         for(int i=0;i<XPKIT_VIEWS;++i){auto view=std::make_unique<View>(i);View *raw=view.get();
-            view->window=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE,L"A380XOfflineDisplays",L"A380X avionics",WS_POPUP,-20000-i*1000,-20000,xpkit_view_width(i),xpkit_view_height(i),nullptr,nullptr,instance,nullptr);
+            view->window=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE,L"A380XOfflineDisplays",L"A380X avionics",WS_POPUP,-20000-i*2000,-20000,xpkit_view_width(i),xpkit_view_height(i),nullptr,nullptr,instance,nullptr);
             ShowWindow(view->window,SW_SHOWNOACTIVATE);views.push_back(std::move(view));
             auto done=callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler,HRESULT,ICoreWebView2Controller*>([raw](HRESULT status,ICoreWebView2Controller *controller){if(okay(status,"Create WebView2 display"))raw->configure(controller);return S_OK;});
             okay(environment->CreateCoreWebView2Controller(raw->window,done.get()),"Create display controller");

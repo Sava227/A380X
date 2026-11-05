@@ -423,10 +423,15 @@ def validate_native_panel(
         if all(abs(a - b) <= 1e-6 for a, b in zip(bounds_item, expected_efb))
     )
     report['cockpit_region_efb_quads'] = matched_efb
-    if matched_efb != 2:
+    # With the web EFB (provider "efb_devices") both tablets are cockpit devices and the two
+    # panel-atlas faces are retired (tools/efb_cockpit_devices.py); without it they must exist.
+    efb_devices = bool(provider and provider.get('efb_devices'))
+    expected_efb_quads = 0 if efb_devices else 2
+    if matched_efb != expected_efb_quads:
         errors.append(
-            f'{controls}: expected captain and first-officer cockpit-region EFB quads; '
-            f'found {matched_efb} of 2'
+            f'{controls}: expected {expected_efb_quads} cockpit-region EFB quads '
+            f'({"retired by the EFB cockpit devices" if efb_devices else "captain and first officer"}); '
+            f'found {matched_efb}'
         )
 
     # Both MFDs are plugin cockpit devices: one visible full-UV quad per ID in
@@ -448,6 +453,13 @@ def validate_native_panel(
         from pfd_cockpit_devices import PFD_DEVICES, PFD_CHANNELS
         expected_devices.extend(PFD_DEVICES)
         expected_attributes.update({device:{('1',str(channel),'1')} for device,channel in zip(PFD_DEVICES,PFD_CHANNELS)})
+    if efb_devices:
+        from efb_cockpit_devices import EFB_DEVICES, EFB_CHANNELS, check as efb_check
+        expected_devices.extend(EFB_DEVICES)
+        expected_attributes.update({device: {('1', str(channel), '1')} for device, channel in zip(EFB_DEVICES, EFB_CHANNELS)})
+        if efb_check(controls_text, (root / 'objects' / MFD_SCREENS_ATTACHMENT).read_text(encoding='utf-8', errors='replace')
+                     if (root / 'objects' / MFD_SCREENS_ATTACHMENT).is_file() else ''):
+            errors.append(f'{controls}: web EFB device geometry incomplete (tools/efb_cockpit_devices.py)')
     if provider and provider.get('isis'):
         from isis_cockpit_device import ISIS_DEVICES, ISIS_CHANNELS, ISIS_COMMANDS
         expected_devices.extend(device for device in ISIS_DEVICES if device in provider['isis'].get('cockpit_devices', ()))
@@ -608,6 +620,10 @@ def validate(root: Path, datarefs: Path | None = None, commands: Path | None = N
             packaged_commands.update(cfb['commands'], cfb.get('rmp_commands', ()))
             custom_refs.update(cfb['datarefs'], cfb.get('rmp_datarefs', ()))
             packaged_devices.update(cfb.get('cockpit_devices', ()))
+        if avionics_provider.get('efb_devices'):
+            packaged_devices.update(avionics_provider['efb_devices']['cockpit_devices'])
+            packaged_commands.update(avionics_provider['efb_devices']['commands'])
+            custom_refs.update(avionics_provider['efb_devices']['datarefs'])
         if avionics_provider.get('isis'):
             packaged_devices.update(avionics_provider['isis']['cockpit_devices'])
             packaged_commands.update(avionics_provider['isis']['commands'])

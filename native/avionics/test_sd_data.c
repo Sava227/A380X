@@ -255,6 +255,7 @@ static void full_state(void)
     setvf("sim/flightmodel2/misc/door_open_ratio", 19, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
           0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0);
     seti("sim/cockpit2/switches/beacon_on", 1); seti("sim/cockpit2/oxygen/actuators/o2_valve_on", 1);
+    setvi("a380x/xp12/efb/slide_armed", 16, 1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0);   /* EFB slides */
     setvf("sim/flightmodel/weight/m_fuel", 9, 30000.0, 15000.0, 50000.0, 20000.0, 15000.0, 5000.0, 5000.0, 10000.0, 0.0);
     setvi("sim/cockpit2/engine/actuators/fuel_pump_on", 4, 1, 1, 0, 1);
     setvi("sim/cockpit2/fuel/fuel_tank_pump_on", 9, 1, 0, 0, 0, 0, 1, 0, 0, 0);
@@ -354,6 +355,9 @@ static void test_full_state(void)
     /* DOOR */
     CHECK(var("INTERACTIVE POINT OPEN:3") == 100 && var("INTERACTIVE POINT OPEN:0") == 0);
     CHECK(var("L:A32NX_FWD_DOOR_CARGO_LOCKED") == 0 && var("L:A32NX_AFT_DOOR_CARGO_LOCKED") == 1 && var("LIGHT BEACON ON") == 1);
+    /* Native per-door escape slides (EFB), never the beacon proxy */
+    CHECK(var("L:A380X_SLIDE_ARMED:0") == 1 && var("L:A380X_SLIDE_ARMED:1") == 0 && var("L:A380X_SLIDE_ARMED:3") == 0);
+    CHECK(var("L:A380X_SLIDE_ARMED:14") == 1 && var("L:A380X_SLIDE_ARMED:15") == 0 && !has("L:A380X_SLIDE_ARMED:16"));
     /* FUEL: tanks, FU integration (4 s at 0.25 kg/s), LP valves, pump words */
     CHECK(near(word("L:A32NX_FQMS_FEED_2_TANK_QUANTITY", SDD_SSM_NO), 7753.2 * 3.0387, 0.01));
     CHECK(near(word("L:A32NX_FQMS_LEFT_INNER_TANK_QUANTITY", SDD_SSM_NO), 50000 - 7753.2 * 3.0387, 0.01));
@@ -423,6 +427,7 @@ static void test_absent_inputs(void)
     CHECK(!out.failed && json_ok(out.data) && !strstr(out.data, "nan"));
     CHECK(!has("L:A32NX_ELEC_AC_1_BUS_IS_POWERED") && !has("L:A32NX_FQMS_FEED_1_TANK_QUANTITY"));
     CHECK(!has("L:A32NX_ENGINE_N3:1") && !has("INTERACTIVE POINT OPEN:0") && !has("L:A32NX_COND_CKPT_TEMP"));
+    CHECK(!has("L:A380X_SLIDE_ARMED:0"));   /* no EFB slide state: the bundle keeps FBW's beacon proxy */
     CHECK(var("ev:fctlInfoValid") == 0);
     /* A producer registered later is found by the once-per-second re-find. */
     seti("a380x/xp12/elec/network_active", 1);

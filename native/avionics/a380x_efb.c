@@ -6,6 +6,7 @@
  */
 #include <math.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -18,12 +19,19 @@
 #include <GL/gl.h>
 #endif
 
+/* The window host needs the XPLM301 window decoration; the cockpit devices need XPLM410
+ * (supplied by the plugin build flags, absent in the legacy render test). */
+#ifndef XPLM301
+#define XPLM301 1
+#endif
 #include "XPLMDataAccess.h"
+#include "XPLMDisplay.h"
 #include "XPLMGraphics.h"
 #include "XPLMUtilities.h"
 
 #include "a380x_avionics_core.h"
 #include "a380x_efb.h"
+#include "a380x_efb_core.h"
 
 #define ARRAY_LEN(a) ((int)(sizeof(a) / sizeof((a)[0])))
 #define EFB_LEFT 152.0f
@@ -135,7 +143,7 @@ static const CheckItem checklist_items[10][8] = {
      {"EFBs", "OFF", CHECK_MANUAL}, {"BATTERIES", "OFF", CHECK_BATTERIES_OFF}}
 };
 
-typedef enum { COMMAND_PAGE, COMMAND_ACTION, COMMAND_POWER, COMMAND_NEXT } CommandKind;
+typedef enum { COMMAND_PAGE, COMMAND_ACTION, COMMAND_POWER, COMMAND_NEXT, COMMAND_SLIDES, COMMAND_POPUP } CommandKind;
 typedef struct {
     const char *name;
     const char *description;
@@ -144,7 +152,7 @@ typedef struct {
     XPLMCommandRef ref;
 } EfbCommand;
 
-static EfbCommand commands[PAGE_COUNT + 9];
+static EfbCommand commands[PAGE_COUNT + 13];
 static int command_count;
 static EfbPage active_page = PAGE_DASHBOARD;
 static int powered = 1;
@@ -161,6 +169,14 @@ static unsigned checklist_bits[10];
 static int native_available = 1;
 static XPLMDataRef native_available_ref;
 static char status_message[160] = "A380 control panel ready";
+/* Escape slides of the 16 passenger doors (door_open_ratio order). Native state owned here; the web
+ * EFB (a380x_efb_web.inc), the door command veto, the SD DOOR page and presets all use it. */
+static unsigned char slide_armed[A380X_EFB_SLIDES];
+static void efb_changed(void);
+static void efb_preset_slides(int preset);
+static void efb_tablets_follow_page(int page);
+static void efb_slides_set_all(int arm);
+static void efb_toggle_popup(int tablet);
 
 static XPLMDataRef optional_ref(const char *name)
 {
@@ -366,6 +382,7 @@ static void preset_cold_dark(void)
     run_command("sim/electrical/battery_1_off");
     run_command("sim/electrical/battery_2_off");
     run_command("sim/fuel/fuel_pumps_off");
+    efb_preset_slides(1);
     set_status("Cold & Dark native preset applied");
 }
 
@@ -377,6 +394,7 @@ static void preset_turnaround(void)
     run_command("sim/electrical/battery_2_on");
     run_command("sim/ground_ops/toggle_gpu_request");
     run_command("sim/systems/avionics_on");
+    efb_preset_slides(2);
     set_status("Turnaround native preset applied");
 }
 
@@ -387,25 +405,30 @@ static void preset_ready(void)
     run_command("sim/operation/quick_start");
     run_command("sim/systems/avionics_on");
     run_command("sim/fuel/fuel_pumps_on");
+    efb_preset_slides(4);
     set_status("Ready for Taxi native preset applied");
 }
 
 static void toggle_all_doors(void)
 {
     float doors[20] = {0};
-    int i, open_all = 0;
+    int i, open_all = 0, kept = 0;
     if (refs.doors != NULL) {
         XPLMGetDatavf(refs.doors, doors, 0, 20);
-        for (i = 0; i < 20; ++i) if (doors[i] < 0.5f) open_all = 1;
+        for (i = 0; i < 20; ++i) if (doors[i] < 0.5f && !(i < A380X_EFB_SLIDES && slide_armed[i])) open_all = 1;
     }
     for (i = 0; i < 20; ++i) {
         char name[64];
+        /* An armed escape slide keeps its door closed (a380x_efb_web.inc). */
+        if (open_all && doors[i] < 0.5f && i < A380X_EFB_SLIDES && slide_armed[i]) { ++kept; continue; }
         if ((open_all && doors[i] < 0.5f) || (!open_all && doors[i] >= 0.5f)) {
             snprintf(name, sizeof(name), "sim/flight_controls/door_toggle_%d", i + 1);
             run_command(name);
         }
     }
-    set_status("All 20 doors commanded %s", open_all ? "open" : "closed");
+    if (kept) set_status("Doors commanded open; %d with armed slides stayed closed", kept);
+    else set_status("All 20 doors commanded %s", open_all ? "open" : "closed");
+    efb_changed();
 }
 
 static void action_dashboard(int action)
@@ -610,10 +633,13 @@ static int command_handler(XPLMCommandRef command, XPLMCommandPhase phase, void 
     EfbCommand *entry = (EfbCommand *)refcon;
     (void)command;
     if (phase != xplm_CommandBegin || entry == NULL) return 1;
-    if (entry->kind == COMMAND_PAGE) set_page(entry->value);
+    if (entry->kind == COMMAND_PAGE) { set_page(entry->value); efb_tablets_follow_page(entry->value); }
     else if (entry->kind == COMMAND_ACTION) execute_action(entry->value);
     else if (entry->kind == COMMAND_POWER) powered = !powered;
-    else if (entry->kind == COMMAND_NEXT) set_page(((int)active_page + 1) % PAGE_COUNT);
+    else if (entry->kind == COMMAND_NEXT) { set_page(((int)active_page + 1) % PAGE_COUNT); efb_tablets_follow_page(active_page); }
+    else if (entry->kind == COMMAND_SLIDES) efb_slides_set_all(entry->value);
+    else if (entry->kind == COMMAND_POPUP) efb_toggle_popup(entry->value);
+    efb_changed();
     return 1;
 }
 
@@ -1102,14 +1128,21 @@ void a380x_efb_draw(void)
 #ifndef A380X_EFB_TEST
 #include "a380x_efb_window.inc"
 #endif
+#include "a380x_efb_web.inc"
+#include "a380x_efb_device.inc"
 
 void a380x_efb_update(float dt_seconds)
 {
-    if (!battery_simulation || dt_seconds <= 0.0f) return;
-    battery_level = a380x_efb_battery_level(
-        battery_level, electrical_power_available(), dt_seconds
-    );
-    if (battery_level <= 0.0 && !electrical_power_available()) powered = 0;
+    int was_blank = efb_tablet_blank();
+    efb_web_update(dt_seconds);
+    if (battery_simulation && dt_seconds > 0.0f) {
+        battery_level = a380x_efb_battery_level(
+            battery_level, electrical_power_available(), dt_seconds
+        );
+        if (battery_level <= 0.0 && !electrical_power_available()) powered = 0;
+    }
+    if (was_blank != efb_tablet_blank()) efb_changed();
+    efb_devices_update(dt_seconds);
 }
 
 int a380x_efb_init(void)
@@ -1154,6 +1187,7 @@ int a380x_efb_init(void)
     refs.speedbrake = optional_ref("sim/cockpit2/controls/speedbrake_ratio");
     refs.parking_brake = optional_ref("sim/flightmodel/controls/parkbrake");
     for (i = 0; i < ARRAY_LEN(refs.failures); ++i) refs.failures[i] = optional_ref(failure_refs[i]);
+    efb_web_init();
 
     if (XPLMFindDataRef("a380x/xp12/efb/native_available") != NULL) return 0;
     native_available_ref = XPLMRegisterDataAccessor(
@@ -1176,10 +1210,17 @@ int a380x_efb_init(void)
     }
     if (!add_command("a380x/xp12/efb/power", "A380X flyPad: power / standby", COMMAND_POWER, 0)
             || !add_command("a380x/xp12/efb/toggle", "A380X flyPad: power / standby", COMMAND_POWER, 0)
-            || !add_command("a380x/xp12/efb/next_page", "A380X flyPad: next page", COMMAND_NEXT, 0)) {
+            || !add_command("a380x/xp12/efb/next_page", "A380X flyPad: next page", COMMAND_NEXT, 0)
+            || !add_command("a380x/xp12/efb/slides_arm_all", "A380X EFB: arm the escape slides of all closed passenger doors", COMMAND_SLIDES, 1)
+            || !add_command("a380x/xp12/efb/slides_disarm_all", "A380X EFB: disarm all escape slides", COMMAND_SLIDES, 0)
+            || !add_command("a380x/xp12/efb/captain/popup", "A380X EFB: captain tablet pop-up", COMMAND_POPUP, 0)
+            || !add_command("a380x/xp12/efb/first_officer/popup", "A380X EFB: first officer tablet pop-up", COMMAND_POPUP, 1)) {
         return 0;
     }
+    if (!efb_datarefs_register()) return 0;
     if (!efb_window_init()) return 0;
+    /* Before X-Plane loads the cockpit OBJs that reference the tablets (ATTR_cockpit_device). */
+    efb_devices_create();
     XPLMDebugString("A380X control panel: native window and tablet touch commands registered.\n");
     return 1;
 }
@@ -1187,6 +1228,9 @@ int a380x_efb_init(void)
 void a380x_efb_shutdown(void)
 {
     int i;
+    efb_devices_destroy();
+    efb_datarefs_unregister();
+    efb_web_shutdown();
     efb_window_shutdown();
     memset(iscs_sound_refs, 0, sizeof(iscs_sound_refs));
     iscs_sound_refs_ready = 0;

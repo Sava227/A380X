@@ -22,6 +22,11 @@ longer exists, so this tool makes small, anchored source edits to the verified b
    AVAILABLE", which made every page look inoperative) is replaced by FBW's SDv2 PermanentData
    area (TAT/SAT/ISA, G LOAD, UTC clock, GW/GWCG/FOB) at FBW's coordinates.
 
+Version 2 adds one edit on top (marker SLIDES_MARKER, applied to a v1-patched or an original
+bundle): FBW's DOOR page passes "LIGHT BEACON ON" to every CabinDoor as a TODO proxy for "slide
+armed". Each door now prefers the native per-door state "L:A380X_SLIDE_ARMED:<interactive point>"
+published from the EFB (docs/EFB_DEVELOPMENT.md); without it the FBW proxy stays in effect.
+
 Every anchor must occur exactly once in a known input; the result is marked so that a second
 run is a byte-identical no-op. Unknown bundles are rejected, never patched heuristically.
 """
@@ -30,7 +35,8 @@ import hashlib
 from pathlib import Path
 
 MARKER = '/*A380X-SD-LIVE-DATA v1*/'
-VERSION = 1
+SLIDES_MARKER = '/*A380X-SD-SLIDES v1*/'
+VERSION = 2
 # sd.html as shipped by the verified seven-view xp-kit build (sd-source-manifest bundle a80da77a).
 KNOWN_INPUT_SHA256 = {
     '369149262b09e84929be720859b808404cb1e30eea109f85ac62c81b233e578c',
@@ -150,6 +156,15 @@ EDITS = (
     (FOOTER, '__a380Perm(e)', 1),
     ('function u2(){', PERMANENT_DATA + 'function u2(){', 1),
 )
+# Version 2: per-door escape-slide state for the DOOR page (CabinDoor `IL`). `d` is the bundle's
+# useSimVar shim, `Fl` its frame hook and `Ol` the patched name lookup (exact FBW / native names).
+SLIDES_EDITS = (
+    ('let[a]=d(`INTERACTIVE POINT OPEN:${s}`,"percent",1e3),u=a>20,E=!u&&o,',
+     SLIDES_MARKER + 'let[a]=d(`INTERACTIVE POINT OPEN:${s}`,"percent",1e3),__sv=Ol(`L:A380X_SLIDE_ARMED:${s}`,Fl()),'
+     'u=a>20,E=!u&&(__sv===void 0?o:__sv!==0),', 1),
+)
+SLIDES_ANCHORS = (SLIDES_MARKER, '__sv=Ol(`L:A380X_SLIDE_ARMED:${s}`,Fl())', 'E=!u&&(__sv===void 0?o:__sv!==0)')
+
 # Strings the patched bundle must contain (anchor check usable without any JS engine).
 PATCHED_ANCHORS = (
     MARKER, 'function __a380Raw(f,n){', 'function __a380Word(r){', 'let __d=__a380Raw(t,e);',
@@ -178,8 +193,25 @@ def is_patched(data):
     return MARKER.encode() in data
 
 
+def _patch_slides(text):
+    """Version 2 edit on a v1-patched text; already-applied text is returned unchanged."""
+    if SLIDES_MARKER in text:
+        missing = [anchor for anchor in SLIDES_ANCHORS if anchor not in text]
+        if missing or text.count(SLIDES_MARKER) != 1:
+            raise ValueError('Partially patched SD slides (missing %s)' % (missing[0][:40] if missing else 'marker'))
+        return text
+    for anchor, _, count in SLIDES_EDITS:
+        if text.count(anchor) != count:
+            raise ValueError('SD slides anchor count %d != %d: %s' % (text.count(anchor), count, anchor[:60]))
+    for anchor, replacement, _ in SLIDES_EDITS:
+        text = text.replace(anchor, replacement)
+    if any(anchor not in text for anchor in SLIDES_ANCHORS) or text.count(SLIDES_MARKER) != 1:
+        raise ValueError('Patched SD slides failed its anchor check')
+    return text
+
+
 def patch_bundle(data):
-    """Return the patched bytes of a known sd.html; a patched input is returned unchanged."""
+    """Return the patched bytes of a known sd.html; a fully patched input is returned unchanged."""
     if not is_native_sd_bundle(data):
         raise ValueError('Not the native ECAM SD renderer bundle')
     if is_patched(data):
@@ -187,7 +219,8 @@ def patch_bundle(data):
         missing = [anchor for anchor in PATCHED_ANCHORS if anchor not in text]
         if missing:
             raise ValueError('Partially patched SD bundle (missing %s)' % missing[0][:40])
-        return data
+        patched = _patch_slides(text).encode('utf-8')
+        return data if patched == data else patched
     if sha256(data) not in KNOWN_INPUT_SHA256:
         raise ValueError('Unknown SD bundle %s; refusing to patch' % sha256(data))
     text = data.decode('utf-8')
@@ -201,7 +234,7 @@ def patch_bundle(data):
     missing = [anchor for anchor in PATCHED_ANCHORS if anchor not in text]
     if missing or text.count(MARKER) != 1 or any(word in text for word in FORBIDDEN):
         raise ValueError('Patched SD bundle failed its anchor check')
-    return text.encode('utf-8')
+    return _patch_slides(text).encode('utf-8')
 
 
 def patch_file(path):
@@ -226,7 +259,7 @@ def main():
     data = args.sd_html.read_bytes()
     if args.check:
         text = data.decode('utf-8')
-        missing = [anchor for anchor in PATCHED_ANCHORS if anchor not in text]
+        missing = [anchor for anchor in (*PATCHED_ANCHORS, *SLIDES_ANCHORS) if anchor not in text]
         if missing:
             parser.error('missing anchors: %s' % missing)
         print('patched SD bundle anchors OK', sha256(data))

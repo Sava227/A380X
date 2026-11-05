@@ -57,12 +57,35 @@ def write_text(path, text):
         temporary.unlink(missing_ok=True)
 
 
+def provider_document(aircraft, sd, isis, efb, file_sha):
+    """The avionics provider manifest exactly as an installation writes it (file_sha(packaged) -> hash)."""
+    provider=json.loads((aircraft/MANIFEST).read_text())
+    provider['datarefs']=list(AVIONICS_DATAREFS)
+    provider['commands']=list(AVIONICS_COMMANDS)
+    provider['xpkit_nd']={'cockpit_devices':list(ND_DEVICES),'commands':list(ND_COMMANDS),'datarefs':list(ND_DATAREFS)}
+    provider['xpkit_pfd']={'cockpit_devices':list(PFD_DEVICES),'commands':list(PFD_COMMANDS),'datarefs':list(PFD_DATAREFS)}
+    if sd:
+        provider['ecam_sd']=sd
+    if isis:
+        from isis_cockpit_device import ISIS_COMMANDS,ISIS_DATAREFS,ISIS_DEVICES
+        provider['isis']={'cockpit_devices':list(ISIS_DEVICES),'commands':list(ISIS_COMMANDS),'datarefs':list(ISIS_DATAREFS)}
+    if efb:
+        from efb_cockpit_devices import EFB_DEVICES,EFB_COMMANDS,EFB_DATAREFS
+        provider['efb_devices']={'cockpit_devices':list(EFB_DEVICES),'commands':list(EFB_COMMANDS),'datarefs':list(EFB_DATAREFS)}
+    provider['files']=[{'path':packaged,'sha256':file_sha(packaged)} for _,packaged in FILES]
+    return json.dumps(provider,indent=2)+'\n'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('staging', type=Path)
     parser.add_argument('--no-backup', action='store_true', help='Install directly without creating a backup')
     parser.add_argument('--check-only', action='store_true', help='Validate all installation inputs without writing or requiring X-Plane to quit')
+    parser.add_argument('--stage-dir', type=Path, help='With --check-only: also write the cockpit objects and provider manifest an '
+                        'installation would write into this new directory (aircraft-relative paths), for validation and hashes')
     args = parser.parse_args()
+    if args.stage_dir and not args.check_only:
+        parser.error('--stage-dir requires --check-only')
     if not args.check_only and subprocess.run(['pgrep', '-x', 'X-Plane'], capture_output=True).returncode == 0:
         parser.error('Quit X-Plane before replacing its aircraft plugin')
     staging = args.staging.resolve()
@@ -109,6 +132,15 @@ def main():
             sd_patch=patch.read_text()
         elif not all(MARKER in (aircraft/p).read_text() for p in object_paths):
             parser.error('ECAM build requires --ecam-source geometry for this aircraft')
+    efb=report.get('efb')
+    if efb:
+        from efb_cockpit_devices import (EFB_DEVICES,EFB_COMMANDS as EFB_DEVICE_COMMANDS,EFB_DATAREFS as EFB_DEVICE_DATAREFS,
+                                         augment_controls as efb_controls,augment_screen as efb_screen,check as efb_check)
+        if (efb.get('commands')!=list(EFB_DEVICE_COMMANDS) or efb.get('datarefs')!=list(EFB_DEVICE_DATAREFS)
+                or efb.get('cockpit_devices')!=list(EFB_DEVICES)):
+            parser.error('Stale web EFB native registry contract; rebuild before installing')
+        if 'efb_html_sha256' not in manifest or manifest.get('asset_hashes',{}).get('efb.html')!=manifest['efb_html_sha256']:
+            parser.error('Web EFB page missing from the verified display assets')
     isis=report.get('isis')
     if isis:
         from isis_cockpit_device import (ISIS_COMMANDS,ISIS_DATAREFS,ISIS_DEVICES,
@@ -127,12 +159,21 @@ def main():
             if isis:
                 # In-place append after every existing patch (FCU/EFIS LCD UVs, PFD/ND/SD quads untouched).
                 encoded=isis_controls(encoded) if touch else isis_screen(encoded)
+            if efb:
+                # Web EFB tablets: retire the two atlas faces and 34 atlas touch regions, append the
+                # device quads (idempotent; refuses an unexpected cockpit object).
+                try:
+                    encoded,_stats=efb_controls(encoded) if touch else efb_screen(encoded)
+                except ValueError as error:
+                    parser.error('Web EFB geometry cannot be applied: '+str(error))
             generated.append((original,encoded))
             if backup:
                 saved=backup/relative;saved.parent.mkdir(parents=True,exist_ok=True);copy_file(original,saved)
         if backup:
             for relative in (MANIFEST,Path(FILES[-1][1])):
                 saved=backup/relative;saved.parent.mkdir(parents=True,exist_ok=True);copy_file(aircraft/relative,saved)
+    if efb and len(generated)==2 and efb_check(generated[0][1],generated[1][1]):
+        parser.error('Web EFB geometry check failed: '+'; '.join(efb_check(generated[0][1],generated[1][1])))
     eng=sd.get('eng_button') if sd else None
     if eng:
         from ecam_button_geometry import ENG_OBJECT_PATHS
@@ -164,10 +205,33 @@ def main():
         generated=[(path,encoded) for path,encoded in generated if path.resolve() not in updates]
         generated.extend(updates.items())
     if args.check_only:
+        staged_files={}
+        if args.stage_dir:
+            stage=args.stage_dir.resolve()
+            if stage.exists():
+                parser.error('Stage directory already exists; select a fresh path')
+            for path,encoded in generated:
+                out=stage/path.relative_to(aircraft);out.parent.mkdir(parents=True,exist_ok=True);out.write_text(encoded)
+            def staged_sha(packaged):
+                if packaged==FILES[0][1]:return sha(staging/'mac.xpl')
+                if packaged==FILES[-1][1]:return sha(staging/'build-report.json')
+                source=next(src for src,dst in FILES if dst==packaged)
+                return sha(ROOT/source) if packaged.startswith('plugins/A380XAvionics/sounds/') else sha(aircraft/packaged)
+            if generated:
+                out=stage/MANIFEST;out.parent.mkdir(parents=True,exist_ok=True)
+                out.write_text(provider_document(aircraft,sd,isis,efb,staged_sha))
+            for path in sorted(p for p in stage.rglob('*') if p.is_file() and not p.name.startswith('._')):
+                relative=str(path.relative_to(stage));live=aircraft/relative
+                staged_files[relative]={'before_sha256':sha(live) if live.is_file() else None,'after_sha256':sha(path)}
+            staged_files[FILES[0][1]]={'before_sha256':sha(aircraft/FILES[0][1]),'after_sha256':sha(staging/'mac.xpl'),
+                                      'source':str(staging/'mac.xpl')}
+            staged_files[FILES[-1][1]]={'before_sha256':sha(aircraft/FILES[-1][1]),'after_sha256':sha(staging/'build-report.json'),
+                                       'source':str(staging/'build-report.json')}
         print(json.dumps({'check_only':True,'passed':True,'backup':None,
             'aircraft':str(aircraft),'plugin_sha256':expected,
-            'object_updates':[str(path.relative_to(aircraft)) for path,_ in generated],
-            'eng_button':bool(eng)}))
+            'object_updates':[str(path.relative_to(aircraft)) for path,encoded in generated if encoded!=path.read_text()],
+            'object_sha256_after':{str(path.relative_to(aircraft)):hashlib.sha256(encoded.encode()).hexdigest() for path,encoded in generated},
+            'web_efb':bool(efb),'eng_button':bool(eng),'staged':staged_files or None}))
         return
     if subprocess.run(['pgrep','-x','X-Plane'],capture_output=True).returncode==0:
         parser.error('X-Plane started during preflight; installation has not begun')
@@ -188,27 +252,26 @@ def main():
                     ignore=shutil.ignore_patterns('._*'))
     copy_file(staging / 'build-report.json', target / 'xp-kit-build-report.json')
     if generated:
-        for original,encoded in generated:
-            write_text(original,encoded)
+        # All-or-nothing: if a later object write fails, every object written so far is restored.
+        previous=[(original,original.read_text()) for original,_ in generated]
+        written=[]
+        try:
+            for original,encoded in generated:
+                write_text(original,encoded)
+                written.append(original)
+        except BaseException:
+            for original,text in previous:
+                if original in written:
+                    write_text(original,text)
+            raise
         copy_file(staging/'build-report.json',aircraft/FILES[-1][1])
-        provider_path=aircraft/MANIFEST
-        provider=json.loads(provider_path.read_text())
-        provider['datarefs']=list(AVIONICS_DATAREFS)
-        provider['commands']=list(AVIONICS_COMMANDS)
-        provider['xpkit_nd']={'cockpit_devices':list(ND_DEVICES),'commands':list(ND_COMMANDS),'datarefs':list(ND_DATAREFS)}
-        provider['xpkit_pfd']={'cockpit_devices':list(PFD_DEVICES),'commands':list(PFD_COMMANDS),'datarefs':list(PFD_DATAREFS)}
-        if sd:
-            provider['ecam_sd']=sd
-        if isis:
-            provider['isis']={'cockpit_devices':list(ISIS_DEVICES),'commands':list(ISIS_COMMANDS),'datarefs':list(ISIS_DATAREFS)}
         # Packaged plugin sounds (FILES order; the build report stays last) are copied from the
         # verified native sources; rows are rebuilt so a newly added sound is listed and hashed.
         for source,packaged in FILES:
             if packaged.startswith('plugins/A380XAvionics/sounds/'):
                 (aircraft/packaged).parent.mkdir(parents=True,exist_ok=True)
                 copy_file(ROOT/source,aircraft/packaged)
-        provider['files']=[{'path':packaged,'sha256':sha(aircraft/packaged)} for _,packaged in FILES]
-        write_text(provider_path,json.dumps(provider,indent=2)+'\n')
+        write_text(aircraft/MANIFEST,provider_document(aircraft,sd,isis,efb,lambda packaged:sha(aircraft/packaged)))
     if sha(target/'A380XAvionics.xpl') != expected or sha(target/'A380XDisplayHost') != manifest['helper_sha256']:
         raise RuntimeError('Installed binary hashes differ from the verified build')
     print(json.dumps({'installed': str(target), 'backup': str(backup) if backup else None,

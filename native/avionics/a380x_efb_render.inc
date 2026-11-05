@@ -384,6 +384,8 @@ static void efb_render_shared(void)
 
 void a380x_efb_draw(void)
 {
+    /* Both tablets are cockpit devices once the OBJ binds them (a380x_efb_device.inc). */
+    if (!a380x_efb_atlas_needed()) return;
     efb_host_left = 152; efb_host_bottom = 516;
     efb_host_right = 872; efb_host_top = 1016;
     efb_in_window = 0;

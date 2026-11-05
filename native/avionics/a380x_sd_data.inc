@@ -613,6 +613,14 @@ static void sdd_emit(XpKitJson *j, const SddContext *ctx)
         if (!sdd_read(SDD_XP "flightmodel2/misc/door_open_ratio", k, &v)) continue;
         snprintf(name, sizeof(name), "INTERACTIVE POINT OPEN:%d", k); sdd_num(j, name, 100.0 * v);
     }
+    /* Escape slides: the native per-door state of the EFB (a380x/xp12/efb/slide_armed, same door
+     * order). FBW's DoorPage passes "LIGHT BEACON ON" as a TODO proxy to every door; the patched SD
+     * bundle (tools/patch_xp_kit_sd.py, slides edit) prefers this per-door value when it is published. */
+    for (k = 0; k < 16; ++k) {
+        double v;
+        if (!sdd_read("a380x/xp12/efb/slide_armed", k, &v)) continue;
+        snprintf(name, sizeof(name), "L:A380X_SLIDE_ARMED:%d", k); sdd_flag(j, name, v != 0.0);
+    }
     {
         double v;
         if (sdd_read(SDD_XP "flightmodel2/misc/door_open_ratio", 17, &v)) sdd_flag(j, "L:A32NX_FWD_DOOR_CARGO_LOCKED", v < 0.01);

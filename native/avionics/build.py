@@ -68,6 +68,17 @@ SPEEDBRAKE_SOURCES = [HERE / "a380x_speedbrake.h", HERE / "a380x_speedbrake.inc"
 DETENT_CLICK_GENERATOR = HERE.parent.parent / "tools/build_detent_click.py"
 EFB = HERE / "a380x_efb.c"
 EFB_HEADER = HERE / "a380x_efb.h"
+# Web EFB (docs/EFB_DEVELOPMENT.md): XPLM-free core a380x_efb_core.c, adapter a380x_efb_web.inc +
+# a380x_efb_device.inc (tested against a mock XPLM with the cockpit-device API), xp-kit transport
+# a380x_xpkit_efb.inc, page sources xp-kit-efb/ (checked with JavaScriptCore on native frames).
+EFB_CORE = HERE / "a380x_efb_core.c"
+EFB_CORE_TEST = HERE / "test_efb_core.c"
+EFB_ADAPTER_TEST = HERE / "test_efb_adapter.c"
+EFB_PAGE_SOURCES = [HERE / "xp-kit-efb" / name for name in ("efb.html", "efb.css", "efb.js")] + [
+    HERE / "xp-kit-efb/Fonts/efb" / name for name in ("Manrope-Regular.ttf", "Manrope-Medium.ttf", "Manrope-SemiBold.ttf",
+                                                      "Manrope-Bold.ttf", "JetBrainsMono-Regular.ttf", "OFL.txt")]
+EFB_PAGE_CHECK = HERE.parent.parent / "tools/efb_page_check.js"
+JSC = Path("/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc")
 TEST = HERE / "test_avionics_core.c"
 GUIDANCE = HERE / "a380x_guidance.c"
 GUIDANCE_TEST = HERE / "test_guidance.c"
@@ -125,7 +136,7 @@ MFD_TESTS = (("test_mfd_formats", "core"), ("test_fms_core", "core"), ("test_nav
              ("test_mfd_ui", "core"), ("test_mfd_render", "render"), ("test_sd", "render"))
 MFD_OPTIONAL_TESTS = (("test_mfd_pages_a", "render"), ("test_mfd_page_perf", "render"),
                       ("test_mfd_page_fpln", "render"), ("test_mfd_pages_h", "render"))
-EXTRA_INPUTS = [*FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
+EXTRA_INPUTS = [EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
     EWD_DATA_TEST, EWD_RENDER_TEST, FCU_MOTION_TEST, FCU_LIGHT_TEST, ISIS_TEST, CONTROL_MOTION_TEST,
     *CXX_SOURCES, *[p for p in HERE.glob("*.h") if not p.name.startswith("._")],
     *[p for p in HERE.glob("*.inc") if not p.name.startswith("._")],
@@ -405,8 +416,32 @@ def main() -> None:
                      for path in sorted(isis_preview_dir.iterdir()) if not path.name.startswith("._")]
     efb_test_binary = output / "test_efb_render"
     run([clang, *warnings, "-Wno-deprecated-declarations", "-DAPL=1", "-I", str(headers),
-         str(EFB_TEST), str(CORE), "-lm", "-o", str(efb_test_binary)])
+         str(EFB_TEST), str(CORE), str(EFB_CORE), "-lm", "-o", str(efb_test_binary)])
     efb_result = run([str(efb_test_binary), str(output)]).strip()
+    # Web EFB: XPLM-free core, then the production adapter against a mock XPLM with cockpit devices.
+    efb_core_binary = output / "test_efb_core"
+    run([clang, *warnings, str(EFB_CORE_TEST), str(EFB_CORE), "-lm", "-o", str(efb_core_binary)])
+    efb_core_result = run([str(efb_core_binary)]).strip()
+    for source in (EFB_CORE, EFB_CORE_TEST):   # gcc-only warnings must not first appear at the Windows link
+        run([mingw, *warnings, "-c", str(source), "-o", str(output / (source.stem + "_win_check.o"))])
+    run([mingw, *warnings, "-Wno-deprecated-declarations", "-DIBM=1", "-DXPLM200=1", "-DXPLM210=1", "-DXPLM300=1",
+         "-DXPLM400=1", "-DXPLM410=1", "-I", str(headers), "-c", str(EFB), "-o", str(output / "a380x_efb_win_check.o")])
+    efb_adapter_binary = output / "test_efb_adapter"
+    run([clang, *warnings, "-Wno-deprecated-declarations", "-DAPL=1", "-I", str(headers), str(EFB_ADAPTER_TEST),
+         str(CORE), str(EFB_CORE), "-lm", "-o", str(efb_adapter_binary)])
+    efb_adapter_result = run([str(efb_adapter_binary)]).strip()
+    efb_contracts = run([str(efb_adapter_binary), "--contracts"]).splitlines()
+    efb_views = ("home", "ofp", "ground/doors", "ground/services", "ground/push", "loading/payload", "loading/fuel",
+                 "loading/wb", "cabin", "flight/perf", "flight/nav", "flight/comms", "ops/checklists", "ops/presets",
+                 "failures", "aircraft", "settings/general", "settings/sounds")
+    efb_frames = {view: json.loads(run([str(efb_adapter_binary), "--frame", *view.split("/")])) for view in efb_views}
+    (output / "efb-frames.json").write_text(json.dumps(efb_frames))
+    efb_page_result = None
+    if JSC.exists():
+        efb_page_result = run([str(JSC), str(EFB_PAGE_CHECK), "--", str(HERE / "xp-kit-efb/efb.js"),
+                               str(output / "efb-frames.json")]).strip().splitlines()[-1]
+        if not efb_page_result.startswith("EFB PAGE OK"):
+            raise RuntimeError("EFB page check failed: " + efb_page_result)
     adapter_test_binary = output / "test_fcu_adapter"
     run([clang, *warnings, "-DAPL=1", "-DXPLM200=1", "-DXPLM300=1", "-I", str(headers), str(ADAPTER_TEST), str(GUIDANCE), str(CORE),
          *mac_laws, "-lc++", "-lm", "-o", str(adapter_test_binary)])
@@ -516,7 +551,8 @@ def main() -> None:
                         | {line[2:] for line in flaps_contracts if line.startswith("R ")}
                         | {line[2:] for line in speedbrake_contracts if line.startswith("R ")}
                         | {line[2:] for line in sd_contracts if line.startswith("R ")}
-                        | {line[2:] for line in sd_data_contracts if line.startswith("R ")})
+                        | {line[2:] for line in sd_data_contracts if line.startswith("R ")}
+                        | {line[2:] for line in efb_contracts if line.startswith("R ")})
     if args.datarefs:
         raw_catalog = {line.split()[0] for line in args.datarefs.read_text().splitlines() if line.strip()}
         missing_raw = set(raw_inputs) - raw_catalog
@@ -689,13 +725,21 @@ def main() -> None:
             or fms_dataref_names != set(FMS_DATAREFS) or len(FMS_DATAREFS) != len(set(FMS_DATAREFS))
             or surv_dataref_names != set(SURV_DATAREFS)):
         raise RuntimeError("MFD native registry disagrees with cockpit provider contract")
+    from avionics_provider import EFB_COMMANDS
+    from efb_cockpit_devices import (EFB_CHANNELS, EFB_COMMANDS as EFB_DEVICE_COMMANDS, EFB_DATAREFS as EFB_DEVICE_DATAREFS,
+                                     EFB_DEVICES, EFB_DEVICE_SIZE)
+    if ({line[2:] for line in efb_contracts if line.startswith("C ")} != set(EFB_COMMANDS) | set(EFB_DEVICE_COMMANDS)
+            or {line[2:] for line in efb_contracts if line.startswith("D ")}
+            != set(EFB_DEVICE_DATAREFS) | {"a380x/xp12/efb/native_available"}
+            or [line[2:] for line in efb_contracts if line.startswith("V ")] != list(EFB_DEVICES)):
+        raise RuntimeError("EFB native registry disagrees with tools/efb_cockpit_devices.py / avionics_provider")
 
     common = [*warnings, "-Wno-deprecated-declarations", "-fvisibility=hidden",
               "-DXPLM200=1", "-DXPLM210=1", "-DXPLM300=1", "-DXPLM400=1", "-DXPLM410=1",
               *mfd_page_flags, "-I", str(headers)]
     mac = output / "mac.xpl"
     run([clang, *common, *(["-DA380X_XPKIT=1"] if args.xpkit else []), "-DAPL=1", "-arch", "arm64", "-arch", "x86_64",
-         "-mmacosx-version-min=11.0", "-dynamiclib", str(PLUGIN), str(CORE), str(EFB), str(GUIDANCE), str(ADIRS),
+         "-mmacosx-version-min=11.0", "-dynamiclib", str(PLUGIN), str(CORE), str(EFB), str(EFB_CORE), str(GUIDANCE), str(ADIRS),
          *map(str, ELEC_NETWORK_SOURCES), *map(str, FWS_SOURCES),
          *map(str, MFD_SOURCES), *mac_laws, "-lc++",
          "-F", str(sdk / "Libraries/Mac"), "-framework", "XPLM",
@@ -733,7 +777,7 @@ def main() -> None:
         xpkit_manifest["architectures"] = run(["lipo", "-archs", str(host)]).split()
 
     windows = output / "win.xpl"
-    run([mingw, *common, *(["-DA380X_XPKIT=1"] if args.xpkit_windows else []), "-DIBM=1", "-shared", str(PLUGIN), str(CORE), str(EFB), str(GUIDANCE), str(ADIRS),
+    run([mingw, *common, *(["-DA380X_XPKIT=1"] if args.xpkit_windows else []), "-DIBM=1", "-shared", str(PLUGIN), str(CORE), str(EFB), str(EFB_CORE), str(GUIDANCE), str(ADIRS),
          *map(str, ELEC_NETWORK_SOURCES), *map(str, FWS_SOURCES),
          *map(str, MFD_SOURCES), *windows_laws, "-static", "-lstdc++", "-lwinpthread",
          str(import_library), "-lopengl32", "-static-libgcc", "-lm",
@@ -948,6 +992,15 @@ def main() -> None:
         "pfd_render_test_result": pfd_result,
         "fcu_render_test_result": fcu_render_result,
         "efb_render_test_result": efb_result,
+        "efb": {"cockpit_devices": [line[2:] for line in efb_contracts if line.startswith("V ")],
+                "commands": list(EFB_DEVICE_COMMANDS), "datarefs": list(EFB_DEVICE_DATAREFS),
+                "device_texels": list(EFB_DEVICE_SIZE), "lighting_channels": list(EFB_CHANNELS),
+                "core_test_result": efb_core_result, "adapter_test_result": efb_adapter_result,
+                "page_check_result": efb_page_result, "page_check_engine": str(JSC) if efb_page_result else None,
+                "raw_inputs": [line[2:] for line in efb_contracts if line.startswith("R ")],
+                "geometry": "tools/efb_cockpit_devices.py (applied by tools/install_xp_kit_cockpit.py)",
+                "design": "docs/efb-design/EFB_MOCKUP.dc.html", "behaviour": "docs/EFB_DEVELOPMENT.md",
+                "phase": 1, "simulator_tested": False},
         "fcu_adapter_test_result": adapter_result,
         "fcu_mechanical_test_results": fcu_mechanical_results,
         "control_lifecycle_test_result": control_lifecycle_result,

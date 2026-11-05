@@ -49,7 +49,8 @@ sizeof(A380XXpKitShared),sizeof(A380XXpKitMfd),sizeof(MfdDrawList),
 offsetof(A380XXpKitShared,state),offsetof(A380XXpKitShared,ready),
 offsetof(A380XXpKitShared,pixels),offsetof(A380XXpKitShared,nd_pixels),
 offsetof(A380XXpKitShared,mfd_pixels),offsetof(A380XXpKitShared,mfd),
-offsetof(A380XXpKitShared,sd),offsetof(A380XXpKitShared,nd_profile)};
+offsetof(A380XXpKitShared,sd),offsetof(A380XXpKitShared,nd_profile),
+offsetof(A380XXpKitShared,efb_pixels),offsetof(A380XXpKitShared,efb),sizeof(A380XXpKitEfb)};
 '''
     signatures=[]
     for extension,compiler in [('c',cc),('cpp',cxx)]:
@@ -71,7 +72,7 @@ offsetof(A380XXpKitShared,sd),offsetof(A380XXpKitShared,nd_profile)};
     if not license.exists():license=sdk/'LICENSE'
     if not license.exists():raise ValueError('Official WebView2 redistribution license missing')
     shutil.copy2(license,output/'WebView2-LICENSE.txt')
-    manifest={'format':1,'platform':'Windows x86-64','views':7,'transport':'local Windows shared memory',
+    manifest={'format':1,'platform':'Windows x86-64','views':9,'transport':'local Windows shared memory',
         'renderer':'Microsoft Edge WebView2 Evergreen','webview2_sdk':'1.0.3537.50','nlohmann_json':'3.12.0',
         'helper_sha256':sha(exe),'loader_sha256':sha(output/loader.name),'dependencies':dependencies,
         'ipc_c_cpp_abi_equal':True,'wire_test_result':test_result,'windows_runtime_tested':False,

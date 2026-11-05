@@ -26,20 +26,22 @@ static wchar_t xpkit_shared_name[128];
 #endif
 static GLuint xpkit_texture[XPKIT_VIEWS];
 static unsigned xpkit_uploaded[XPKIT_VIEWS];
-static unsigned char xpkit_staging[XPKIT_MFD_BYTES];
-static int xpkit_health[22]; /* Existing PFD/ND contracts retain their indices. */
-static XPLMDataRef xpkit_health_refs[22];
+static unsigned char xpkit_staging[XPKIT_MAX_VIEW_BYTES];
+static int xpkit_health[26]; /* Existing PFD/ND contracts retain their indices; 22..25 = EFB tablets. */
+static XPLMDataRef xpkit_health_refs[26];
 static const char *xpkit_health_names[]={"helper_running","captain_active","first_officer_active","errors",
     "captain_presented_frames","first_officer_presented_frames","captain_nd_active","first_officer_nd_active",
     "captain_nd_presented_frames","first_officer_nd_presented_frames","nd_devices_active","captain_nd_bound","first_officer_nd_bound",
     "captain_mfd_active","first_officer_mfd_active","captain_mfd_presented_frames","first_officer_mfd_presented_frames","sd_active","sd_presented_frames",
-    "pfd_devices_active","captain_pfd_bound","first_officer_pfd_bound"};
+    "pfd_devices_active","captain_pfd_bound","first_officer_pfd_bound",
+    "captain_efb_active","first_officer_efb_active","captain_efb_presented_frames","first_officer_efb_presented_frames"};
 static int xpkit_draw_view(int view,float x,float y,float width,float height);
 static double xpkit_now(void);
 static void draw_nd(const Side *side,float x,float y,const char *name);
 static void draw_pfd(const Side *side,float x,float y,const char *name);
 #include "a380x_xpkit_nd_input.inc"
 #include "a380x_xpkit_pfd.inc"
+#include "a380x_xpkit_efb.inc"
 static XPLMDataRef xpkit_clock;
 static double xpkit_last_update;
 static int xpkit_logged;
@@ -83,6 +85,7 @@ static void xpkit_init(void) {
     }
     xpkit_nd_init();
     xpkit_pfd_init();
+    xpkit_efb_init();
 }
 static void xpkit_stop(void) {
 #if IBM
@@ -104,6 +107,7 @@ static void xpkit_stop(void) {
 #endif
     for(int i=0;i<10;++i) xpkit_health[i]=0;
     for(int i=13;i<19;++i) xpkit_health[i]=0;
+    xpkit_efb_reset();
     xpkit_nd_reset();
     memset(xpkit_uploaded,0,sizeof(xpkit_uploaded));
     xpkit_logged=0;
@@ -153,6 +157,7 @@ static void xpkit_start(void) {
 }
 static void xpkit_shutdown(void) {
     int i; xpkit_stop();
+    xpkit_efb_shutdown();
     xpkit_nd_shutdown();
     xpkit_pfd_shutdown();
     for(i=0;i<ARRAY_LEN(xpkit_health_refs);++i) if(xpkit_health_refs[i]) {
@@ -294,6 +299,8 @@ static void xpkit_update(void) {
         if(xpkit_job){CloseHandle(xpkit_job);xpkit_job=NULL;}
 #endif
         xpkit_pid=0; xpkit_health[0]=xpkit_health[1]=xpkit_health[2]=xpkit_health[6]=xpkit_health[7]=xpkit_health[13]=xpkit_health[14]=xpkit_health[17]=0;
+        xpkit_health[XPKIT_EFB_HEALTH]=xpkit_health[XPKIT_EFB_HEALTH+1]=0;
+        a380x_efb_needs_drawing(0); a380x_efb_needs_drawing(1);   /* repaint the native fallback */
         xpkit_nd_renderer_lost();
         xpkit_pfd_renderer_lost();
         XPLMDebugString("A380X xp-kit: helper exited; native PFD fallback.\n"); return;
@@ -304,6 +311,8 @@ static void xpkit_update(void) {
     xpkit_nd_poll();
     xpkit_mfd_publish();
     xpkit_sd_publish();
+    xpkit_efb_drain();
+    xpkit_efb_publish();
     XPLMGetDatavf(adirs_raw[AR_BUS],bus,0,1);
     xpkit_append(&j,"{\"ok\":true,\"mode\":\"native\",\"values\":{");
     xpkit_append(&j,"\"sim/cockpit2/electrical/bus_volts\":[%.5g],",isfinite(bus[0])?bus[0]:0);
@@ -372,13 +381,14 @@ static void xpkit_update(void) {
     }
     xpkit_health[17]=atomic_load(&xpkit_shared->ready[6])&&atomic_load(&xpkit_shared->frame_seq[6])>0&&now-xpkit_shared->frame_time[6]<1.0;
     if(sda.device&&mfda_av.loaded&&atomic_load(&xpkit_shared->frame_seq[6])!=xpkit_uploaded[6])mfda_av.needs_drawing(sda.device);
+    xpkit_efb_poll(now);
     xpkit_pfd_poll();
     if(!xpkit_logged && xpkit_health[1] && xpkit_health[2]) {
         XPLMDebugString("A380X xp-kit: BOTH FlyByWire library PFDs active (768x1024 cockpit devices, atlas fallback).\n"); xpkit_logged=1;
     }
 }
 static int xpkit_draw_view(int side,float x,float y,float width,float height) {
-    int health=side<2?side+1:side<4?side+4:side<6?side+9:17;
+    int health=side<2?side+1:side<4?side+4:side<6?side+9:side<XPKIT_EFB_VIEW0?17:XPKIT_EFB_HEALTH+side-XPKIT_EFB_VIEW0;
     if(!xpkit_shared || !xpkit_health[0] || !xpkit_health[health] ||
        xpkit_now()-xpkit_shared->frame_time[side]>=1.0) return 0;
     unsigned seq=atomic_load_explicit(&xpkit_shared->frame_seq[side],memory_order_acquire);
@@ -404,7 +414,7 @@ static int xpkit_draw_view(int side,float x,float y,float width,float height) {
                 atomic_fetch_add_explicit(&xpkit_shared->nd_profile[side-2].upload_count,1,memory_order_relaxed);
                 atomic_fetch_add_explicit(&xpkit_shared->nd_profile[side-2].upload_bytes,xpkit_view_bytes(side),memory_order_relaxed);
             }
-            xpkit_health[side<2?side+4:side<4?side+6:side<6?side+11:18]=(int)(seq/2);
+            xpkit_health[side<2?side+4:side<4?side+6:side<6?side+11:side<XPKIT_EFB_VIEW0?18:XPKIT_EFB_HEALTH+2+side-XPKIT_EFB_VIEW0]=(int)(seq/2);
         }
     }
     if(!xpkit_uploaded[side]) return 0;

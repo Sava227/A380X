@@ -117,6 +117,56 @@ class ReusePathRecordsPatchedHashes(unittest.TestCase):
             self.assert_install_consistent(second, again)
 
 
+def installed_bundle():
+    """The installed bundle in whatever verified state it is (original or v1-patched)."""
+    if not INSTALLED.exists():
+        raise unittest.SkipTest('installed SD bundle not present')
+    return INSTALLED.read_bytes()
+
+
+class SlidesEdit(unittest.TestCase):
+    """Version 2: per-door escape slides on the DOOR page, applied over the installed v1 bundle."""
+
+    def test_slides_edit_is_anchored_marked_and_idempotent(self):
+        data = installed_bundle()
+        patched = patcher.patch_bundle(data)
+        text = patched.decode()
+        for anchor in (*patcher.PATCHED_ANCHORS, *patcher.SLIDES_ANCHORS):
+            self.assertIn(anchor, text)
+        self.assertEqual(text.count(patcher.SLIDES_MARKER), 1)
+        self.assertEqual(text.count(patcher.MARKER), 1)
+        self.assertEqual(patcher.patch_bundle(patched), patched)
+        # FBW's beacon proxy remains the fallback when no native slide state is published.
+        self.assertIn('E=!u&&(__sv===void 0?o:__sv!==0)', text)
+
+    def test_partial_slides_patch_is_rejected(self):
+        text = patcher.patch_bundle(installed_bundle()).decode()
+        broken = text.replace('__sv=Ol(`L:A380X_SLIDE_ARMED:${s}`,Fl())', '__sv=0', 1)
+        with self.assertRaisesRegex(ValueError, 'Partially patched SD slides'):
+            patcher.patch_bundle(broken.encode())
+
+    def test_slides_lookup_in_javascript(self):
+        if not JSC.exists():
+            self.skipTest('JavaScriptCore shell not available')
+        text = patcher.patch_bundle(installed_bundle()).decode()
+        source = text[text.index(patcher.MARKER):text.index('var Gu=')] + (
+            '\nfunction check(c,m){if(!c)throw new Error(m)}'
+            'check(Ol("L:A380X_SLIDE_ARMED:3",{vars:{}})===void 0,"absent keeps the FBW proxy");'
+            'check(Ol("L:A380X_SLIDE_ARMED:3",{vars:{"L:A380X_SLIDE_ARMED:3":1}})===1,"armed");'
+            'check(Ol("L:A380X_SLIDE_ARMED:3",{vars:{"L:A380X_SLIDE_ARMED:3":0}})===0,"disarmed");print("SLIDES OK")')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'case.js'
+            path.write_text(source)
+            result = subprocess.run([str(JSC), str(path)], capture_output=True, text=True, timeout=60)
+            bundle = Path(directory) / 'bundle.js'
+            bundle.write_text(text[text.index('<script>') + len('<script>'):text.rindex('</script>')])
+            parse = Path(directory) / 'parse.js'
+            parse.write_text('try{new Function(readFile(arguments[0]));print("PARSE OK")}catch(e){print("PARSE "+e)}')
+            parsed = subprocess.run([str(JSC), str(parse), '--', str(bundle)], capture_output=True, text=True, timeout=60)
+        self.assertIn('SLIDES OK', result.stdout + result.stderr)
+        self.assertIn('PARSE OK', parsed.stdout)
+
+
 JS_HARNESS = r'''
 var te=v=>({v,set(x){this.v=x},get(){return this.v}});
 var T0={sent:{},send(k,v){this.sent[k]=v}};

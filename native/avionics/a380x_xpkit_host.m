@@ -101,6 +101,23 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
         self.loaded = [data[@"ok"] boolValue];
         atomic_store_explicit(&shared->ready[self.side], self.loaded, memory_order_release);
     } else if ([data[@"type"] isEqual:@"a380x-error"]) report_error([data[@"text"] description]);
+    else if ([data[@"type"] isEqual:@"a380x-efb-action"] && self.side>=XPKIT_EFB_VIEW0) {
+        /* Page -> plugin: a bounded printable "<id> <verb> [args]" string; the native EFB validates
+         * it again. Single producer (this main-thread handler), single consumer (the plugin). */
+        A380XXpKitEfb *efb=&shared->efb[self.side-XPKIT_EFB_VIEW0];
+        NSNumber *identifier=data[@"id"];NSString *action=data[@"action"];
+        if(![identifier isKindOfClass:[NSNumber class]]||![action isKindOfClass:[NSString class]])return;
+        NSString *line=[NSString stringWithFormat:@"%lu %@",(unsigned long)identifier.unsignedLongValue,action];
+        const char *bytes=line.UTF8String;
+        if(!bytes||strlen(bytes)>=XPKIT_EFB_ACTION_LEN)return;
+        for(const char *p=bytes;*p;++p)if((unsigned char)*p<32||(unsigned char)*p>126)return;
+        uint32_t head=atomic_load_explicit(&efb->action_head,memory_order_relaxed);
+        uint32_t tail=atomic_load_explicit(&efb->action_tail,memory_order_acquire);
+        if(head-tail>=XPKIT_EFB_ACTIONS){atomic_fetch_add(&efb->actions_dropped,1);return;}
+        memset(efb->action[head%XPKIT_EFB_ACTIONS],0,XPKIT_EFB_ACTION_LEN);
+        memcpy(efb->action[head%XPKIT_EFB_ACTIONS],bytes,strlen(bytes));
+        atomic_store_explicit(&efb->action_head,head+1,memory_order_release);
+    }
     else if ([data[@"type"] isEqual:@"a380x-nd-command"] && self.side>=2 && self.side<4) {
         int delta=[data[@"action"] isEqual:@"zoom_in"]?-1:[data[@"action"] isEqual:@"zoom_out"]?1:0;
         atomic_fetch_add(&shared->zoom_delta[self.side-2],delta);
@@ -155,6 +172,11 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
     atomic_thread_fence(memory_order_acquire);
     if (atomic_load_explicit(&shared->state_seq, memory_order_acquire) != before) return;
     BOOL inputValid=monotonic_seconds()-sent<1.5;
+    BOOL efbView=self.side>=XPKIT_EFB_VIEW0;
+    if(efbView) {
+        [self tickEfb:inputValid];
+        return;
+    }
     if(self.side>=4) {
         uint32_t seq=self.side<6?atomic_load_explicit(&shared->mfd[self.side-4].sequence,memory_order_acquire):atomic_load_explicit(&shared->sd.sequence,memory_order_acquire);
         if(!seq || (seq&1))return;
@@ -227,8 +249,9 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
             }];
         }
         WKSnapshotConfiguration *config = [WKSnapshotConfiguration new];
-        config.rect = CGRectMake(0, 0, 768, 1024);
         int width=xpkit_view_width((int)self.side),height=xpkit_view_height((int)self.side);
+        /* v7/v8: the page keeps its CSS layout (768x1024); the capture is the view's scale times that. */
+        config.rect = CGRectMake(0, 0, xpkit_view_css_width((int)self.side), xpkit_view_css_height((int)self.side));
         size_t bytes=xpkit_view_bytes((int)self.side);
         if(!self.bitmapContext) {
             self.bitmap=[NSMutableData dataWithLength:bytes];
@@ -272,6 +295,70 @@ static NSDictionary *mfd_frame(const A380XXpKitMfd *frame) {
         }];
     }];
 }
+/* EFB tablet: apply a new native frame (or a stale-input notice), then capture only when the page
+ * reports a visual change (__a380Efb.apply/idle return true). An unchanged page keeps its texture
+ * alive with a heartbeat, like the event-driven MFD/SD views. */
+- (void)tickEfb:(BOOL)inputValid {
+    A380XXpKitEfb *source=&shared->efb[self.side-XPKIT_EFB_VIEW0];
+    uint32_t seq=atomic_load_explicit(&source->sequence,memory_order_acquire);
+    NSString *script=nil;uint32_t applied=0;
+    if(seq&&!(seq&1)&&(seq!=self.lastMfdSequence||inputValid!=self.lastInputValid)&&source->size>0&&source->size<XPKIT_EFB_CAP) {
+        NSData *copy=[NSData dataWithBytes:source->json length:source->size];
+        atomic_thread_fence(memory_order_acquire);
+        if(atomic_load_explicit(&source->sequence,memory_order_acquire)!=seq)return;
+        NSString *encoded=[[NSString alloc] initWithData:copy encoding:NSUTF8StringEncoding];
+        if(!encoded||![NSJSONSerialization JSONObjectWithData:copy options:0 error:nil]) {report_error(@"Invalid native EFB frame");return;}
+        script=[NSString stringWithFormat:@"window.__a380Efb.apply(%@,%@)",encoded,inputValid?@"true":@"false"];
+        applied=seq;
+    } else script=@"window.__a380Efb.idle()";
+    self.busy=YES;
+    [self.view evaluateJavaScript:script completionHandler:^(id result, NSError *error) {
+        if(error){report_error(error.localizedDescription);self.busy=NO;return;}
+        if(applied){self.lastMfdSequence=applied;self.lastInputValid=inputValid;}
+        BOOL changed=[result isKindOfClass:[NSNumber class]]&&[result boolValue];
+        if(!changed&&atomic_load_explicit(&shared->frame_seq[self.side],memory_order_acquire)) {
+            shared->frame_time[self.side]=monotonic_seconds();self.busy=NO;return;
+        }
+        [self capture:0];
+    }];
+}
+- (void)capture:(uint32_t)mfdSequence {
+    WKSnapshotConfiguration *config = [WKSnapshotConfiguration new];
+    int width=xpkit_view_width((int)self.side),height=xpkit_view_height((int)self.side);
+    size_t bytes=xpkit_view_bytes((int)self.side);
+    config.rect = CGRectMake(0, 0, xpkit_view_css_width((int)self.side), xpkit_view_css_height((int)self.side));
+    if(!self.bitmapContext) {
+        self.bitmap=[NSMutableData dataWithLength:bytes];
+        CGColorSpaceRef color=CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+        self.bitmapContext=CGBitmapContextCreate(self.bitmap.mutableBytes,width,height,8,width*4,
+            color,kCGImageAlphaPremultipliedLast|kCGBitmapByteOrder32Big);
+        CGColorSpaceRelease(color);
+        if(!self.bitmapContext) {report_error(@"Unable to allocate display bitmap");self.busy=NO;return;}
+        CGContextSetBlendMode(self.bitmapContext,kCGBlendModeCopy);
+    }
+    config.snapshotWidth = @(width);
+    config.afterScreenUpdates = YES;
+    [self.view takeSnapshotWithConfiguration:config completionHandler:^(NSImage *image, NSError *captureError) {
+        if (captureError || !image) {
+            report_error(captureError.localizedDescription ?: @"No WebKit snapshot");
+            self.busy = NO; return;
+        }
+        CGImageRef cg = [image CGImageForProposedRect:NULL context:nil hints:nil];
+        CGContextRef ctx=self.bitmapContext;
+        if (ctx && cg) {
+            CGContextSetInterpolationQuality(ctx,CGImageGetWidth(cg)==(size_t)width &&
+                CGImageGetHeight(cg)==(size_t)height?kCGInterpolationNone:kCGInterpolationHigh);
+            CGContextDrawImage(ctx, CGRectMake(0, 0, width, height), cg);
+            uint32_t sequence = atomic_load_explicit(&shared->frame_seq[self.side], memory_order_relaxed);
+            atomic_store_explicit(&shared->frame_seq[self.side], sequence + 1, memory_order_release);
+            memcpy(xpkit_view_pixels(shared,(int)self.side), self.bitmap.bytes, bytes);
+            shared->frame_time[self.side] = monotonic_seconds();
+            atomic_store_explicit(&shared->frame_seq[self.side], sequence + 2, memory_order_release);
+            if(mfdSequence)self.lastMfdSequence=mfdSequence;
+        }
+        self.busy = NO;
+    }];
+}
 @end
 
 int main(int argc, const char **argv) {
@@ -296,16 +383,17 @@ int main(int argc, const char **argv) {
             WKWebViewConfiguration *configuration = [WKWebViewConfiguration new];
             configuration.websiteDataStore = [WKWebsiteDataStore nonPersistentDataStore];
             [configuration.userContentController addScriptMessageHandler:owner name:@"a380"];
-            owner.view = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 768, 1024) configuration:configuration];
+            int width=xpkit_view_css_width((int)side),height=xpkit_view_css_height((int)side);   /* CSS size */
+            owner.view = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, width, height) configuration:configuration];
             owner.view.navigationDelegate = owner;
-            owner.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(-20000 - side * 1000, -20000, 768, 1024)
+            owner.window = [[NSWindow alloc] initWithContentRect:NSMakeRect(-20000 - side * 2000, -20000, width, height)
                 styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
             owner.window.releasedWhenClosed = NO;
             owner.window.ignoresMouseEvents = YES;
             owner.window.contentView = owner.view;
             [owner.window orderBack:nil];
-            NSURLComponents *url = [NSURLComponents componentsWithURL:[NSURL fileURLWithPath:[root stringByAppendingPathComponent:side<2?@"pfd.html":side<4?@"nd.html":side<6?@"mfd.html":@"sd.html"]] resolvingAgainstBaseURL:NO];
-            url.query = side == 0 ? @"index=1&duID=0" : side==1?@"index=2&duID=3":side==2?@"index=1&duID=1":side==3?@"index=2&duID=4":side==4?@"index=1&duID=2":@"index=2&duID=5";
+            NSURLComponents *url = [NSURLComponents componentsWithURL:[NSURL fileURLWithPath:[root stringByAppendingPathComponent:side<2?@"pfd.html":side<4?@"nd.html":side<6?@"mfd.html":side<XPKIT_EFB_VIEW0?@"sd.html":@"efb.html"]] resolvingAgainstBaseURL:NO];
+            url.query = side == 0 ? @"index=1&duID=0" : side==1?@"index=2&duID=3":side==2?@"index=1&duID=1":side==3?@"index=2&duID=4":side==4?@"index=1&duID=2":side<XPKIT_EFB_VIEW0?@"index=2&duID=5":side==XPKIT_EFB_VIEW0?@"tablet=0":@"tablet=1";
             [owner.view loadFileURL:url.URL allowingReadAccessToURL:[NSURL fileURLWithPath:root]];
             /* PFDs move continuously (attitude, tapes): 30 Hz. Event-driven views keep 20 Hz. */
             owner.timer = [NSTimer scheduledTimerWithTimeInterval:side<2?1.0/30.0:0.05 target:owner selector:@selector(tick) userInfo:nil repeats:YES];

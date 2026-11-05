@@ -399,6 +399,12 @@ def validate_avionics_provider(root: Path) -> tuple[dict | None, list[str]]:
             if (isis.get('cockpit_devices')!=list(ISIS_DEVICES) or isis.get('commands')!=list(ISIS_COMMANDS)
                     or isis.get('datarefs')!=list(ISIS_DATAREFS)):
                 raise ValueError('invalid native ISIS cockpit-device contracts')
+        if document.get('efb_devices'):
+            from efb_cockpit_devices import EFB_DEVICES, EFB_COMMANDS as EFB_DEVICE_COMMANDS, EFB_DATAREFS
+            efb=document['efb_devices']
+            if (efb.get('cockpit_devices')!=list(EFB_DEVICES) or efb.get('commands')!=list(EFB_DEVICE_COMMANDS)
+                    or efb.get('datarefs')!=list(EFB_DATAREFS)):
+                raise ValueError('invalid web EFB cockpit-device contracts')
         if document.get('ecam_sd'):
             sd=document['ecam_sd']
             if (sd.get('cockpit_devices')!=list(SD_DEVICES) or sd.get('commands')!=list(SD_COMMANDS)
