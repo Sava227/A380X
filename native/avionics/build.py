@@ -774,7 +774,7 @@ def main() -> None:
         host = output / "A380XDisplayHost"
         run([clang, *warnings, "-fobjc-arc", "-arch", "arm64", "-arch", "x86_64",
              "-mmacosx-version-min=11.0", str(HERE / "a380x_xpkit_host.m"),
-             "-framework", "Cocoa", "-framework", "WebKit", "-framework", "CoreGraphics", "-o", str(host)])
+             "-framework", "Cocoa", "-framework", "WebKit", "-framework", "CoreGraphics", "-framework", "Accelerate", "-o", str(host)])
         run(["codesign", "--force", "--sign", "-", str(host)])
         run(["codesign", "--verify", "--strict", str(host)])
         xpkit_manifest = json.loads((output / "xp-kit/manifest.json").read_text())
