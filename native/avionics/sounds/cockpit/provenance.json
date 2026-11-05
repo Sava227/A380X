@@ -1,0 +1,199 @@
+{
+  "origin": "Supplied by the user from \"~/Documents/A380 sounds cockpit\" for the A380X cockpit aurals (cockpit only, interior bus).",
+  "processing": "afconvert to mono 16-bit PCM, leading/trailing silence trimmed with 4 ms fades; MASTER WARNING and STALL cut to whole cycles for seamless loops (tools: macOS afconvert + numpy).",
+  "source_sha256": {
+    "1000ft": "73dbe653f1068d1006f40df16dea6d6a9a1c816007fcb6136149ef5ad7e903f3",
+    "100ft": "08c1caec6d0c6fa18b204875305892a58009af386f630574db562f355b4c9c87",
+    "10ft": "319d74f04ae7b18a8756f4472936dcda22aa68d1da85b794926a2eb625e6e362",
+    "2000ft": "091dc18f8515f8db679eeb6073a342c1582e09bb069949b55469de1ef278479a",
+    "200ft": "b6006ca8a8c36d2e80971ec9122496c178d2869f5e42a0ea3ca147f945361c94",
+    "20ft": "11373fdd06f3e95980c77caf928a616536f8fef640ec5ed8b4207907272fa863",
+    "2500ft": "b158f6d5bde6157a31d07f557e5117e9384b4f20a778ef3fde239a78c06cc08a",
+    "300ft": "a132f255acaaf94c31f80c173d2c8434ae07076f981e52e6140501bc36783f45",
+    "30ft": "20911aa44795670caeb51017a39e984df869045add62b66957a87e2f9212515f",
+    "400ft": "18567cfbb150b999492ff14c052bb6e1e20a028460cf6dbb725963cadd5f5c7d",
+    "40ft": "6716972d851a433b87cbf74d1af9c827276a68052e6740a87136a9ff5986f2cd",
+    "500ft": "b4cb62000a3e54acc9d12da8d1d559a88d4fe9a699ec3808bda33e456eb2d7a6",
+    "50ft": "8a6c2426679167994c18b590c3a4b792b18670fad6ec284532ec6e570267444d",
+    "5ft": "c5820ff73656f336bb496ce1c613b1bfaa743af20457e343aa1467e053e92eec",
+    "60ft": "285da0a29736f13b70b3d5054246ce0f004fc3d49bd89f4d6f140006d9940439",
+    "70ft": "a483aca6247baff2c35d59e4a4846a67a559fd85abed1c0b3f990589225d9c32",
+    "80ft": "043221fc9b1d57d2116174eec97331f4863e43b2caaee67a3585e46e50bd8be0",
+    "90ft": "255cf042fb069c20ccbe8c85071cd78f3947ed1922ab95f8eff108366513aacf",
+    "C_chord_onefive": "e8bb7c96aeb8ba236572fffcea688518eabc35df6bc50124964c57563cbf4389",
+    "V_ONE": "cdc64df38d7cf761061b1fb78bf8063b238dea660cec05cea319597b1c12cff6",
+    "hundred_above": "b9badc131680645f07bb9b53285018fbe7fde3fcdc1501c6da594df58619f71f",
+    "knack3": "fbc16760248d1bc784632082b04b25d66c6a7529a6cb520c79eeeddb9e0bd784",
+    "master": "8b6d3908afcbdda117f96bce93ac27615f55f6975d2bdc128c0b81bef24041ed",
+    "minimum": "e187ebdcb33114b26326ca069cb677c614fbbb1e01aba416423602d0c8c7f7b8",
+    "retard": "316e94142272378e79eee0679f9cb2dc33a1559dd85d07c28025f2165de70477",
+    "seatbelt": "5617be2fed1718e9a7c868e853f69a237c48dfc0c7f4f48fc795ddbb89cd4c3d",
+    "stall": "3da2b53bbc9de018d273a837107dfe3a9707433f376080b0f40e577a786b5e4c"
+  },
+  "files": {
+    "callout_10.wav": {
+      "source": "10ft",
+      "seconds": 0.588,
+      "rate": 11025,
+      "sha256": "bb20820a30c6e973bd4a002a63c93b936522e659734f19502b7daa7efae69736"
+    },
+    "callout_100.wav": {
+      "source": "100ft",
+      "seconds": 0.652,
+      "rate": 11025,
+      "sha256": "7dc5d4822a4a88b3016db904740556224aa74a8223a7ada555f375507647c781"
+    },
+    "callout_1000.wav": {
+      "source": "1000ft",
+      "seconds": 0.798,
+      "rate": 11025,
+      "sha256": "2f187ac22be2619d882db9f589dbfcad12ca6e8b997b8f964ed5487d07ae507f"
+    },
+    "callout_20.wav": {
+      "source": "20ft",
+      "seconds": 0.485,
+      "rate": 11025,
+      "sha256": "223b19923969f0192ee616e2556dda4411dc7886109621cde58aac742602df11"
+    },
+    "callout_200.wav": {
+      "source": "200ft",
+      "seconds": 0.697,
+      "rate": 11025,
+      "sha256": "26ea8a6d496a835b4c41148fc045b84f992b8a0e0110b29448912b946d2d195a"
+    },
+    "callout_2000.wav": {
+      "source": "2000ft",
+      "seconds": 0.724,
+      "rate": 11025,
+      "sha256": "38b74834dc50d834957aecde3be40eb84f19ffaf9f6d5cfc0cbad5713e47b056"
+    },
+    "callout_2500.wav": {
+      "source": "2500ft",
+      "seconds": 1.347,
+      "rate": 11025,
+      "sha256": "57c33b40b615a110e13b0234557eb35d858b5daf218d368d399a0bd9e41ac73d"
+    },
+    "callout_30.wav": {
+      "source": "30ft",
+      "seconds": 0.573,
+      "rate": 11025,
+      "sha256": "d02522d307f8ae37c3bad516782dd682b76e6ea7dd2a41c31600fe8b784a0a75"
+    },
+    "callout_300.wav": {
+      "source": "300ft",
+      "seconds": 0.74,
+      "rate": 11025,
+      "sha256": "d3421537e22aa619d2656c2af6589b406796e92903c5e8c357eea0d7d7d7ea2a"
+    },
+    "callout_40.wav": {
+      "source": "40ft",
+      "seconds": 0.55,
+      "rate": 11025,
+      "sha256": "d005a40f854116e1caf30d92120c2ae7b74aab7225823171f5199f89d0094fdb"
+    },
+    "callout_400.wav": {
+      "source": "400ft",
+      "seconds": 0.753,
+      "rate": 11025,
+      "sha256": "d006254c1f955bec235862ecc9e407d8cae1fa3b05d9c8e493e6e48ef08c1e78"
+    },
+    "callout_5.wav": {
+      "source": "5ft",
+      "seconds": 0.749,
+      "rate": 11025,
+      "sha256": "870bca733e2e9a127e0ffa88c82708f539a4c96b4bff9435d6c9490be01e453d"
+    },
+    "callout_50.wav": {
+      "source": "50ft",
+      "seconds": 0.549,
+      "rate": 11025,
+      "sha256": "2106fdb85aa88b56f3a0d7285b4ed389ef6cd7e193b86ff7666c2c942916e473"
+    },
+    "callout_500.wav": {
+      "source": "500ft",
+      "seconds": 0.749,
+      "rate": 11025,
+      "sha256": "a05b6f6ba3cea520a93565a357f0502da152874d513d33711c920c3416e9ad9c"
+    },
+    "callout_60.wav": {
+      "source": "60ft",
+      "seconds": 0.65,
+      "rate": 11025,
+      "sha256": "d6024673a72a4e4c7b87f28f0f052cf35ba39846403d18e204a6890ec8db6d13"
+    },
+    "callout_70.wav": {
+      "source": "70ft",
+      "seconds": 0.801,
+      "rate": 11025,
+      "sha256": "93693e3d8482e2e28ac531508fc28d9245f9cee46dbd23dbe9adab1d64dce93e"
+    },
+    "callout_80.wav": {
+      "source": "80ft",
+      "seconds": 0.525,
+      "rate": 11025,
+      "sha256": "3a1f1aa7bdb05397224f1e44d4c9bdf7da977ee16ac065ccec3f579b3a2d4945"
+    },
+    "callout_90.wav": {
+      "source": "90ft",
+      "seconds": 0.599,
+      "rate": 11025,
+      "sha256": "3dc1614ab1f13f3b6c6ed71f9eeb24f7f1ee79c1976d851808f64147b449ae47"
+    },
+    "cchord.wav": {
+      "source": "C_chord_onefive",
+      "seconds": 1.5,
+      "rate": 44100,
+      "sha256": "981e8b999d55d6dffca2dbc93e8fb099be02b4e947e5c3f0fd8bac246782d1d4"
+    },
+    "crc_master_warning.wav": {
+      "source": "master",
+      "seconds": 4.925,
+      "rate": 44100,
+      "loop": "10 whole chime cycles of 0.49250 s from the first onset (seam correlation 0.997)",
+      "sha256": "1834a4ccef0fb039b0a12970205e4a91310fd6bd1f71ae96bd28588e52b5ecdb"
+    },
+    "hundred_above.wav": {
+      "source": "hundred_above",
+      "seconds": 0.89,
+      "rate": 11025,
+      "sha256": "921c0c00e66fefa2b0ad7fc6894a2ac433eb7a8f456a8418e8f108b6abaacfc7"
+    },
+    "minimum.wav": {
+      "source": "minimum",
+      "seconds": 0.651,
+      "rate": 11025,
+      "sha256": "e2587cb178c7702537bc0346c94b364481a22fddd47d1f6f2dbc5f9a0dac8ef9"
+    },
+    "retard.wav": {
+      "source": "retard",
+      "seconds": 0.773,
+      "rate": 11025,
+      "sha256": "cb426107e4dd6b7ebcffd68fec38fd711bb4afc5b047eb185d706659b484dbbe"
+    },
+    "seatbelt_chime.wav": {
+      "source": "seatbelt",
+      "seconds": 0.992,
+      "rate": 22050,
+      "sha256": "455a1d6c35c5dfed3d3c5a1b704383fa0f98f709db385f4119f30990614f9ec9"
+    },
+    "stall.wav": {
+      "source": "stall",
+      "seconds": 5.68,
+      "rate": 44100,
+      "loop": "2 whole STALL/cricket cycles of 2.84000 s from the first onset (seam correlation 0.921)",
+      "sha256": "f117b5ca935442a96b84e5fc6851ebad5c609e78c3426d2e2fe98d9d0ccbe2e1"
+    },
+    "triple_click.wav": {
+      "source": "knack3",
+      "seconds": 0.549,
+      "rate": 11025,
+      "sha256": "c4abcfb46de6987b9419af4e07ded02dfd5ad3dadeb80d0be177477478274691"
+    },
+    "v1.wav": {
+      "source": "V_ONE",
+      "seconds": 0.85,
+      "rate": 16000,
+      "sha256": "d7d6bee71357819fe307b9c9b8d4493d7d38c25644fde2098a27f288941fcc94"
+    }
+  }
+}

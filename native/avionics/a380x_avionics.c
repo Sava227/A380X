@@ -288,6 +288,7 @@ static int xpkit_draw_sd(void);
 #include "a380x_cockpit_feedback.inc"
 #include "a380x_eng_start.inc"        /* ENG START selector + FADEC automatic start (after the feedback selector) */ /* key travel, SWITCHING / SURV / ECAM CP lamps (after SD, ADIRS, FMS) */
 #include "a380x_fws_adapter.inc"
+#include "a380x_aurals.inc"            /* cockpit aurals: callouts, CRC, C-chord, stall, V1 (after FWS, FMS, guidance) */
 #define XPKIT_ND_OVERLAY(side) (plugin_enabled && cds_overlay((side) ? A380X_ELN_DU_FO_ND : A380X_ELN_DU_CAPT_ND, 0, 0, 768, 1024))
 #include "a380x_xpkit_adapter.inc"
 
@@ -381,6 +382,8 @@ static float flight_loop(float elapsed_since_last_call, float elapsed_since_last
     /* Native FWS: alerts, memos, ECL and master lights; it replaces the legacy EWD lists. */
     fwsa_update(dt, a380x_power_du_on(A380X_ELN_DU_EWD, powered));
     fwsa_publish_ewd();
+    /* Wall time of this callback (elapsed_since_last_loop counts from ANY plugin callback). */
+    aurals_update_frame(elapsed_since_last_call > 0.0f ? elapsed_since_last_call : dt);
     cockpit_door_update();
     mfda_update(dt, powered);
     /* SDK elapsedSinceLastLoop is since ANY plugin callback, not this one.
@@ -632,6 +635,7 @@ PLUGIN_API int XPluginStart(char *name, char *signature, char *description)
         XPLMDebugString(fws_line);
     }
     engi_init();
+    aurals_start();   /* cockpit aural samples (sounds/cockpit); silent if they are absent */
     if (!sda_init()) XPLMDebugString("A380X ECAM SD: registration failed; existing avionics remain available\n");
     /* Key-travel, selector and lamp datarefs before the aircraft OBJs bind them. */
     if (!rmpa_init()) XPLMDebugString("A380X RMP: registration failed; the radio panels stay dark\n");
@@ -686,6 +690,7 @@ PLUGIN_API void XPluginStop(void)
     native_displays_shutdown();
     XPLMUnregisterFlightLoopCallback(flight_loop, NULL);
     ovhd_shutdown();
+    aurals_stop();
     fwsa_shutdown();
     eln_shutdown();
     elec_shutdown();
@@ -731,6 +736,7 @@ PLUGIN_API int XPluginEnable(void)
 
 PLUGIN_API void XPluginDisable(void)
 {
+    aural_stop_all();
     engs_release();   /* no starter left engaged */
     xpkit_stop();
     isis_adapter_disable();
@@ -770,6 +776,7 @@ PLUGIN_API void XPluginReceiveMessage(XPLMPluginID from, int message, void *para
         eln_plane_loaded();
         ovhd_plane_loaded();
         fwsa_plane_loaded();
+        aurals_reset();
         fmsa_plane_loaded();
         mfda_plane_loaded();
         sda_plane_loaded();

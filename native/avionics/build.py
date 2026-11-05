@@ -81,6 +81,8 @@ EFB_PAGE_CHECK = HERE.parent.parent / "tools/efb_page_check.js"
 JSC = Path("/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc")
 TEST = HERE / "test_avionics_core.c"
 GUIDANCE = HERE / "a380x_guidance.c"
+AURALS = HERE / "a380x_aurals.c"
+AURALS_TEST = HERE / "test_aurals.c"
 GUIDANCE_TEST = HERE / "test_guidance.c"
 PFD_TEST = HERE / "test_pfd_render.c"
 EFB_TEST = HERE / "test_efb_render.c"
@@ -136,7 +138,7 @@ MFD_TESTS = (("test_mfd_formats", "core"), ("test_fms_core", "core"), ("test_nav
              ("test_mfd_ui", "core"), ("test_mfd_render", "render"), ("test_sd", "render"))
 MFD_OPTIONAL_TESTS = (("test_mfd_pages_a", "render"), ("test_mfd_page_perf", "render"),
                       ("test_mfd_page_fpln", "render"), ("test_mfd_pages_h", "render"))
-EXTRA_INPUTS = [EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
+EXTRA_INPUTS = [EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
     EWD_DATA_TEST, EWD_RENDER_TEST, FCU_MOTION_TEST, FCU_LIGHT_TEST, ISIS_TEST, CONTROL_MOTION_TEST,
     *CXX_SOURCES, *[p for p in HERE.glob("*.h") if not p.name.startswith("._")],
     *[p for p in HERE.glob("*.inc") if not p.name.startswith("._")],
@@ -389,6 +391,9 @@ def main() -> None:
     run([clang, *warnings, str(CORE), str(GUIDANCE), str(GUIDANCE_TEST),
          *mac_laws, "-lc++", "-lm", "-o", str(guidance_test_binary)])
     guidance_result = run([str(guidance_test_binary)]).strip()
+    aurals_test_binary = output / "test_aurals"
+    run([clang, *warnings, str(AURALS), str(AURALS_TEST), "-lm", "-o", str(aurals_test_binary)])
+    aurals_result = run([str(aurals_test_binary)]).strip().splitlines()[-1]
     pfd_test_binary = output / "test_pfd_render"
     run([clang, *warnings, str(CORE), str(PFD_TEST), "-lm", "-o", str(pfd_test_binary)])
     pfd_result = run([str(pfd_test_binary), str(output / "pfd-climb.svg"),
@@ -739,7 +744,7 @@ def main() -> None:
               *mfd_page_flags, "-I", str(headers)]
     mac = output / "mac.xpl"
     run([clang, *common, *(["-DA380X_XPKIT=1"] if args.xpkit else []), "-DAPL=1", "-arch", "arm64", "-arch", "x86_64",
-         "-mmacosx-version-min=11.0", "-dynamiclib", str(PLUGIN), str(CORE), str(EFB), str(EFB_CORE), str(GUIDANCE), str(ADIRS),
+         "-mmacosx-version-min=11.0", "-dynamiclib", str(PLUGIN), str(CORE), str(EFB), str(EFB_CORE), str(GUIDANCE), str(AURALS), str(ADIRS),
          *map(str, ELEC_NETWORK_SOURCES), *map(str, FWS_SOURCES),
          *map(str, MFD_SOURCES), *mac_laws, "-lc++",
          "-F", str(sdk / "Libraries/Mac"), "-framework", "XPLM",
@@ -777,7 +782,7 @@ def main() -> None:
         xpkit_manifest["architectures"] = run(["lipo", "-archs", str(host)]).split()
 
     windows = output / "win.xpl"
-    run([mingw, *common, *(["-DA380X_XPKIT=1"] if args.xpkit_windows else []), "-DIBM=1", "-shared", str(PLUGIN), str(CORE), str(EFB), str(EFB_CORE), str(GUIDANCE), str(ADIRS),
+    run([mingw, *common, *(["-DA380X_XPKIT=1"] if args.xpkit_windows else []), "-DIBM=1", "-shared", str(PLUGIN), str(CORE), str(EFB), str(EFB_CORE), str(GUIDANCE), str(AURALS), str(ADIRS),
          *map(str, ELEC_NETWORK_SOURCES), *map(str, FWS_SOURCES),
          *map(str, MFD_SOURCES), *windows_laws, "-static", "-lstdc++", "-lwinpthread",
          str(import_library), "-lopengl32", "-static-libgcc", "-lm",
@@ -989,6 +994,7 @@ def main() -> None:
         "elec_panel": {"commands": list(ELEC_COMMANDS), "datarefs": list(ELEC_DATAREFS), "sounds": list(ELEC_SOUNDS),
                        "sound_provenance": json.loads((HERE / "sounds/elec_sounds_provenance.json").read_text())},
         "guidance_test_result": guidance_result,
+        "aurals_test_result": aurals_result,
         "pfd_render_test_result": pfd_result,
         "fcu_render_test_result": fcu_render_result,
         "efb_render_test_result": efb_result,
