@@ -67,6 +67,7 @@ static GlareCommand glare_commands[] = {
 };
 #undef GC
 
+static int aurals_crc_covers(void);   /* a380x_aurals.inc: the FWS CRC sample plays this warning */
 static short glare_tone[22050];
 static FMOD_CHANNEL *glare_audio;
 typedef struct { short *data; uint32_t bytes; } GlareVoice;
@@ -237,7 +238,7 @@ static void glare_update(float dt)
     /* With the native FWS the lights are its masterWarningOutput / masterCautionOutput: the pbs
      * reach the FWS (pass-through tap) which keeps non-cancellable warnings lit, so no local ack. */
     i=fwsa_available() ? fwsa_master_warning() : XPLMGetDatai(glare.master_warning)!=0;
-    if (i && !glare.warning_source) { glare.warning_ack=0; glare_play_tone(640,3,-1); }
+    if (i && !glare.warning_source) { glare.warning_ack=0; if (!aurals_crc_covers()) glare_play_tone(640,3,-1); }
     if (!i) glare.warning_ack=0;
     glare.warning_source=i;
     glare.warning=i && (fwsa_available() || !glare.warning_ack);

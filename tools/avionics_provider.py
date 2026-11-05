@@ -14,6 +14,36 @@ from elec_panel_contract import (COMMANDS as ELEC_COMMANDS, DATAREFS as ELEC_DAT
 from elec_system_contract import COMMANDS as ELEC_NETWORK_COMMANDS, DATAREFS as ELEC_NETWORK_DATAREFS
 from ovhd_lamps_contract import COMMANDS as OVHD_COMMANDS, DATAREFS as OVHD_DATAREFS
 
+COCKPIT_AURAL_FILES = (
+    "callout_10.wav",
+    "callout_100.wav",
+    "callout_1000.wav",
+    "callout_20.wav",
+    "callout_200.wav",
+    "callout_2000.wav",
+    "callout_2500.wav",
+    "callout_30.wav",
+    "callout_300.wav",
+    "callout_40.wav",
+    "callout_400.wav",
+    "callout_5.wav",
+    "callout_50.wav",
+    "callout_500.wav",
+    "callout_60.wav",
+    "callout_70.wav",
+    "callout_80.wav",
+    "callout_90.wav",
+    "cchord.wav",
+    "crc_master_warning.wav",
+    "hundred_above.wav",
+    "minimum.wav",
+    "provenance.json",
+    "retard.wav",
+    "seatbelt_chime.wav",
+    "stall.wav",
+    "triple_click.wav",
+    "v1.wav",
+)
 PROVIDER_ID = "a380x-fbw-avionics-v1"
 SOURCE_REVISION = "2baa2b35eadaf4c78e172ce41bbe6b40b4aeafb2"
 MANIFEST = Path("avionics-providers/fbw-avionics-v1.json")
@@ -25,6 +55,8 @@ FILES = (
     *((f"native/avionics/sounds/{name}", f"plugins/A380XAvionics/sounds/{name}") for name in ELEC_SOUND_FILES),
     # Thrust-lever magnetic detent click (synthesized by tools/build_detent_click.py).
     ("native/avionics/sounds/thrust_detent_click.wav", "plugins/A380XAvionics/sounds/thrust_detent_click.wav"),
+    # Cockpit aurals (user-supplied set, docs/COCKPIT_AURALS.md; provenance.json records origin and processing).
+    *((f"native/avionics/sounds/cockpit/{name}", f"plugins/A380XAvionics/sounds/cockpit/{name}") for name in COCKPIT_AURAL_FILES),
     ("native/avionics/dist/build-report.json", "plugins/A380XAvionics/build-report.json"),
 )
 DISPLAY_TARGETS = (
