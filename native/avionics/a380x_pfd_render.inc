@@ -1127,6 +1127,12 @@ static void draw_pfd(const Side *side, float x, float y, const char *side_name)
     draw_landing_system(&p,side);
     if (pfd_guidance.stall_warning && !pfd_guidance.on_ground)
         pfd_text_sized(&p,68.906f,100.0f,"STALL",RED,7.0f,1);
+    /* TAWS / GPWS (FBW AttitudeIndicatorWarningsA380, same place): PULL UP (TAWS warning, GPWS modes
+     * 1/2), else TERRAIN (TAWS caution); the stall warning has priority. */
+    else if (nd_data.taws_warning || nd_data.gpws_pull_up)
+        pfd_text_sized(&p,68.906f,100.0f,"PULL UP",RED,7.0f,1);
+    else if (nd_data.taws_caution)
+        pfd_text_sized(&p,68.906f,100.0f,"TERRAIN",AMBER,7.0f,1);
     if (pfd_excessive_attitude(side)) {
         /* FBW attitude declutter hides radio height until the recovery bounds. */
     } else if (!side->radio_altitude_valid || !isfinite(side->radio_altitude_value)) {

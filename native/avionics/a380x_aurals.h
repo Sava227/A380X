@@ -13,10 +13,14 @@
  *   charge follows the FWS request (one 1.2 s cycle for a voluntary disconnect, repeated until
  *   acknowledged for an involuntary one). GPWS modes 1 (excessive descent rate) and 2 (excessive terrain
  *   closure rate), ported from FBW A380 LegacyGpws.ts, loop the TERRAIN / PULL UP voice (the EFB
- *   chooses the new or the old A380 recording; the adapter plays the chosen one).
+ *   chooses the new or the old A380 recording; the adapter plays the chosen one). The TAWS terrain
+ *   look-ahead (a380x_taws.h) warning loops the same PULL UP sample; its caution plays the optional
+ *   TERRAIN AHEAD sample (once, then every 7 s while it lasts) when that recording is installed. GPWS SYS
+ *   OFF (MFD SURV) inhibits modes 1 and 2.
  *
- * The synthetic voice is one channel: one callout at a time, by priority (STALL > PULL UP > MINIMUM >
- * HUNDRED ABOVE > RETARD > altitude callouts > V1). STALL and MINIMUM interrupt a lower callout;
+ * The synthetic voice is one channel: one callout at a time, by priority (STALL > PULL UP > TERRAIN AHEAD >
+ * MINIMUM > HUNDRED ABOVE > RETARD > altitude callouts > V1). STALL, TERRAIN AHEAD and MINIMUM interrupt
+ * a lower callout;
  * the others wait for the current one and are dropped if they cannot start within 0.5 s.
  */
 #ifndef A380X_AURALS_H
@@ -28,6 +32,7 @@ typedef enum {
     AUR_RA_2500, AUR_RA_2000, AUR_RA_1000, AUR_RA_500, AUR_RA_400, AUR_RA_300, AUR_RA_200, AUR_RA_100,
     AUR_RA_90, AUR_RA_80, AUR_RA_70, AUR_RA_60, AUR_RA_50, AUR_RA_40, AUR_RA_30, AUR_RA_20, AUR_RA_10, AUR_RA_5,
     AUR_HUNDRED_ABOVE, AUR_MINIMUM, AUR_RETARD, AUR_V1,   /* synthetic voice, one at a time */
+    AUR_TERRAIN_AHEAD,                                     /* TAWS caution, voice (optional recording) */
     AUR_STALL,                                             /* voice + cricket, looped */
     AUR_PULL_UP,                                           /* GPWS terrain / PULL UP voice, looped */
     AUR_CRC, AUR_CCHORD, AUR_TRIPLE_CLICK, AUR_SEATBELT,   /* attention getters */
@@ -57,6 +62,9 @@ typedef struct {
     /* GPWS modes 1 and 2 (FBW A380 LegacyGpws.ts): inertial vertical speed, landing flaps, gear. */
     double vs_fpm;
     int landing_flaps, gear_down;
+    int gpws_inhibit;                /* MFD SURV GPWS SYS OFF: modes 1 and 2 inhibited */
+    /* TAWS terrain look-ahead (a380x_taws.h): warning -> the PULL UP loop, caution -> TERRAIN AHEAD. */
+    int taws_warning, taws_caution;
     int mode_reversion;
     int capability_downgrade;        /* landing capability downgraded (guidance level, a380x_autoland.inc) */
     int seatbelt_valid, seatbelt_sign;              /* sign 0 off, > 0 on */
@@ -84,6 +92,8 @@ typedef struct {
     int prev_seatbelt;
     int port_stall;
     double gpws_ra_rate, gpws_last_ra, gpws_mode2_time; int gpws_last_ra_valid, gpws_pull_up;
+    int gpws_mode_pull_up;           /* GPWS modes 1/2 alone (the PFD PULL UP; without the TAWS warning) */
+    int taws_caution_active; double taws_caution_next;
 } Aurals;
 
 void aurals_init(Aurals *a);

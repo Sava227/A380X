@@ -608,6 +608,10 @@ static inline int terr_threshold_text(const TerrThresholds *t, char upper[16], c
 
 enum { TERR_IDLE, TERR_BUILD, TERR_TRANSITION };
 
+/* A TAWS look-ahead conflict point (a380x_taws.h): terrain that intrudes into the caution (level 1) or
+ * warning (level 2) ribbon. The display paints its cell and the eight around it solid yellow / red. */
+typedef struct { double lat, lon; int level; } TerrThreat;
+
 typedef struct {
     int on;                            /* terrain drawn on this ND */
     int phase, build_index, rev;       /* rev changes with every visible change (classes, box) */
@@ -617,6 +621,8 @@ typedef struct {
     TerrAircraft snap;                 /* aircraft state the frame in build/transition was made for */
     float ref_alt;
     TerrThresholds shown, pending;
+    const TerrThreat *threats;         /* set by the caller before each update (NULL: none) */
+    int threat_count;
     double lattice_lat[TERR_LAT_ROWS][TERR_LAT_COLS], lattice_dlon[TERR_LAT_ROWS][TERR_LAT_COLS];
     uint8_t cls[TERR_ROWS_MAX][TERR_COLS_MAX];    /* displayed */
     uint8_t next[TERR_ROWS_MAX][TERR_COLS_MAX];   /* frame being revealed */
@@ -677,6 +683,33 @@ static inline int terr_display_build(TerrDisplay *d, const TerrLevel *L, int bud
     return d->build_index >= total;
 }
 
+/* TAWS threat areas (Honeywell: "the terrain that created the alert is changed to solid yellow / solid
+ * red ... the display image (cells) surrounding the target are enlarged"): each threat point's cell of
+ * the new frame and its eight neighbours, inside the clip; a warning cell is never lowered to caution.
+ * Positions use the frame's snapshot (a local flat projection: threats lie within about 11 NM). */
+static inline void terr_display_mark_threats(TerrDisplay *d)
+{
+    const double h = d->snap.heading_true * TERR_PI / 180.0, ch = cos(h), sh = sin(h);
+    const double k = cos(d->snap.lat * TERR_PI / 180.0);
+    int i, dr, dc;
+    for (i = 0; d->threats && i < d->threat_count; ++i) {
+        const TerrThreat *t = &d->threats[i];
+        double e = terr_wrap180(t->lon - d->snap.lon) * 60.0 * k, n = (t->lat - d->snap.lat) * 60.0;
+        float x = d->geo.ac_x + (float)((e * ch - n * sh) * d->geo.px_per_nm);
+        float y = d->geo.ac_y - (float)((e * sh + n * ch) * d->geo.px_per_nm);
+        int row = (int)floorf((y - (float)d->geo.y0) / TERR_CELL_PX), col = (int)floorf((x - (float)d->geo.x0) / TERR_CELL_PX);
+        int cls = t->level >= 2 ? TERR_WARNING : TERR_CAUTION;
+        for (dr = -1; dr <= 1; ++dr) for (dc = -1; dc <= 1; ++dc) {
+            int r = row + dr, c = col + dc;
+            float cx, cy;
+            if (r < 0 || c < 0 || r >= d->geo.rows || c >= d->geo.cols) continue;
+            terr_cell_center(&d->geo, r, c, &cx, &cy);
+            if (!terr_in_clip(d->geo.arc, cx, cy) || d->next[r][c] == TERR_WARNING) continue;
+            d->next[r][c] = (uint8_t)cls;
+        }
+    }
+}
+
 /* Statistics over the cells in view, bands, the classes of the new frame and its TERR box. */
 static inline void terr_display_classify(TerrDisplay *d)
 {
@@ -697,6 +730,7 @@ static inline void terr_display_classify(TerrDisplay *d)
     for (row = 0; row < d->geo.rows; ++row) for (col = 0; col < d->geo.cols; ++col)
         d->next[row][col] = (uint8_t)terr_classify(d->kind[row][col], d->elev[row][col], &b);
     terr_thresholds(&b, &d->pending);
+    terr_display_mark_threats(d);
 }
 
 /* One simulator frame of an ND's terrain display. active: TERR selected and available for this ND,
@@ -708,14 +742,18 @@ static inline int terr_display_update(TerrDisplay *d, int active, int mode, floa
                                       const TerrAircraft *ac, const TerrLevel *L, double now, int budget)
 {
     TerrGeometry g;
+    const TerrThreat *threats = d->threats;
+    const int threat_count = d->threat_count;
     int changed = 0;
     if (!active || !ac || !terr_geometry(mode, range_nm, &g)) {
         if (!d->on) return 0;
         terr_display_reset(d);
+        d->threats = threats; d->threat_count = threat_count;
         return 1;
     }
     if (!d->on || d->geo.mode != g.mode || d->geo.range_nm != g.range_nm) {
         terr_display_reset(d);
+        d->threats = threats; d->threat_count = threat_count;
         d->on = 1; d->geo = g; d->cycle_start = now - 2.0 * TERR_CYCLE_S;   /* start at once */
         changed = 1;
     }

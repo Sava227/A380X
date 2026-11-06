@@ -22,7 +22,8 @@ static double ra_rearm(int threshold)
 static int voice_priority(int s)
 {
     switch (s) {
-    case AUR_STALL: return 6;
+    case AUR_STALL: return 7;
+    case AUR_TERRAIN_AHEAD: return 6;
     case AUR_MINIMUM: return 5;
     case AUR_HUNDRED_ABOVE: return 4;
     case AUR_RETARD: return 3;
@@ -31,7 +32,7 @@ static int voice_priority(int s)
     }
 }
 
-int aurals_is_voice(AurSample s) { return s >= AUR_RA_2500 && s <= AUR_V1; }
+int aurals_is_voice(AurSample s) { return s >= AUR_RA_2500 && s <= AUR_TERRAIN_AHEAD; }
 
 void aurals_init(Aurals *a)
 {
@@ -169,7 +170,7 @@ static int gpws_update(Aurals *a, const AurInputs *in, int ra_ok, double ra)
         a->gpws_ra_rate += (rate - a->gpws_ra_rate) * fmin(1.0, dt / 0.5);
     } else if (!ra_ok) a->gpws_ra_rate = 0.0;
     a->gpws_last_ra_valid = ra_ok; a->gpws_last_ra = ra;
-    if (!ra_ok || in->on_ground || ra < 10.0 || ra > 2450.0) { a->gpws_mode2_time = 0.0; return 0; }
+    if (!ra_ok || in->on_ground || in->gpws_inhibit || ra < 10.0 || ra > 2450.0) { a->gpws_mode2_time = 0.0; return 0; }
     sink = isfinite(in->vs_fpm) ? -in->vs_fpm : 0.0;
     if (sink > 1000.0) {
         double pull_up_alt = sink < 1700.0 ? 1.3 * sink - 1940.0 : 0.4 * sink - 410.0;
@@ -200,6 +201,7 @@ void aurals_update(Aurals *a, const AurInputs *in, AurOutputs *out)
         a->retard_active = 0;
         a->port_stall = 0;
         a->gpws_pull_up = 0; a->gpws_mode2_time = 0.0; a->gpws_last_ra_valid = 0; a->gpws_ra_rate = 0.0;
+        a->gpws_mode_pull_up = 0; a->taws_caution_active = 0;
         a->prev_v1 = (unsigned char)(in->v1 != 0);
         a->prev_cchord_once = (unsigned char)(in->cchord_once != 0);
         a->prev_reversion = (unsigned char)(in->mode_reversion != 0);
@@ -222,7 +224,9 @@ void aurals_update(Aurals *a, const AurInputs *in, AurOutputs *out)
     }
     /* Stall, then GPWS PULL UP: looped, silence the synthetic voice while they last. */
     stall = (in->stall || a->port_stall) && a->seconds[AUR_STALL] > 0.0;
-    a->gpws_pull_up = gpws_update(a, in, ra_ok, ra) && a->seconds[AUR_PULL_UP] > 0.0;
+    a->gpws_mode_pull_up = gpws_update(a, in, ra_ok, ra);
+    /* GPWS modes 1/2 or the TAWS look-ahead warning ("TERRAIN AHEAD, PULL UP"): the PULL UP loop. */
+    a->gpws_pull_up = (a->gpws_mode_pull_up || in->taws_warning) && a->seconds[AUR_PULL_UP] > 0.0;
     if (stall || a->gpws_pull_up) {
         if (voice_busy(a)) out->stop_voice = 1;
         a->voice = a->pending = -1;
@@ -230,6 +234,16 @@ void aurals_update(Aurals *a, const AurInputs *in, AurOutputs *out)
         else out->loop[AUR_PULL_UP] = 1;
         stall = 1;   /* below: callouts consumed silently */
     }
+
+    /* TAWS caution ("TERRAIN AHEAD"): at its start, then every 7 s while it lasts (Honeywell), below
+     * the warning and the stall; only when that recording is installed (request_voice). */
+    if (in->taws_caution && !stall) {
+        if (!a->taws_caution_active || a->clock >= a->taws_caution_next) {
+            request_voice(a, AUR_TERRAIN_AHEAD, out);
+            a->taws_caution_next = a->clock + 7.0;
+        }
+        a->taws_caution_active = 1;
+    } else a->taws_caution_active = 0;
 
     minimums = minimums_callouts(a, in, ra_ok, stall, out);
     radio_altitude_callouts(a, in, ra_ok, ra, stall || minimums, out);

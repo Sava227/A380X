@@ -3,7 +3,7 @@
 The two NDs show the A380 TAWS terrain display (EGPWS-style colours relative to the aircraft, peaks
 mode when well above the terrain, the TERR box with the highest/lowest elevation) built from X-Plane's
 own scenery with terrain probes, plus a **simulator aid**: the elevation of the terrain under the ND
-pointer. Status: built and tested off-simulator (mock XPLM, the real display helper); **not yet run in
+pointer, and **TAWS look-ahead terrain alerts** (caution / warning, see "Terrain alerts"). Status: built and tested off-simulator (mock XPLM, the real display helper); **not yet run in
 X-Plane** (see "Verify in X-Plane").
 
 ## Using it
@@ -112,7 +112,90 @@ Diagnostics (read-only datarefs): `a380x/xp12/terrain/probe_us` (average time pe
 loop), `frame_us`, `frame_us_max` (last 5 s), `probes_per_frame`, `probes_total`, `hits_total`,
 `misses_total`, `captain_active`, `first_officer_active`, `captain_coverage`, `first_officer_coverage`
 (cells in view with data), `captain_pointer_elevation_ft`, `first_officer_pointer_elevation_ft` (-9999
-when none), `cache_kb`.
+when none), `cache_kb`; TAWS: `taws_caution`, `taws_warning`, `taws_phase` (0 en route, 1 terminal,
+2 approach, 3 departure), `taws_inhibit` (0 active, 1 off/no data, 2 ground, 3 low, 4 slow),
+`taws_min_clearance_ft` (lowest predicted clearance over the terrain in the caution ribbon, 99999 when
+inactive), `taws_time_to_conflict_s` (-1 none), `taws_required_clearance_ft`, `taws_lookahead_nm`,
+`taws_eval_us`.
+
+## Terrain alerts (TAWS look-ahead)
+
+Forward-looking terrain alerting in the manner of the EGPWS "Terrain Look Ahead Alerting" (Honeywell MK
+V/MK VII Pilot's Guide 060-4241-000 Rev H) with the required terrain clearances of EASA CS ACNS.E.TAWS.015
+/ FAA TSO-C151. It is a model of the published behaviour, not Honeywell's algorithm. Core:
+`native/avionics/a380x_taws.h` (XPLM-free, `test_taws.c`); adapter: `a380x_terrain_adapter.inc`.
+
+- **Terrain data**: a dedicated 10 NM level of the elevation cache (0.16 NM nodes, probed out to about
+  11 NM, ahead first), kept whenever TAWS is available and the position valid, whether or not an ND shows
+  terrain (an ND at 10 NM shares it). It is first in the probing round robin within the same 0.4 ms
+  budget. Water counts as sea level; no data never alerts.
+- **Predicted path** (5 evaluations per second): from the position along the true track at the ground
+  speed, turning at the current track rate (at most 90 degrees), and climbing or descending at the
+  current inertial vertical speed (a climb counts at 80 %); X-Plane's geometric altitude (the EGPWS uses
+  GPS altitude, so QNH errors do not matter). Two ribbons along it, 1/4 NM wide at the aircraft and
+  splayed 3 degrees each side (plus up to 7 degrees more when turning).
+- **Caution** when terrain in the ribbon is higher than the predicted altitude minus the required
+  clearance within 60 s of flight (at most 8 NM); **warning** within 30 s. Required clearance: en route
+  700 ft level / 500 ft climbing or descending (> 500 fpm), terminal (within 15 NM of the nearest
+  airport) 350 / 300, approach (within 5 NM) 150 / 100, linear in between; departure (3 min after
+  lift-off) 100 ft.
+- **Near the runway**: terrain within 2.5 NM of the nearest airport and less than 150 ft above its
+  elevation is the runway environment and never alerts; in the approach phase, descending towards the
+  airport (its reference point ahead of the aircraft), the look-ahead ends 0.5 NM past that point, so
+  the path continued below the runway never alerts on terrain beyond it; once the airport is behind
+  (overflight, go-around) the full look-ahead applies again. Airport = nearest of the ND navaid cache,
+  elevation probed.
+- **Hysteresis**: an alert starts after conflicts in two consecutive evaluations (0.4 s) and ends 2 s
+  after the last conflict.
+- **Inhibits**: WXR/TAWS SYS OFF, TERR SYS OFF, no terrain probe or no valid position; on the ground;
+  below 30 ft radio altitude; below 50 kt ground speed; on departure below 400 ft above the airport.
+  GPWS SYS OFF inhibits the basic GPWS modes (1/2) only, as on the A380 (FCOM: TERR SYS OFF inhibits the
+  terrain functions, GPWS SYS OFF the basic modes).
+- **Outputs**: both NDs paint the terrain that caused the alert (each conflict point's cell and the
+  eight around it) **solid yellow** (caution) or **solid red** (warning), within the normal sweep; the
+  start of an alert selects TERR on both EFIS CPs (pop-up, replacing WX) if it was not selected; the PFD
+  shows **PULL UP** (red, warning, also GPWS modes 1/2) or **TERRAIN** (amber, caution) at the FBW
+  warning position (FBW PFD: `L:A32NX_EGPWS_ALERT_1_DISCRETE_WORD_1` bits 12/13, published for index 1
+  and 2; native PFD the same texts, below STALL); aurals: the PULL UP loop for the warning and an
+  optional "TERRAIN AHEAD" sample for the caution (`docs/COCKPIT_AURALS.md`). There is no ECAM message
+  for TAWS alerts on the A380, so none was added.
+- **Blinking PFD warnings in the display helper**: FBW's PFD blinks these texts with a CSS animation
+  (`Blink9Seconds`, 1 Hz for 9 s, starting transparent). The offscreen helper suspends the page's
+  animation timeline, so they would never become visible (measured with the real helper: no PULL UP at
+  all). `native/avionics/xp-kit/animation-clock.js` advances suspended CSS animations on the helper's
+  native frame clock; `tools/patch_xp_kit_pfd.py` inserts it after the bridge of the verified installed
+  `pfd.html` (anchored, idempotent, hash-checked, like the ND terrain patch) and a full PFD package
+  inlines it. With it the real helper shows PULL UP blinking 1 Hz for 9 s, then steady, as FBW does. It
+  also makes the PFD's other FBW blinking texts work; nothing else of the page changes.
+
+Behaviour checked off-simulator (`test_taws`, synthetic terrain, 50 Hz flight, 5 Hz evaluation):
+
+| Case | Result |
+|---|---|
+| Level 5000 ft at 250 kt towards a 6000 ft ridge | caution 59.6 s, warning 29.6 s before it |
+| Same at 480 kt (8 NM look-ahead cap) | caution 59.8 s, warning 29.8 s |
+| 1500 ft above the ridge / 500 ft above | none / caution and warning (clearance < 700 ft) |
+| Climbing 1500 fpm towards it / level at the same height | none / alert |
+| Descending 2500 fpm towards a plateau | caution after 25.6 s, warning after 55.6 s of flight |
+| Valley, straight / turning 3 deg/s into its wall | none (min clearance 1500 ft) / caution after 0.4 s |
+| 3-degree approach to 50 ft, a 600 ft hill 1 NM beside final | none (min clearance 474 ft) |
+| Same approach 1100 ft low | caution, then warning |
+| Same approach, a 600 ft hill 0.5 NM past the far runway end | none |
+| Descending overflight of the airport towards a ridge 4 NM beyond | caution 64.8 s before the ridge |
+| Departure climbing 2000 fpm towards 2500 ft hills | none |
+| Ground, TAWS off, RA < 30 ft, < 50 kt, missing data, sea | none |
+| Cost at 500 kt | 624 terrain samples, about 10 us per evaluation (5 per second) |
+
+Through the adapter (`test_terrain_adapter`, the synthetic mountain world, 300 kt): no alert 2300 ft
+above an 11,700 ft summit; caution at 9500 ft (conflict 36.5 s ahead) with 45 solid yellow cells on
+each ND (ARC 20 NM) and TERR popped up on both (WX deselected); warning at 8000 ft (23 s ahead), 24 red
++ 40 yellow cells; alerts end 2 s after climbing away; all inhibits; PFD words 2048 / 4096. The JS layer
+check draws the warning state's classes 9/10 solid and decodes the EGPWS word through the real bridge.
+
+Known limits: the predicted path keeps the current vertical speed, so a descent towards a level-off
+just above high terrain can give a caution before the level-off (a real EGPWS behaves similarly; it does
+not know the selected altitude either). The terrain is the X-Plane mesh, without obstacles. The runway
+logic uses the nearest airport reference point and its probed elevation, not runway thresholds.
 
 ## Measured (off-simulator)
 
@@ -140,11 +223,19 @@ miss rather than hit a flat placeholder surface; whether the probed mesh, `is_we
 elevations behave as assumed; the cockpit TERR key/lamp; the readout's legibility in the
 3D cockpit; the Windows plugin at runtime (it is only cross-compiled and unit-tested here).
 
+TAWS alerts, to check in flight: fly level at 2000-3000 ft above ground towards rising terrain (for
+example out of a valley towards a ridge) and watch `a380x/xp12/terrain/taws_time_to_conflict_s`,
+`taws_min_clearance_ft`, `taws_caution` / `taws_warning`: the caution about 60 s and the warning about
+30 s before the terrain, the solid areas and the TERR pop-up on both NDs, PULL UP / TERRAIN on the PFDs
+and the PULL UP loop; that normal approaches and departures at mountain airports (e.g. Innsbruck LOWI,
+Queenstown NZQN) give no nuisance alerts; the probe cost with the extra level (`probe_us`,
+`frame_us_max`); the alert inhibits with TERR SYS OFF.
+
 ## Not done / differences
 
-- No TAWS alerting: no look-ahead caution/warning, no solid yellow/red threat areas, no aurals or PFD
-  messages, no automatic terrain pop-up (Honeywell installation option; FlyByWire's `terr_auto_activate`
-  input is a placeholder too). The solid classes are drawn if supplied.
+- TAWS alerting is the look-ahead model above; not modelled: the terrain clearance floor and premature
+  descent alert, obstacles, the "TERRAIN TERRAIN" / "OBSTACLE" voice variants, GPWS modes 3-5 and the
+  TERR STBY / TERR FAULT logic. No "TERRAIN AHEAD" recording is supplied (optional sample).
 - Data are X-Plane's scenery mesh, not a terrain database: no obstacles; at 80 NM and above each node is
   the highest of four point probes, so narrow peaks between them can be missed (a database cell keeps its
   maximum).

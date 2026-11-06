@@ -9,7 +9,9 @@
  *   test_terrain_adapter --capture <scenario> <out.pam>   native ND terrain layer, TERR box, pointer readout
  *   test_terrain_adapter --overlay <scenario> <out.pam>   the pointer readout alone (RGBA, for compositing)
  * Scenarios: arc (6000 ft, ARC 40 NM), rose (6000 ft, ROSE NAV 40 NM), peaks (FL350, ARC 160 NM),
- * approach (2500 ft, gear down, ARC 20 NM). Each with the pointer over a mountain.
+ * approach (2500 ft, gear down, ARC 20 NM). Each with the pointer over a mountain. taws: 8000 ft at
+ * 300 kt, 6.5 NM short of the 030 / 18 NM mountain (11700 ft) and tracking for it (ARC 20 NM): TAWS
+ * warning and caution areas; its JSON also carries the FBW PFD's EGPWS words ("words").
  */
 #include <assert.h>
 #include <math.h>
@@ -32,7 +34,7 @@
 
 /* ---- the unity-build environment the adapter needs ------------------------------------------- */
 typedef struct { float r, g, b; } Color;
-typedef struct { int nd_valid, navigation_valid, heading_valid; } Side;
+typedef struct { int nd_valid, navigation_valid, heading_valid, radio_altitude_valid; float radio_altitude_value; } Side;
 static struct { Side side[2]; } refs;
 static EfisSide efis[2];
 static EfisNdData nd_data;
@@ -54,11 +56,15 @@ static void mock_needs_drawing(XPLMAvionicsID id) { ++mock_redraws[id == mock_de
 static struct { int loaded; int (*cursor_over)(XPLMAvionicsID, int *, int *); void (*needs_drawing)(XPLMAvionicsID); } mfda_av = {
     1, mock_cursor_over, mock_needs_drawing};
 static XPLMAvionicsID terrain_nd_device(int side) { return mock_device[side ? 1 : 0]; }
+static int mock_syncs[2];
+static void efis_sync_side(int side) { ++mock_syncs[side ? 1 : 0]; }   /* EFIS CP -> stock datarefs */
 
 /* ---- mock XPLM: datarefs, probes, local coordinates --------------------------------------------- */
 static double sim_time, probe_cost_s = 5e-6;
 static int probe_calls, probe_enabled = 1, registered_refs;
-static float vs_fpm;
+static float vs_fpm, mock_gs_mps, mock_hpath;
+static double mock_elevation_m;
+static int mock_onground;
 static double wall(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9; }
 #define TERRAIN_NOW() sim_time
 
@@ -108,8 +114,18 @@ XPLMProbeResult XPLMProbeTerrainXYZ(XPLMProbeRef probe, float x, float y, float 
     info->locationX = x; info->locationY = elev / 3.280839895f; info->locationZ = z; info->is_wet = wet;
     return xplm_ProbeHitTerrain;
 }
-XPLMDataRef XPLMFindDataRef(const char *name) { return !strcmp(name, "sim/flightmodel/position/vh_ind_fpm") ? (XPLMDataRef)&vs_fpm : NULL; }
+XPLMDataRef XPLMFindDataRef(const char *name)
+{
+    if (!strcmp(name, "sim/flightmodel/position/vh_ind_fpm")) return (XPLMDataRef)&vs_fpm;
+    if (!strcmp(name, "sim/flightmodel/position/elevation")) return (XPLMDataRef)&mock_elevation_m;
+    if (!strcmp(name, "sim/flightmodel/position/groundspeed")) return (XPLMDataRef)&mock_gs_mps;
+    if (!strcmp(name, "sim/flightmodel/position/hpath")) return (XPLMDataRef)&mock_hpath;
+    if (!strcmp(name, "sim/flightmodel/failures/onground_any")) return (XPLMDataRef)&mock_onground;
+    return NULL;
+}
 float XPLMGetDataf(XPLMDataRef ref) { return *(float *)ref; }
+double XPLMGetDatad(XPLMDataRef ref) { return *(double *)ref; }
+int XPLMGetDatai(XPLMDataRef ref) { return *(int *)ref; }
 XPLMDataRef XPLMRegisterDataAccessor(const char *name, XPLMDataTypeID type, int writable, XPLMGetDatai_f gi, XPLMSetDatai_f si,
     XPLMGetDataf_f gf, XPLMSetDataf_f sf, XPLMGetDatad_f gd, XPLMSetDatad_f sd, XPLMGetDatavi_f gvi, XPLMSetDatavi_f svi,
     XPLMGetDatavf_f gvf, XPLMSetDatavf_f svf, XPLMGetDatab_f gb, XPLMSetDatab_f sb, void *read, void *write)
@@ -240,7 +256,15 @@ static const Scenario scenarios[] = {
     {"rose", 2, 40, 6000, 60, 0, 0, 0},
     {"peaks", 3, 160, 35000, 60, 0, 0, 0},
     {"approach", 3, 20, 2500, 60, 1, 0, 0},
+    {"taws", 3, 20, 8000, 30, 0, 0, 0},
 };
+
+/* TAWS flight state (flight model mocks): geometric altitude, ground speed, true track, airborne. */
+static void flight(float altitude_ft, float gs_kt, float track, float vs)
+{
+    mock_elevation_m = altitude_ft / 3.280839895; mock_gs_mps = gs_kt / 1.94384449f; mock_hpath = track;
+    vs_fpm = vs; mock_onground = 0; nd_data.altitude_ft = altitude_ft;
+}
 
 static void aircraft(const Scenario *s, int side)
 {
@@ -251,6 +275,10 @@ static void aircraft(const Scenario *s, int side)
     refs.side[side].nd_valid = refs.side[side].navigation_valid = refs.side[side].heading_valid = 1;
     gear_values[0] = s->gear ? 1.0f : 0.0f;
     survh_state[SURV_WXR_TAWS_SYS] = 1; survh_state[SURV_TERR_OFF] = 0;
+    if (!strcmp(s->name, "taws")) {   /* 6.5 NM short of the 030 / 18 NM mountain, tracking 030 */
+        terr_destination(REF_LAT, REF_LON, 30, 11.5, &nd_data.lat, &nd_data.lon);
+        flight(s->altitude_ft, 300, 30, 0);
+    }
 }
 
 /* Logical ND pixel (y down) -> device texel the mock cursor reports (bottom-left origin, ND scale). */
@@ -261,17 +289,24 @@ static void point_cursor(int side, float x, float y_down)
     mock_cursor_y[side] = (int)floorf((1023.0f - y_down) * A380X_ND_SCALE);
 }
 
-/* Simulated frames at 50 Hz; returns the worst real terrain_update time (s). */
+/* Simulated frames at 50 Hz; returns the worst real terrain_update time (s): the thread's CPU time, so
+ * that a preemption on a loaded machine (other builds) does not count as work; the worst wall time and
+ * the frames over 700 us of wall time are kept for the report. */
+static double worst_wall;
+static int frames_over_wall;
+static double thread_cpu(void) { struct timespec t; clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t); return t.tv_sec + t.tv_nsec * 1e-9; }
 static double run(double seconds)
 {
     double worst = 0;
     int frames = (int)(seconds * 50 + .5), k;
     for (k = 0; k < frames; ++k) {
-        double t0 = wall(), spent;
+        double t0 = wall(), c0 = thread_cpu(), spent, wall_spent;
         sim_time += 0.02;
         terrain_update();
-        spent = wall() - t0;
+        spent = thread_cpu() - c0; wall_spent = wall() - t0;
         if (spent > worst) worst = spent;
+        if (wall_spent > worst_wall) worst_wall = wall_spent;
+        frames_over_wall += wall_spent > 0.0007;
     }
     return worst;
 }
@@ -296,11 +331,25 @@ static void scenario_setup(const Scenario *s, double seconds)
     terrain_init();
     aircraft(s, 0);
     mountain_pixel(s, &px, &py);
-    point_cursor(0, px, py);
+    if (strcmp(s->name, "taws")) point_cursor(0, px, py);
     run(seconds);
 }
 
 static void canvas_clear(void) { memset(canvas, 0, sizeof(canvas)); }
+
+static int count_class(const TerrDisplay *d, int cls)
+{
+    int row, col, n = 0;
+    for (row = 0; row < d->geo.rows; ++row) for (col = 0; col < d->geo.cols; ++col) n += d->cls[row][col] == cls;
+    return n;
+}
+
+static int levels_of_range(float range_nm)
+{
+    int k, n = 0;
+    for (k = 0; k < TERRAIN_LEVELS; ++k) n += terrain.levels[k] && terrain.levels[k]->used && terrain.levels[k]->range_nm == range_nm;
+    return n;
+}
 
 /* The native FBW-layout ND (a380x_nd_fbw.inc placement): the map aircraft reference at (384, 620) in
  * ARC and (384, 384) in ROSE, 498 / 250 px per range / range-half, its clip box; the TERR box; the
@@ -334,6 +383,100 @@ static void write_pam(const char *path, int rgba)
 /* canvas pixel (ND x, y down) */
 static const float *at(int x, int y_down) { return canvas[1023 - y_down][x]; }
 
+static int words_have(XpKitJson *j, unsigned w1)
+{
+    char want[96];
+    j->size = 0; j->failed = 0; j->data[0] = 0;
+    xpkit_taws_words(j);
+    snprintf(want, sizeof(want), "\"L:A32NX_EGPWS_ALERT_1_DISCRETE_WORD_1\":[%u,true]", w1);
+    return !j->failed && strstr(j->data, want) && strstr(j->data, "\"L:A32NX_EGPWS_ALERT_1_DISCRETE_WORD_2\":[0,true]") &&
+           strstr(j->data, "\"L:A32NX_EGPWS_ALERT_2_DISCRETE_WORD_1\"");
+}
+
+/* TAWS through the adapter on the synthetic world: 6.5 NM short of the 030 / 18 NM mountain (11700 ft)
+ * at 300 kt (caution 5 NM, warning 2.5 NM ahead), both EFIS CPs without TERR (F/O on WX). */
+static void taws_checks(XpKitJson *j)
+{
+    const Scenario *s = &scenarios[4];
+    TerrDisplay *d0 = &nd_data.terrain[0], *d1 = &nd_data.terrain[1];
+    double t0;
+    assert(!strcmp(s->name, "taws"));
+    terrain_shutdown();
+    memset(&nd_data, 0, sizeof(nd_data)); memset(efis, 0, sizeof(efis)); memset(mock_syncs, 0, sizeof(mock_syncs));
+    terrain_init();
+    aircraft(s, 0); aircraft(s, 1);
+    efis[0].terr = 0; efis[1].terr = 0; efis[1].wx_requested = 1;
+    /* On the ground: inhibited (the level fills meanwhile). */
+    mock_onground = 1; run(2.0);
+    assert(terrain.taws.inhibit == TAWS_INHIBIT_GROUND && !nd_data.taws_caution && !nd_data.taws_warning && words_have(j, 0));
+    /* Lift-off: the departure phase (100 ft required clearance) for 3 minutes. */
+    flight(14000, 300, 30, 0); run(0.5);
+    assert(terrain.taws.inhibit == TAWS_ACTIVE && terrain.taws.phase == TAWS_PHASE_DEPARTURE && terrain.taws_rtc_out == 100.0f);
+    terrain.takeoff_at = sim_time - TAWS_DEPARTURE_S - 1.0;   /* as 3 minutes later */
+    /* 14000 ft, 2300 ft above the summit: no alert. */
+    run(3.0);
+    assert(terrain.taws.inhibit == TAWS_ACTIVE && terrain.taws.phase == TAWS_PHASE_ENROUTE && terrain.taws_rtc_out == 700.0f);
+    assert(!terrain.taws.caution && !terrain.taws.warning && terrain.taws_clearance_out > 1500.0f && terrain.taws.samples > 100);
+    assert(!efis[0].terr && !efis[1].terr && !mock_syncs[0] && !mock_syncs[1]);
+    printf("terrain adapter: TAWS 14000 ft: no alert, min clearance %.0f ft over %d samples, evaluation %.1f us\n",
+           terrain.taws_clearance_out, terrain.taws.samples, terrain.taws_eval_us);
+    /* 9500 ft: the terrain enters the caution ribbon beyond the warning distance -> caution only,
+     * TERR pops up on both NDs (WX deselected), solid yellow threat cells after the sweep. */
+    flight(9500, 300, 30, 0);
+    t0 = sim_time;
+    while (!nd_data.taws_caution && sim_time - t0 < 2.0) run(0.02);
+    assert(nd_data.taws_caution && !nd_data.taws_warning && sim_time - t0 >= 0.2 - 1e-6 && sim_time - t0 <= 0.8);   /* 2 evaluations */
+    printf("terrain adapter: TAWS 9500 ft: caution after %.2f s, conflict %.1f s ahead, %d threat points\n",
+           sim_time - t0, terrain.taws_ttc_out, terrain.taws_shown_count);
+    assert(terrain.taws_ttc_out > 30.0f && terrain.taws_ttc_out <= 60.0f && terrain.taws_shown_count > 0);
+    assert(efis[0].terr && efis[1].terr && !efis[1].wx_requested && mock_syncs[0] == 1 && mock_syncs[1] == 1);
+    assert(words_have(j, 4096));
+    run(3.0);
+    assert(d0->on && d1->on && count_class(d0, TERR_CAUTION) >= 9 && !count_class(d0, TERR_WARNING));
+    assert(count_class(d1, TERR_CAUTION) >= 9 && !count_class(d1, TERR_WARNING));
+    printf("terrain adapter: TAWS caution areas: %d / %d solid yellow cells (ARC 20 NM)\n", count_class(d0, TERR_CAUTION), count_class(d1, TERR_CAUTION));
+    /* 8000 ft: inside the warning ribbon -> warning (red cells within 2.5 NM, yellow beyond); PULL UP word. */
+    flight(8000, 300, 30, 0);
+    t0 = sim_time;
+    while (!nd_data.taws_warning && sim_time - t0 < 2.0) run(0.02);
+    assert(nd_data.taws_warning && nd_data.taws_caution && terrain.taws_ttc_out < 30.0f && words_have(j, 2048));
+    printf("terrain adapter: TAWS 8000 ft: warning after %.2f s, conflict %.1f s ahead\n", sim_time - t0, terrain.taws_ttc_out);
+    run(3.0);
+    assert(count_class(d0, TERR_WARNING) >= 9 && count_class(d0, TERR_CAUTION) >= 9 && count_class(d1, TERR_WARNING) >= 9);
+    printf("terrain adapter: TAWS warning areas: %d red + %d yellow cells\n", count_class(d0, TERR_WARNING), count_class(d0, TERR_CAUTION));
+    assert(mock_syncs[0] == 1 && mock_syncs[1] == 1);   /* no second pop-up while the alert lasts */
+    /* GPWS modes 1/2 PULL UP (aurals core) alone: the same PFD word. */
+    nd_data.gpws_pull_up = 1; nd_data.taws_warning = nd_data.taws_caution = 0;
+    assert(words_have(j, 2048));
+    nd_data.gpws_pull_up = 0;
+    /* Climb away: the alerts end 2 s after the last conflict; the next sweep removes the areas. */
+    flight(14000, 300, 30, 2000);
+    run(1.0); assert(nd_data.taws_warning || nd_data.taws_caution);
+    run(1.6); assert(!nd_data.taws_warning && !nd_data.taws_caution && words_have(j, 0));
+    run(3.0); assert(!count_class(d0, TERR_WARNING) && !count_class(d0, TERR_CAUTION) && efis[0].terr);
+    /* Inhibits: TERR SYS OFF (and TAWS SYS OFF), below 30 ft RA, below 50 kt. */
+    flight(8000, 300, 30, 0);
+    survh_state[SURV_TERR_OFF] = 1; run(2.0);
+    assert(terrain.taws.inhibit == TAWS_INHIBIT_OFF && !nd_data.taws_caution && !nd_data.taws_warning);
+    survh_state[SURV_TERR_OFF] = 0; survh_state[SURV_WXR_TAWS_SYS] = 0; run(2.0);
+    assert(terrain.taws.inhibit == TAWS_INHIBIT_OFF && !nd_data.taws_warning);
+    survh_state[SURV_WXR_TAWS_SYS] = 1;
+    refs.side[0].radio_altitude_valid = 1; refs.side[0].radio_altitude_value = 20; run(2.0);
+    assert(terrain.taws.inhibit == TAWS_INHIBIT_LOW && !nd_data.taws_warning);
+    refs.side[0].radio_altitude_valid = 0;
+    flight(8000, 40, 30, 0); run(2.0);
+    assert(terrain.taws.inhibit == TAWS_INHIBIT_SLOW && !nd_data.taws_warning);
+    flight(8000, 300, 30, 0); run(2.0);
+    assert(nd_data.taws_warning && terrain.taws_warning_out && terrain.taws_inhibit_out == TAWS_ACTIVE);
+    /* The plugin disabled: no alert left behind. */
+    plugin_enabled = 0; run(0.1); assert(!nd_data.taws_warning && !nd_data.taws_caution); plugin_enabled = 1;
+    printf("terrain adapter: TAWS inhibits (TERR SYS OFF, TAWS SYS OFF, RA < 30 ft, < 50 kt, ground) and recovery passed\n");
+    terrain_shutdown();
+    memset(&nd_data, 0, sizeof(nd_data)); memset(efis, 0, sizeof(efis));
+    flight(0, 0, 0, 0);
+    terrain_init();
+}
+
 static void checks(void)
 {
     const Scenario *arc = &scenarios[0];
@@ -345,17 +488,22 @@ static void checks(void)
     assert(j);
     /* Registration; nothing happens while TERR is off. */
     terrain_init();
-    assert(registered_refs == 14 && terrain.probe);
+    assert(registered_refs == 23 && terrain.probe);
     sim_time = 100;
     aircraft(arc, 0); efis[0].terr = 0;
-    probes_before = probe_calls; run(1); assert(probe_calls == probes_before && !d->on && !terrain.active[0]);
+    /* TERR off: nothing displayed; only the TAWS 10 NM level is kept and probed (look-ahead alerting). */
+    probes_before = probe_calls; run(1);
+    assert(!d->on && !terrain.active[0] && levels_of_range(TAWS_RANGE_NM) == 1 && levels_of_range(40) == 0);
+    assert(probe_calls > probes_before && terrain.taws.inhibit == TAWS_INHIBIT_SLOW && !nd_data.taws_caution);
     /* TERR on: the forward sector fills within a few seconds of 5 us probes, within the frame target. */
     efis[0].terr = 1;
+    worst_wall = 0; frames_over_wall = 0;
     worst = run(1.0);
     assert(d->on && terrain.active[0] && !terrain.active[1] && !nd_data.terrain[1].on);
     worst = fmax(worst, run(4.0));
-    printf("terrain adapter: ARC 40 NM, 5 us probes: %d probes in 5 s, coverage %.0f %%, worst frame %.0f us (target 500 + one probe), "
-           "probe %.1f us avg\n", probe_calls - probes_before, terrain.coverage[0] * 100, worst * 1e6, terrain.probe_us);
+    printf("terrain adapter: ARC 40 NM, 5 us probes: %d probes in 5 s, coverage %.0f %%, worst frame %.0f us CPU (target 500 + one "
+           "probe; wall %.0f us, %d of 250 frames over 700 us wall), probe %.1f us avg\n", probe_calls - probes_before,
+           terrain.coverage[0] * 100, worst * 1e6, worst_wall * 1e6, frames_over_wall, terrain.probe_us);
     assert(terrain.coverage[0] > 0.999f);
     assert(worst < 0.0005 + 0.0002);   /* one 5 us probe of overrun plus scheduling noise */
     for (row = 0; row < d->geo.rows; ++row) for (col = 0; col < d->geo.cols; ++col) ++counts[d->cls[row][col]];
@@ -439,11 +587,18 @@ static void checks(void)
         nd_data.nav_count[0] = 0; terrain.cutoff_at = -1e9;
         assert(terrain_cutoff(&ac, sim_time) == -500);
     }
-    /* Both NDs on one range share one cache; different ranges get their own (at most three). */
+    /* Both NDs on one range share one cache; different ranges get their own (with the TAWS level, at
+     * most four); a 10 NM ND shares the TAWS level. */
     aircraft(arc, 1); run(0.5);
-    assert(nd_data.terrain[1].on && terrain.levels[0] && !terrain.levels[1]);
+    assert(nd_data.terrain[1].on && levels_of_range(40) == 1 && levels_of_range(TAWS_RANGE_NM) == 1 && !terrain.levels[2]);
     efis[1].range_nm = 80; run(0.5);
-    assert(terrain.levels[1] && terrain.levels[1]->range_nm == 80 && nd_data.terrain[1].geo.range_nm == 80);
+    assert(levels_of_range(80) == 1 && levels_of_range(40) == 1 && levels_of_range(TAWS_RANGE_NM) == 1 && nd_data.terrain[1].geo.range_nm == 80);
+    efis[1].range_nm = 10; run(0.5);
+    assert(levels_of_range(TAWS_RANGE_NM) == 1 && nd_data.terrain[1].geo.range_nm == 10);
+    efis[1].range_nm = 20; run(0.5); efis[1].range_nm = 160; run(0.5);   /* LRU: never the TAWS level */
+    assert(levels_of_range(TAWS_RANGE_NM) == 1 && levels_of_range(160) == 1 && levels_of_range(40) == 1);
+    /* TAWS look-ahead through the adapter: alerts, pop-up, threat areas on both NDs, words, inhibits. */
+    taws_checks(j);
     /* No probe object: TAWS failed (TERR INOP on the FBW ND), nothing displayed. */
     terrain_shutdown(); probe_enabled = 0; terrain_init(); aircraft(arc, 0); run(0.2);
     assert(!d->on && terrain.failed);
@@ -490,10 +645,16 @@ int main(int argc, char **argv)
             XpKitJson *j = calloc(1, sizeof(XpKitJson));
             FILE *f = fopen(argv[3], "w");
             assert(j && f);
+            static XpKitJson words;
             xpkit_terrain_json(j);
             assert(!j->failed);
-            fprintf(f, "{\"terrain\":%s,\"pointer\":{\"x\":%.1f,\"y\":%.1f,\"text\":\"%s\"}}\n", j->data,
-                    nd_data.terrain_pointer[0].x, nd_data.terrain_pointer[0].y, nd_data.terrain_pointer[0].text);
+            xpkit_taws_words(&words);
+            assert(!words.failed && words.size > 0);
+            words.data[words.size - 1] = 0;   /* trailing comma */
+            fprintf(f, "{\"terrain\":%s,\"pointer\":{\"x\":%.1f,\"y\":%.1f,\"text\":\"%s\"},\"words\":{%s},"
+                    "\"taws\":{\"caution\":%d,\"warning\":%d,\"lat\":%.8f,\"lon\":%.8f,\"altitude\":%.0f,\"track\":%.1f}}\n",
+                    j->data, nd_data.terrain_pointer[0].x, nd_data.terrain_pointer[0].y, nd_data.terrain_pointer[0].text, words.data,
+                    nd_data.taws_caution, nd_data.taws_warning, nd_data.lat, nd_data.lon, nd_data.altitude_ft, mock_hpath);
             fclose(f); free(j);
         } else {
             canvas_clear();
@@ -505,6 +666,7 @@ int main(int argc, char **argv)
     }
     checks();
     puts("TERRAIN adapter: activation/availability, probe budget and coverage, misses (no data), cache sharing, "
-         "runway cut-off, pointer probe/readout, web JSON and native image/box/readout drawing passed");
+         "runway cut-off, pointer probe/readout, web JSON, native image/box/readout drawing, TAWS look-ahead "
+         "(caution/warning, pop-up, threat areas, PFD words, inhibits) passed");
     return 0;
 }

@@ -14,11 +14,18 @@
  *     0.15 s, and again every 0.5 s) for the simulator-aid elevation readout;
  *   - the frame stays within TERRAIN_FRAME_LIMIT_S of main-thread time: the displays and the pointer
  *     first (bounded), probing with what is left (at most TERRAIN_BUDGET_S).
- * Diagnostics (read-only): a380x/xp12/terrain/... (probe cost, frame time, coverage, pointer).
+ *   - TAWS look-ahead alerting (a380x_taws.h, docs/ND_TERRAIN.md "Terrain alerts"): whenever TAWS is
+ *     available and the position valid, the 10 NM level is kept and probed (first in the round robin)
+ *     whatever the NDs show; 5 times a second the caution / warning envelopes are evaluated on it. The
+ *     threat points go to both TerrDisplays (solid yellow / red cells), the start of an alert selects
+ *     TERR on both EFIS CPs (pop-up), and nd_data.taws_caution / taws_warning feed the aurals, the
+ *     native PFD and the FBW PFD's EGPWS discrete word (a380x_xpkit_terrain.inc).
+ * Diagnostics (read-only): a380x/xp12/terrain/... (probe cost, frame time, coverage, pointer, TAWS).
  */
 #include "a380x_terrain.h"
+#include "a380x_taws.h"
 
-#define TERRAIN_LEVELS 3
+#define TERRAIN_LEVELS 4                 /* two ND ranges, the TAWS 10 NM level, one spare */
 #define TERRAIN_FRAME_LIMIT_S 0.0005     /* target: terrain work per simulator frame */
 #define TERRAIN_BUDGET_S 0.0004          /* probing share of it */
 #define TERRAIN_MAX_NODES 512            /* per frame, whatever the clock says */
@@ -41,7 +48,17 @@ static struct {
     float probe_us, frame_us, frame_us_max, window_max, probes_per_frame, coverage[2], pointer_ft[2];
     double window_start;
     int probes_total, hits_total, misses_total, active_out[2], levels_kb;
-    XPLMDataRef refs[16];
+    /* nearest airport (runway cut-off, TAWS phase and runway environment) */
+    float airport_nm;
+    double airport_probe_at;
+    /* TAWS look-ahead */
+    XPLMDataRef elevation_m, groundspeed, hpath, onground;
+    TawsState taws;
+    TerrThreat taws_shown[TAWS_THREATS];
+    int taws_shown_count, taws_alert, taws_was_ground, taws_caution_out, taws_warning_out, taws_phase_out, taws_inhibit_out;
+    double taws_at, takeoff_at;
+    float taws_track, taws_turn_dps, taws_eval_us, taws_clearance_out, taws_ttc_out, taws_rtc_out, taws_lookahead_out;
+    XPLMDataRef refs[32];
 } terrain;
 
 static double terrain_clock(void)
@@ -81,31 +98,46 @@ static int terrain_probe(void *ctx, double lat, double lon, float *elev_ft, int 
     return 1;
 }
 
+/* Nearest airport of the cached navigation data (ND nav scan) to (lat, lon): terrain.airport*, its
+ * distance in terrain.airport_nm and its elevation, probed once per airport (again every second while
+ * the probe finds no scenery there). 1 when its elevation is known. */
+static int terrain_nearest_airport(double lat, double lon, double now)
+{
+    const EfisNdNavPoint *best = NULL;
+    float best_nm = 1e9f;
+    int n;
+    for (n = 0; n < nd_data.nav_count[0]; ++n) {
+        float east, north;
+        const EfisNdNavPoint *p = &nd_data.nav[0][n];
+        if (p->id[0] && efis_nd_project(lat, lon, p->lat, p->lon, 0, &east, &north) && hypotf(east, north) < best_nm) {
+            best = p; best_nm = hypotf(east, north);
+        }
+    }
+    if (!best) return 0;
+    if (strcmp(best->id, terrain.airport) || best->lat != terrain.airport_lat || best->lon != terrain.airport_lon) {
+        snprintf(terrain.airport, sizeof(terrain.airport), "%s", best->id);
+        terrain.airport_lat = best->lat; terrain.airport_lon = best->lon;
+        terrain.airport_elev_valid = 0; terrain.airport_probe_at = -1e9;
+    }
+    if (!terrain.airport_elev_valid && now - terrain.airport_probe_at >= 1.0) {
+        int wet = 0;
+        terrain.airport_probe_at = now;
+        terrain.airport_elev_valid = terrain_probe(NULL, best->lat, best->lon, &terrain.airport_elev_ft, &wet);
+    }
+    terrain.airport_nm = best_nm;
+    return terrain.airport_elev_valid;
+}
+
 /* Honeywell: terrain within 400 ft of the nearest runway elevation is not displayed. Nearest airport of
  * the cached navigation data, its elevation probed once; FBW's refinement near the runway: 400 ft
  * down to 200 ft between 4 and 1 NM on a glide flatter than 3 degrees. -500 (none) without one. */
 static float terrain_cutoff(const TerrAircraft *ac, double now)
 {
-    const EfisNdNavPoint *best = NULL;
-    float best_nm = 1e9f, cutoff;
-    int n;
+    float best_nm, cutoff;
     if (now - terrain.cutoff_at < 0.5) return terrain.cutoff_ft;
     terrain.cutoff_at = now;
-    for (n = 0; n < nd_data.nav_count[0]; ++n) {
-        float east, north;
-        const EfisNdNavPoint *p = &nd_data.nav[0][n];
-        if (p->id[0] && efis_nd_project(ac->lat, ac->lon, p->lat, p->lon, 0, &east, &north) && hypotf(east, north) < best_nm) {
-            best = p; best_nm = hypotf(east, north);
-        }
-    }
-    if (!best) { terrain.cutoff_ft = -500.0f; return terrain.cutoff_ft; }
-    if (strcmp(best->id, terrain.airport) || best->lat != terrain.airport_lat || best->lon != terrain.airport_lon) {
-        int wet = 0;
-        snprintf(terrain.airport, sizeof(terrain.airport), "%s", best->id);
-        terrain.airport_lat = best->lat; terrain.airport_lon = best->lon;
-        terrain.airport_elev_valid = terrain_probe(NULL, best->lat, best->lon, &terrain.airport_elev_ft, &wet);
-    }
-    if (!terrain.airport_elev_valid) { terrain.cutoff_ft = -500.0f; return terrain.cutoff_ft; }
+    if (!terrain_nearest_airport(ac->lat, ac->lon, now)) { terrain.cutoff_ft = -500.0f; return terrain.cutoff_ft; }
+    best_nm = terrain.airport_nm;
     cutoff = 400.0f;
     if (best_nm <= 4.0f) {
         float opposite = ac->altitude_ft - terrain.airport_elev_ft, glide = 0.0f;
@@ -192,30 +224,99 @@ static int terrain_pointer_update(int side, const TerrAircraft *ac, double now)
     return probes;
 }
 
+/* TAWS look-ahead, 5 times a second on the 10 NM level L (NULL: none). Geometric altitude, ground
+ * speed, true track, inertial vertical speed and ground contact from the flight model (the EGPWS uses
+ * GPS geometric altitude and position); radio altitude from the RA; turn rate from the track change. */
+static void terrain_taws_update(double now, int available, const TerrLevel *L)
+{
+    TawsInputs in;
+    double dt = now - terrain.taws_at, t0;
+    int on_ground, alert, k, side;
+    if (dt < 0.2 - 1e-6) return;
+    terrain.taws_at = now;
+    if (dt > 0.5) dt = 0.2;   /* first evaluation, or after a stall of the loop */
+    memset(&in, 0, sizeof(in));
+    on_ground = terrain.onground && XPLMGetDatai(terrain.onground) != 0;
+    if (terrain.taws_was_ground == 1 && !on_ground) terrain.takeoff_at = now;
+    terrain.taws_was_ground = on_ground;
+    in.available = available && L && nd_data.position_valid;
+    in.lat = nd_data.lat; in.lon = nd_data.lon;
+    in.alt_ft = terrain.elevation_m ? (float)(XPLMGetDatad(terrain.elevation_m) * 3.280839895) : nd_data.altitude_ft;
+    in.gs_kt = terrain.groundspeed ? XPLMGetDataf(terrain.groundspeed) * 1.94384449f : NAN;
+    in.track_true = terrain.hpath ? XPLMGetDataf(terrain.hpath) : NAN;
+    in.vs_fpm = terrain.vs_fpm ? XPLMGetDataf(terrain.vs_fpm) : 0.0f;
+    in.ra_valid = refs.side[0].radio_altitude_valid; in.ra_ft = refs.side[0].radio_altitude_value;
+    in.on_ground = on_ground;
+    in.since_takeoff_s = now - terrain.takeoff_at;
+    if (in.available && terrain_nearest_airport(in.lat, in.lon, now)) {
+        in.airport_valid = 1;
+        in.apt_lat = terrain.airport_lat; in.apt_lon = terrain.airport_lon; in.apt_elev_ft = terrain.airport_elev_ft;
+    }
+    if (isfinite(in.track_true) && isfinite(terrain.taws_track) && isfinite(in.gs_kt) && in.gs_kt >= 50.0f) {
+        float rate = (float)(terr_wrap180(in.track_true - terrain.taws_track) / dt);
+        terrain.taws_turn_dps = 0.6f * terrain.taws_turn_dps + 0.4f * rate;
+    } else terrain.taws_turn_dps = 0.0f;
+    terrain.taws_track = in.track_true;
+    in.turn_dps = terrain.taws_turn_dps;
+    t0 = terrain_clock();
+    taws_evaluate(&terrain.taws, &in, L, dt);
+    terrain.taws_eval_us = (float)((terrain_clock() - t0) * 1e6);
+    /* Threat areas while an alert lasts: the latest points (a warning point is red only once the
+     * warning is on), kept through the alert's off delay. */
+    alert = terrain.taws.caution || terrain.taws.warning;
+    if (!alert) terrain.taws_shown_count = 0;
+    else if (terrain.taws.threat_count) {
+        for (k = 0; k < terrain.taws.threat_count; ++k) {
+            terrain.taws_shown[k] = terrain.taws.threats[k];
+            terrain.taws_shown[k].level = terrain.taws.threats[k].level >= 2 && terrain.taws.warning ? 2 : 1;
+        }
+        terrain.taws_shown_count = terrain.taws.threat_count;
+    }
+    /* Pop-up: the start of an alert selects TERR (replacing WX) on both EFIS CPs. */
+    if (alert && !terrain.taws_alert)
+        for (side = 0; side < 2; ++side)
+            if (!efis[side].terr) { efis[side].terr = 1; efis[side].wx_requested = 0; efis_sync_side(side); }
+    terrain.taws_alert = alert;
+    nd_data.taws_caution = terrain.taws.caution;
+    nd_data.taws_warning = terrain.taws.warning;
+    terrain.taws_caution_out = terrain.taws.caution; terrain.taws_warning_out = terrain.taws.warning;
+    terrain.taws_phase_out = terrain.taws.phase; terrain.taws_inhibit_out = terrain.taws.inhibit;
+    terrain.taws_clearance_out = terrain.taws.inhibit == TAWS_ACTIVE && terrain.taws.samples ? terrain.taws.min_clearance_ft : 99999.0f;
+    terrain.taws_ttc_out = terrain.taws.time_to_conflict_s;
+    terrain.taws_rtc_out = terrain.taws.rtc_ft; terrain.taws_lookahead_out = terrain.taws.lookahead_nm;
+}
+
 static void terrain_update(void)
 {
     const double start = terrain_clock(), now = TERRAIN_NOW();
     TerrAircraft ac;
-    TerrLevel *side_level[2] = {NULL, NULL}, *probe_levels[2];
+    TerrLevel *side_level[2] = {NULL, NULL}, *probe_levels[3], *taws_level = NULL;
     TerrProbeStats st;
-    int side, count = 0, taws, probes = 0;
+    int side, count = 0, taws, probes = 0, k;
     double elapsed, budget;
-    if (!plugin_enabled) return;
+    if (!plugin_enabled) { nd_data.taws_caution = nd_data.taws_warning = 0; return; }
     memset(&ac, 0, sizeof(ac));
     ac.lat = nd_data.lat; ac.lon = nd_data.lon;
     ac.heading_true = nd_data.true_heading; ac.altitude_ft = nd_data.altitude_ft;
     ac.vs_fpm = terrain.vs_fpm ? XPLMGetDataf(terrain.vs_fpm) : 0.0f;
     ac.gear_down = gear_values[0] >= 0.99f;
     taws = terrain_taws_available();
+    /* The TAWS level first: never evicted by an ND range change in this frame, probed first. */
+    if (taws && nd_data.position_valid && isfinite(ac.lat) && isfinite(ac.lon) && (taws_level = terrain_level(TAWS_RANGE_NM, &ac, now, NULL)))
+        probe_levels[count++] = taws_level;
+    terrain_taws_update(now, taws, taws_level);
     for (side = 0; side < 2; ++side) terrain.active[side] = terrain_side_active(side, taws);
     ac.cutoff_ft = terrain.active[0] || terrain.active[1] ? terrain_cutoff(&ac, now) : -500.0f;
     for (side = 0; side < 2; ++side) {
+        int seen = 0;
         if (!terrain.active[side]) continue;
-        side_level[side] = terrain_level(efis[side].range_nm, &ac, now, side ? side_level[0] : NULL);
-        if (side_level[side] && !(count == 1 && probe_levels[0] == side_level[side])) probe_levels[count++] = side_level[side];
+        side_level[side] = terrain_level(efis[side].range_nm, &ac, now, side ? side_level[0] : taws_level);
+        for (k = 0; k < count; ++k) seen |= probe_levels[k] == side_level[side];
+        if (side_level[side] && !seen) probe_levels[count++] = side_level[side];
     }
     for (side = 0; side < 2; ++side) {
         TerrDisplay *d = &nd_data.terrain[side];
+        d->threats = terrain.taws_shown; d->threat_count = terrain.taws_shown_count;
         terr_display_update(d, terrain.active[side], efis[side].mode, efis[side].range_nm, &ac, side_level[side], now,
                             TERRAIN_BUILD_CELLS);
         terrain.coverage[side] = d->on && d->visible_cells ? (float)d->data_cells / (float)d->visible_cells : 0.0f;
@@ -260,17 +361,34 @@ static void terrain_init(void)
         {"a380x/xp12/terrain/captain_active", 1}, {"a380x/xp12/terrain/first_officer_active", 1},
         {"a380x/xp12/terrain/captain_coverage", 0}, {"a380x/xp12/terrain/first_officer_coverage", 0},
         {"a380x/xp12/terrain/captain_pointer_elevation_ft", 0}, {"a380x/xp12/terrain/first_officer_pointer_elevation_ft", 0},
-        {"a380x/xp12/terrain/cache_kb", 1}
+        {"a380x/xp12/terrain/cache_kb", 1},
+        {"a380x/xp12/terrain/taws_caution", 1}, {"a380x/xp12/terrain/taws_warning", 1},
+        {"a380x/xp12/terrain/taws_phase", 1}, {"a380x/xp12/terrain/taws_inhibit", 1},
+        {"a380x/xp12/terrain/taws_min_clearance_ft", 0}, {"a380x/xp12/terrain/taws_time_to_conflict_s", 0},
+        {"a380x/xp12/terrain/taws_required_clearance_ft", 0}, {"a380x/xp12/terrain/taws_lookahead_nm", 0},
+        {"a380x/xp12/terrain/taws_eval_us", 0}
     };
     void *fields[] = {&terrain.probe_us, &terrain.frame_us, &terrain.frame_us_max, &terrain.probes_per_frame,
                       &terrain.probes_total, &terrain.hits_total, &terrain.misses_total, &terrain.active_out[0],
                       &terrain.active_out[1], &terrain.coverage[0], &terrain.coverage[1], &terrain.pointer_ft[0],
-                      &terrain.pointer_ft[1], &terrain.levels_kb};
+                      &terrain.pointer_ft[1], &terrain.levels_kb,
+                      &terrain.taws_caution_out, &terrain.taws_warning_out, &terrain.taws_phase_out, &terrain.taws_inhibit_out,
+                      &terrain.taws_clearance_out, &terrain.taws_ttc_out, &terrain.taws_rtc_out, &terrain.taws_lookahead_out,
+                      &terrain.taws_eval_us};
     int k;
     memset(&terrain, 0, sizeof(terrain));
     terrain.probe = XPLMCreateProbe(xplm_ProbeY);
     terrain.vs_fpm = XPLMFindDataRef("sim/flightmodel/position/vh_ind_fpm");
+    terrain.elevation_m = XPLMFindDataRef("sim/flightmodel/position/elevation");
+    terrain.groundspeed = XPLMFindDataRef("sim/flightmodel/position/groundspeed");
+    terrain.hpath = XPLMFindDataRef("sim/flightmodel/position/hpath");
+    terrain.onground = XPLMFindDataRef("sim/flightmodel/failures/onground_any");
     terrain.cutoff_ft = -500.0f; terrain.cutoff_at = -1e9;
+    taws_init(&terrain.taws);
+    terrain.taws_at = terrain.takeoff_at = terrain.airport_probe_at = -1e9;
+    terrain.taws_was_ground = -1; terrain.taws_track = NAN;
+    terrain.taws_clearance_out = 99999.0f; terrain.taws_ttc_out = -1.0f;
+    terrain.taws_inhibit_out = TAWS_INHIBIT_OFF;
     terrain.pointer_ft[0] = terrain.pointer_ft[1] = -9999.0f;
     for (k = 0; k < (int)(sizeof(fields) / sizeof(fields[0])) && k < (int)(sizeof(terrain.refs) / sizeof(terrain.refs[0])); ++k) {
         if (XPLMFindDataRef(outputs[k].name)) continue;
@@ -290,4 +408,5 @@ static void terrain_shutdown(void)
     if (terrain.probe) XPLMDestroyProbe(terrain.probe);
     memset(&terrain, 0, sizeof(terrain));
     for (k = 0; k < 2; ++k) terr_display_reset(&nd_data.terrain[k]);
+    nd_data.taws_caution = nd_data.taws_warning = 0;
 }

@@ -10,11 +10,11 @@
 
 static const char *const names[AUR_COUNT] = {
     "2500", "2000", "1000", "500", "400", "300", "200", "100", "90", "80", "70", "60", "50", "40", "30",
-    "20", "10", "5", "HUNDRED ABOVE", "MINIMUM", "RETARD", "V1", "STALL", "PULL UP", "CRC", "CCHORD", "TRIPLE CLICK",
+    "20", "10", "5", "HUNDRED ABOVE", "MINIMUM", "RETARD", "V1", "TERRAIN AHEAD", "STALL", "PULL UP", "CRC", "CCHORD", "TRIPLE CLICK",
     "SEATBELT", "CAVALRY"};
 static const double lengths[AUR_COUNT] = {
     1.35, 0.72, 0.80, 0.75, 0.75, 0.74, 0.70, 0.65, 0.60, 0.53, 0.80, 0.65, 0.55, 0.55, 0.57, 0.49, 0.59, 0.75,
-    0.89, 0.65, 0.77, 0.85, 2.85, 2.37, 5.00, 1.50, 0.55, 0.99, 1.20};
+    0.89, 0.65, 0.77, 0.85, 1.60, 2.85, 2.37, 5.00, 1.50, 0.55, 0.99, 1.20};
 
 static Aurals core;
 static char said[2048];
@@ -156,6 +156,37 @@ int main(void)
     assert(loops[AUR_PULL_UP] > 0);
     printf("%-34s mode 2 terrain closure 6000 fpm: PULL UP (%d frames); no warning on a normal approach\n", "GPWS", loops[AUR_PULL_UP]);
 
+    /* TAWS look-ahead warning ("TERRAIN AHEAD, PULL UP"): the PULL UP loop while it lasts, above the
+     * callouts; the stall keeps priority. GPWS SYS OFF inhibits modes 1/2, not the TAWS warning. */
+    reset(); in = base(); in.ra_ft = 3000.0; in.cas_valid = 1; in.cas_kt = 250.0;
+    in.taws_warning = 1; for (int i = 0; i < 60; ++i) step(&in);
+    assert(loops[AUR_PULL_UP] == 60 && core.gpws_pull_up && !core.gpws_mode_pull_up);
+    in.stall = 1; for (int i = 0; i < 10; ++i) step(&in);
+    assert(loops[AUR_PULL_UP] == 60 && loops[AUR_STALL] == 10);
+    in.stall = 0; in.taws_warning = 0; step(&in); assert(loops[AUR_PULL_UP] == 60 && !core.gpws_pull_up);
+    reset(); in = base(); in.vs_fpm = -3000.0; in.cas_valid = 1; in.cas_kt = 250.0; in.landing_flaps = 1; in.gpws_inhibit = 1;
+    for (double ra = 1000.0; ra > 600.0; ra -= 50.0 * in.dt) { in.ra_ft = ra; step(&in); }
+    assert(!loops[AUR_PULL_UP]);
+    in.taws_warning = 1; step(&in); assert(loops[AUR_PULL_UP] == 1);
+    printf("%-34s TAWS warning loops PULL UP; stall first; GPWS SYS OFF inhibits modes 1/2 only\n", "TAWS warning");
+
+    /* TAWS caution: TERRAIN AHEAD at the start, then every 7 s while it lasts; it interrupts an altitude
+     * callout; nothing during the warning; nothing at all without the (optional) recording. */
+    reset(); in = base(); in.ra_ft = 3000.0; step(&in);
+    in.ra_ft = 2490.0; step(&in); step(&in); assert(starts[0] == 1);  /* "2500" is playing */
+    in.taws_caution = 1;
+    for (int i = 0; i < 30 * 15; ++i) step(&in);                      /* 15 s of caution */
+    assert(starts[AUR_TERRAIN_AHEAD] == 3);                           /* 0, 7, 14 s */
+    in.taws_caution = 0; for (int i = 0; i < 30 * 8; ++i) step(&in);
+    assert(starts[AUR_TERRAIN_AHEAD] == 3);
+    in.taws_caution = 1; in.taws_warning = 1; for (int i = 0; i < 30 * 8; ++i) step(&in);
+    assert(starts[AUR_TERRAIN_AHEAD] == 3 && loops[AUR_PULL_UP] == 240);
+    expect("TAWS caution (with recording)", "2500,TERRAIN AHEAD,TERRAIN AHEAD,TERRAIN AHEAD");
+    reset(); aurals_set_length(&core, AUR_TERRAIN_AHEAD, 0.0); in = base(); in.ra_ft = 5000.0; in.taws_caution = 1;
+    for (int i = 0; i < 30 * 15; ++i) step(&in);
+    assert(!starts[AUR_TERRAIN_AHEAD]);
+    expect("TAWS caution (no recording)", "");
+
     /* FWS attention getters: CRC loops, C-chord once / continuous, triple click on reversion. */
     reset(); in = base(); in.ra_ft = 5000.0;
     in.crc = 1; for (int i = 0; i < 10; ++i) step(&in); in.crc = 0; step(&in);
@@ -210,12 +241,13 @@ int main(void)
             "callout_2500", "callout_2000", "callout_1000", "callout_500", "callout_400", "callout_300",
             "callout_200", "callout_100", "callout_90", "callout_80", "callout_70", "callout_60", "callout_50",
             "callout_40", "callout_30", "callout_20", "callout_10", "callout_5", "hundred_above", "minimum",
-            "retard", "v1", "stall", "pull_up_new", "crc_master_warning", "cchord", "triple_click", "seatbelt_chime",
+            "retard", "v1", NULL /* terrain_ahead: optional, user-supplied */, "stall", "pull_up_new", "crc_master_warning", "cchord", "triple_click", "seatbelt_chime",
             "cavalry_charge"};
         const char *dir = getenv("A380X_AURALS_DIR");
         int ok = 0;
         for (int i = 0; dir && i < AUR_COUNT; ++i) {
             char path[1024]; FILE *f; long n; unsigned char *b; short *d; unsigned bytes; int rate;
+            if (!files[i]) continue;
             snprintf(path, sizeof(path), "%s/%s.wav", dir, files[i]);
             f = fopen(path, "rb"); assert(f);
             fseek(f, 0, SEEK_END); n = ftell(f); fseek(f, 0, SEEK_SET);
@@ -223,7 +255,7 @@ int main(void)
             assert(aurals_parse_wav(b, (size_t)n, &d, &bytes, &rate) && bytes > 0 && rate >= 8000);
             free(d); free(b); ++ok;
         }
-        if (dir) printf("%-34s %d/%d packaged samples accepted by the reader\n", "samples", ok, AUR_COUNT);
+        if (dir) printf("%-34s %d/%d packaged samples accepted by the reader (terrain_ahead optional)\n", "samples", ok, AUR_COUNT - 1);
     }
     printf("aurals: all scenarios passed\n");
     return 0;
