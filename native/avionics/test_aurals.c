@@ -11,10 +11,10 @@
 static const char *const names[AUR_COUNT] = {
     "2500", "2000", "1000", "500", "400", "300", "200", "100", "90", "80", "70", "60", "50", "40", "30",
     "20", "10", "5", "HUNDRED ABOVE", "MINIMUM", "RETARD", "V1", "STALL", "CRC", "CCHORD", "TRIPLE CLICK",
-    "SEATBELT"};
+    "SEATBELT", "CAVALRY"};
 static const double lengths[AUR_COUNT] = {
     1.35, 0.72, 0.80, 0.75, 0.75, 0.74, 0.70, 0.65, 0.60, 0.53, 0.80, 0.65, 0.55, 0.55, 0.57, 0.49, 0.59, 0.75,
-    0.89, 0.65, 0.77, 0.85, 2.85, 5.00, 1.50, 0.55, 0.99};
+    0.89, 0.65, 0.77, 0.85, 2.85, 5.00, 1.50, 0.55, 0.99, 1.20};
 
 static Aurals core;
 static char said[2048];
@@ -131,9 +131,12 @@ int main(void)
     in.cchord_once = 1; step(&in); step(&in); in.cchord_once = 0; step(&in);
     in.cchord_cont = 1; for (int i = 0; i < 5; ++i) step(&in); in.cchord_cont = 0; step(&in);
     in.mode_reversion = 1; for (int i = 0; i < 5; ++i) step(&in); in.mode_reversion = 0; step(&in);
+    in.cavalry = 1; for (int i = 0; i < 36; ++i) step(&in); in.cavalry = 0; step(&in);   /* 1.2 s A/P OFF */
     assert(loops[AUR_CRC] == 10 && starts[AUR_CCHORD] == 1 && loops[AUR_CCHORD] == 5 && starts[AUR_TRIPLE_CLICK] == 1);
-    printf("%-34s CRC loop %d, C-chord once %d + loop %d, triple click %d\n", "attention getters",
-           loops[AUR_CRC], starts[AUR_CCHORD], loops[AUR_CCHORD], starts[AUR_TRIPLE_CLICK]);
+    assert(loops[AUR_CAVALRY] == 36);
+    printf("%-34s CRC loop %d, C-chord once %d + loop %d, triple click %d, cavalry charge loop %d\n",
+           "attention getters", loops[AUR_CRC], starts[AUR_CCHORD], loops[AUR_CCHORD], starts[AUR_TRIPLE_CLICK],
+           loops[AUR_CAVALRY]);
 
     /* Seat belts: no chime in the first 5 s after power-up (state settles), then on each change. */
     reset(); in = base(); in.ra_ft = 0.0; in.on_ground = 1; in.seatbelt_sign = 0;
@@ -163,7 +166,8 @@ int main(void)
             "callout_2500", "callout_2000", "callout_1000", "callout_500", "callout_400", "callout_300",
             "callout_200", "callout_100", "callout_90", "callout_80", "callout_70", "callout_60", "callout_50",
             "callout_40", "callout_30", "callout_20", "callout_10", "callout_5", "hundred_above", "minimum",
-            "retard", "v1", "stall", "crc_master_warning", "cchord", "triple_click", "seatbelt_chime"};
+            "retard", "v1", "stall", "crc_master_warning", "cchord", "triple_click", "seatbelt_chime",
+            "cavalry_charge"};
         const char *dir = getenv("A380X_AURALS_DIR");
         int ok = 0;
         for (int i = 0; dir && i < AUR_COUNT; ++i) {

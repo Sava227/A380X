@@ -9,7 +9,9 @@
  *   alert), the V1 callout pulse and the stall warning. The radio-altitude callouts, the minimums
  *   callouts and RETARD are decided here from the captain's radio altimeter, the FMS minimums
  *   (PERF APPR BARO / RADIO), A/P engagement and the thrust lever angles. The triple click follows
- *   the FMA mode reversion; the chime follows the FASTEN SEAT BELTS sign.
+ *   the FMA mode reversion; the chime follows the FASTEN SEAT BELTS sign. The A/P disconnect cavalry
+ *   charge follows the FWS request (one 1.2 s cycle for a voluntary disconnect, repeated until
+ *   acknowledged for an involuntary one).
  *
  * The synthetic voice is one channel: one callout at a time, by priority (STALL > MINIMUM >
  * HUNDRED ABOVE > RETARD > altitude callouts > V1). STALL and MINIMUM interrupt a lower callout;
@@ -26,6 +28,7 @@ typedef enum {
     AUR_HUNDRED_ABOVE, AUR_MINIMUM, AUR_RETARD, AUR_V1,   /* synthetic voice, one at a time */
     AUR_STALL,                                             /* voice + cricket, looped */
     AUR_CRC, AUR_CCHORD, AUR_TRIPLE_CLICK, AUR_SEATBELT,   /* attention getters */
+    AUR_CAVALRY,                                           /* A/P disconnect cavalry charge, looped */
     AUR_COUNT
 } AurSample;
 
@@ -43,6 +46,7 @@ typedef struct {
     int ap_engaged;
     int thrust_above_idle;           /* any thrust lever above IDLE */
     int crc, cchord_once, cchord_cont, v1, stall;   /* FWS requests; v1 and cchord_once are pulses */
+    int cavalry;                                    /* FWS cavalry charge (A/P OFF): level */
     int mode_reversion;
     int seatbelt_valid, seatbelt_sign;              /* sign 0 off, > 0 on */
 } AurInputs;

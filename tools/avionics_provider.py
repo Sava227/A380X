@@ -33,6 +33,7 @@ COCKPIT_AURAL_FILES = (
     "callout_70.wav",
     "callout_80.wav",
     "callout_90.wav",
+    "cavalry_charge.wav",
     "cchord.wav",
     "crc_master_warning.wav",
     "hundred_above.wav",

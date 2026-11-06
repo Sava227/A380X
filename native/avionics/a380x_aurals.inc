@@ -24,7 +24,7 @@ static const struct { const char *file; float volume; } aural_files[AUR_COUNT] =
     {"callout_20.wav", 0.9f}, {"callout_10.wav", 0.9f}, {"callout_5.wav", 0.9f},
     {"hundred_above.wav", 0.9f}, {"minimum.wav", 0.9f}, {"retard.wav", 0.9f}, {"v1.wav", 0.9f},
     {"stall.wav", 1.0f}, {"crc_master_warning.wav", 0.8f}, {"cchord.wav", 0.45f},
-    {"triple_click.wav", 0.6f}, {"seatbelt_chime.wav", 0.5f},
+    {"triple_click.wav", 0.6f}, {"seatbelt_chime.wav", 0.5f}, {"cavalry_charge.wav", 0.8f},
 };
 
 /* Channel slots: 0 = the voice, 1 + i = one-shot sample i, 1 + AUR_COUNT + i = loop of sample i. */
@@ -123,10 +123,13 @@ static int aural_cockpit_view(void)
     return cockpit_sound_world(eye, &at);
 }
 
-/* MASTER WARNING: the FWS CRC replaces the glareshield's synthetic tone. */
+/* MASTER WARNING: the FWS CRC, or the cavalry charge of an A/P OFF warning, replaces the
+ * glareshield's synthetic tone. */
 static int aurals_crc_covers(void)
 {
-    return aur.sample[AUR_CRC].data && fwsa_available() && fwsa_fws.powered && fwsa_fws.aural_crc_active;
+    if (!fwsa_available() || !fwsa_fws.powered) return 0;
+    return (aur.sample[AUR_CRC].data && fwsa_fws.aural_crc_active) ||
+           (aur.sample[AUR_CAVALRY].data && fwsa_fws.out.aural_cavalry_charge);
 }
 
 static void aurals_reset(void)
@@ -186,6 +189,7 @@ static void aurals_update_frame(float dt)
     in.crc = fwsa_fws.aural_crc_active;
     in.cchord_once = fwsa_fws.out.aural_cchord_once; in.cchord_cont = fwsa_fws.out.aural_cchord_cont;
     in.v1 = fwsa_fws.out.aural_v1; in.stall = fwsa_fws.out.stall_warning;
+    in.cavalry = fwsa_fws.out.aural_cavalry_charge;
     in.mode_reversion = guidance.mode_reversion;
     in.seatbelt_valid = aur.seatbelt != NULL;
     in.seatbelt_sign = aur.seatbelt ? XPLMGetDatai(aur.seatbelt) : 0;

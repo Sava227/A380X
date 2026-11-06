@@ -26,6 +26,7 @@ while still requested; a one-shot callout that fell outside the cockpit is not r
 | `crc_master_warning` | FWS CRC (continuous repetitive chime) while requested — it replaces the glareshield's old synthetic 640 Hz master-warning tone for those warnings. |
 | `cchord` | FWS altitude alert: once (C-chord) or looped (continuous C-chord). |
 | `triple_click` | FMA mode reversion (rising edge). |
+| `cavalry_charge` | A/P disconnect (FWS cavalry charge): one 1.2 s cycle for a voluntary disconnect with the sidestick button, repeated until acknowledged for an involuntary one; it replaces the glareshield tone for the A/P OFF master warning. Original synthesized sample (not from the supplied set). |
 | `seatbelt_chime` | FASTEN SEAT BELTS sign switched on or off (`sim/cockpit2/switches/fasten_seat_belts`, not within 5 s of power-up). |
 
 All aurals are FWS outputs: nothing plays while the FWS is unpowered, and requests that were already
@@ -37,5 +38,4 @@ are dropped if they cannot start within 1 s.
 
 ## Not covered by the supplied set
 
-Single chime (master caution) and cavalry charge (A/P disconnect) keep the glareshield's existing
-tones; there are no samples for them in the set.
+The single chime (master caution) keeps the glareshield's existing tone; there is no sample for it.

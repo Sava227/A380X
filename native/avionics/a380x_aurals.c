@@ -198,6 +198,7 @@ void aurals_update(Aurals *a, const AurInputs *in, AurOutputs *out)
 
     /* Attention getters (independent channels). */
     if (in->crc && a->seconds[AUR_CRC] > 0.0) out->loop[AUR_CRC] = 1;
+    if (in->cavalry && a->seconds[AUR_CAVALRY] > 0.0) out->loop[AUR_CAVALRY] = 1;
     if (in->cchord_cont && a->seconds[AUR_CCHORD] > 0.0) out->loop[AUR_CCHORD] = 1;
     else if (in->cchord_once && !a->prev_cchord_once && a->seconds[AUR_CCHORD] > 0.0) out->start[AUR_CCHORD] = 1;
     if (in->mode_reversion && !a->prev_reversion && a->seconds[AUR_TRIPLE_CLICK] > 0.0)

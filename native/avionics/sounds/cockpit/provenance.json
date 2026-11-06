@@ -194,6 +194,12 @@
       "seconds": 0.85,
       "rate": 16000,
       "sha256": "d7d6bee71357819fe307b9c9b8d4493d7d38c25644fde2098a27f288941fcc94"
+    },
+    "cavalry_charge.wav": {
+      "source": "original synthesis (not from the supplied set): bugle-style G5-C6-E6-G6-E6-G6 arpeggio, 7-harmonic brass-like tone, one 1.2 s cycle (the FWS first cavalry-charge period), loopable",
+      "seconds": 1.2,
+      "rate": 44100,
+      "sha256": "03ffaa512dc4156e0d97340d9e6aa421925618f4666319080edd86b19d2210a6"
     }
   }
 }
