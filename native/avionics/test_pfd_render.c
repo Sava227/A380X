@@ -177,8 +177,11 @@ static struct {
 /* Minimal native flight-plan store for the ND route tests: plan 0 ACTIVE, 1 TMPY, straight legs
  * between consecutive termination points, the same rules as a380x_fms_fpln.c for disco/missed. */
 #include "a380x_fms_fpln.h"
+#include "a380x_fmgc_guidance.h"
 static A380XFlightPlans *fmsa_fpln;
 static A380XFplnPlan test_plans[2];
+static A380XFmgcNdPwp fmsa_nd_pwp[A380X_FMGC_MAX_ND_PWP];   /* FMGC pseudo waypoints (a380x_nd_pwp.inc) */
+static int fmsa_nd_pwp_count;
 const A380XFplnPlan *a380x_fpln_plan(const A380XFlightPlans *fp, int plan_index)
 {
     (void)fp;
@@ -660,6 +663,61 @@ static void test_nd_fbw_terrain(void) {
     terr_display_reset(d); efis[0].terr = 0;
     fmsa_fpln = NULL;
 }
+/* FMGC pseudo waypoints over the route (a380x_nd_pwp.inc): T/D (white, start of descent), DECEL
+ * (magenta circle + D), speed change dot, and a cyan level-off arrow along the track (HDG). */
+static void nd_pwp_set(int i, const char *id, unsigned symbol, A380XPwpColour colour, A380XPwpNdPlacement nd,
+                       double lat, double lon, double ahead) {
+    A380XFmgcNdPwp *w = &fmsa_nd_pwp[i];
+    memset(w, 0, sizeof(*w));
+    snprintf(w->ident, sizeof(w->ident), "%s", id);
+    w->symbol = symbol; w->colour = colour; w->nd = nd; w->lat = lat; w->lon = lon; w->dist_ahead_nm = ahead;
+    w->alt_ft = w->speed_kt = NAN; w->leg_index = -1;
+}
+static void nd_pwp_state(void) {
+    nd_fbw_arc_state();
+    nd_pwp_set(0, "(SPDLIM)", A380X_PWP_SPEED_CHANGE, A380X_PWP_MAGENTA, A380X_PWP_ND_PATH, .10, 0, 6);
+    nd_pwp_set(1, "LEVEL", A380X_PWP_CLIMB_LEVEL_OFF, A380X_PWP_CYAN, A380X_PWP_ND_TRACK, NAN, NAN, 10);
+    nd_pwp_set(2, "(T/D)", A380X_PWP_START_OF_DESCENT, A380X_PWP_WHITE, A380X_PWP_ND_PATH, .30, 0, 18);
+    nd_pwp_set(3, "(DECEL)", A380X_PWP_DECEL, A380X_PWP_MAGENTA, A380X_PWP_ND_PATH, .55, .0167, 33);
+    fmsa_nd_pwp_count = 4;
+}
+static void test_nd_fbw_pwps(void) {
+    int base_magenta, base_cyan, base_white, i, td = 0, dot = 0, level = 0, decel = 0;
+    const float px_nm = ND_FBW_ARC_MAP_RADIUS / 40.0f;   /* 40 NM range */
+    nd_fbw_arc_state();
+    fmsa_nd_pwp_count = 0;
+    clear_capture(); draw_nd_fbw_arc(&refs.side[0], 0);
+    base_magenta = vertices_in(MAGENTA); base_cyan = vertices_in(CYAN); base_white = vertices_in(WHITE);
+    nd_pwp_state();
+    clear_capture(); draw_nd_fbw_arc(&refs.side[0], 0);
+    /* speed-change fan 18 + DECEL ring 33 + D 7; level-off line 3 + arrow head 3 */
+    assert(vertices_in(MAGENTA) == base_magenta + 58 && vertices_in(CYAN) == base_cyan + 6);
+    for (i = 0; i < vertex_count; ++i) {
+        const CapturedVertex *v = &vertices[i];
+        /* T/D: starts at its path point 18 NM ahead (heading north), 22.2 px level then 19.8 px down-right */
+        if (color_is(v->color, WHITE) && fabsf(v->x - ND_FBW_CX) < .5f && fabsf(v->y - (NDY(ND_FBW_CY) + 18.0f * px_nm)) < .5f) td++;
+        /* speed change: a magenta fan centred 6 NM ahead */
+        if (color_is(v->color, MAGENTA) && fabsf(v->x - ND_FBW_CX) < .5f && fabsf(v->y - (NDY(ND_FBW_CY) + 6.0f * px_nm)) < .5f) dot++;
+        /* DECEL: the D is inside the ring of radius 14.5 px about its point */
+        if (color_is(v->color, MAGENTA) && fabsf(v->x - (ND_FBW_CX + 1.0f * px_nm + 2.3625f)) < .6f
+            && fabsf(v->y - (NDY(ND_FBW_CY) + 33.0f * px_nm + 9.7875f)) < .6f) decel++;
+        /* along-track level-off (track 4 deg right of the heading): arrow tip 10 NM out on the track line */
+        if (color_is(v->color, CYAN) && fabsf(v->x - (ND_FBW_CX + 10.0f * px_nm * sinf(4.0f * (float)M_PI / 180)))< .6f
+            && fabsf(v->y - (NDY(ND_FBW_CY) + 10.0f * px_nm * cosf(4.0f * (float)M_PI / 180))) < .6f) level++;
+    }
+    assert(td >= 1 && dot >= 1 && decel >= 1 && level >= 2);
+    assert(vertices_in(WHITE) == base_white + 6);   /* the T/D: two 3-point polylines */
+    /* beyond the map: not drawn */
+    fmsa_nd_pwp[2].lat = 2.0;
+    clear_capture(); draw_nd_fbw_arc(&refs.side[0], 0);
+    assert(vertices_in(WHITE) == base_white);
+    /* the native-layout ND draws the same list at its symbol scale */
+    nd_pwp_state();
+    clear_capture(); draw_nd(&refs.side[0], 0, 0, "CAPT");
+    assert(vertices_in(MAGENTA) > 0);
+    fmsa_nd_pwp_count = 0;
+    fmsa_fpln = NULL;
+}
 static void test_vd_terrain(void) {
     static const Color VD_TERRAIN = {0.48f, 0.24f, 0.09f};
     nd_fbw_arc_state();
@@ -746,6 +804,9 @@ static void export_nd_fbw_one(const char *nd_path, const char *name, int mode) {
 }
 static void export_nd_fbw_svg(const char *nd_path) {
     export_nd_fbw_one(nd_path, "nd-fbw-arc.svg", 3);
+    nd_pwp_state();   /* pseudo waypoints: (SPDLIM), along-track LEVEL, (T/D), (DECEL) */
+    export_nd_fbw_one(nd_path, "nd-fbw-pwp.svg", 3);
+    fmsa_nd_pwp_count = 0;
     export_nd_fbw_one(nd_path, "nd-fbw-rose.svg", 2);
     export_nd_fbw_one(nd_path, "nd-fbw-plan.svg", 4);
 }
@@ -952,6 +1013,7 @@ int main(int argc,char **argv) {
     test_nd_fbw_rose_plan();
     test_vd_terrain();
     test_nd_fbw_terrain();
+    test_nd_fbw_pwps();
     test_altitude_drums();
     test_rising_ground();
     test_pfd_bank_direction();

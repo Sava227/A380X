@@ -106,8 +106,8 @@ def reuse_verified_assets(source, destination):
         manifest['asset_hashes']=dict(manifest['asset_hashes'])
         manifest['asset_hashes']['sd.html']=manifest['sd_html_sha256']=sd_patch['output_sha256']
         manifest['sd_live_data_patch']=sd_patch
-    # TERRAIN on ND (docs/ND_TERRAIN.md): the repository's terrain layer, inserted after the native
-    # bridge of the verified ND page (or brought up to date in an already patched one).
+    # TERRAIN on ND (docs/ND_TERRAIN.md) + FMGC pseudo waypoints: the repository's ND layers, inserted
+    # after the native bridge of the verified ND page (or brought up to date in an already patched one).
     nd_patch=patch_nd_html(destination/'nd.html')
     if nd_patch:
         manifest['asset_hashes']=dict(manifest['asset_hashes'])
@@ -180,7 +180,8 @@ def package_nd(destination):
     runtime=runtime.replace(loader,'const RUNTIME_FILES = [];')
     scripts=['window.__A380_NATIVE=true; window.__a380NdSource='+json.dumps(bundle)+';',
              (ROOT/'native/avionics/xp-kit/bridge.js').read_text(),(source/'native-bridge.js').read_text(),
-             (source/'terrain-layer.js').read_text(),runtime]   # TERRAIN on ND (docs/ND_TERRAIN.md)
+             (source/'terrain-layer.js').read_text(),   # TERRAIN on ND (docs/ND_TERRAIN.md)
+             (source/'fmgc-pwp-layer.js').read_text(),runtime]   # FMGC pseudo waypoints (tools/patch_xp_kit_nd.py LAYERS)
     scripts.extend((build/'runtime/msfs'/name).read_text() for name in ('coherent.js','simvar.js','environment.js','instrument.js'))
     html='<!doctype html><html><head><meta charset="utf-8"><title>A380X cockpit ND/OANS</title>'
     html+='<meta http-equiv="Content-Security-Policy" content="default-src \'self\' data: file:; script-src \'self\' \'unsafe-inline\' \'unsafe-eval\'; style-src \'self\' \'unsafe-inline\'; connect-src \'none\'">'

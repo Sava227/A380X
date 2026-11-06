@@ -401,7 +401,8 @@ static int leg_element(A380XFmgc *g, const A380XFplnRoute *r, int a, const A380X
         double c = crs, R, L, ue, un, ne, nn, s;
         if (!has_fix(l)) return 0;
         if (!isfinite(c)) c = 0.0;
-        if (g->hold_phase == 4 || !g->hold_entered) {   /* entry / immediate exit: direct to the fix */
+        if (g->hold_phase == 4 || g->hold_phase == 9 || !g->hold_entered) {
+            /* arrival, immediate exit, end of a parallel entry: direct to the fix */
             e->kind = A380X_LNAV_DIRECT; e->blat = l->fix.lat; e->blon = l->fix.lon;
             return 1;
         }
@@ -410,6 +411,24 @@ static int leg_element(A380XFmgc *g, const A380XFplnRoute *r, int a, const A380X
         ne = cos(c * D2R); nn = -sin(c * D2R);         /* right normal */
         s = l->turn == A380X_TURN_LEFT ? -1.0 : 1.0;
         switch (g->hold_phase) {
+        case 5: case 6: {   /* teardrop: outbound offset alpha towards the holding side, then the turn
+                             * of 180 + alpha rolling out on the inbound course */
+            double trk = n360(c + 180.0 - s * g->hold_teardrop_deg), plat, plon, clat, clon;
+            a380x_geo_destination(l->fix.lat, l->fix.lon, trk, L, &plat, &plon);
+            if (g->hold_phase == 5) { elem_line(e, l->fix.lat, l->fix.lon, plat, plon); return 1; }
+            a380x_geo_destination(plat, plon, n360(trk + 90.0 * s), R, &clat, &clon);
+            elem_arc(e, clat, clon, R, (int)s, n360(trk - 90.0 * s), 180.0 + g->hold_teardrop_deg);
+            return 1;
+        }
+        case 7: case 8: {   /* parallel: outbound on the non-holding side along the inbound course line,
+                             * a 225 deg turn towards the holding side, then direct to the fix (9) */
+            double plat, plon, clat, clon;
+            a380x_geo_destination(l->fix.lat, l->fix.lon, n360(c + 180.0), L, &plat, &plon);
+            if (g->hold_phase == 7) { elem_line(e, l->fix.lat, l->fix.lon, plat, plon); return 1; }
+            a380x_geo_destination(plat, plon, n360(c + 90.0 * s), R, &clat, &clon);
+            elem_arc(e, clat, clon, R, (int)-s, n360(c - 90.0 * s), 225.0);
+            return 1;
+        }
         case 0: {   /* inbound I0 -> F */
             double ilat, ilon;
             enu_inv(l->fix.lat, l->fix.lon, -L * ue, -L * un, &ilat, &ilon);
@@ -457,6 +476,60 @@ static const A380XNavRef *dme_ref(const A380XFplnLeg *l)
     return l->navaid.ident[0] && fin2(l->navaid.lat, l->navaid.lon) ? &l->navaid : &l->fix;
 }
 
+A380XHoldEntry a380x_fmgc_hold_entry(double inbound_true, double arrival_track_true, int right_turns)
+{
+    /* d: arrival track relative to the inbound course, mirrored for left-hand patterns */
+    double d = adiff(inbound_true, arrival_track_true) * (right_turns ? 1.0 : -1.0);
+    if (d >= -115.0 && d <= 75.0) return A380X_HOLD_ENTRY_DIRECT;      /* -110..+70, +-5 towards direct */
+    if (d > 75.0 && d <= 145.0) return A380X_HOLD_ENTRY_TEARDROP;      /* +70..+140, +5 towards teardrop */
+    return A380X_HOLD_ENTRY_PARALLEL;
+}
+
+/* ISA CAS of a Mach number at a pressure altitude (holding speed above FL340). */
+static double isa_mach_to_cas(double mach, double alt_ft)
+{
+    double h = alt_ft * 0.3048, t = h < 11000.0 ? 288.15 - 0.0065 * h : 216.65;
+    double p = h < 11000.0 ? 101325.0 * pow(t / 288.15, 5.25588) : 22632.06 * exp(-(h - 11000.0) / 6341.62);
+    double qc = p * (pow(1.0 + 0.2 * mach * mach, 3.5) - 1.0);
+    return 661.4788 * sqrt(5.0 * (pow(qc / 101325.0 + 1.0, 2.0 / 7.0) - 1.0));
+}
+
+double a380x_fmgc_holding_speed(const A380XFmgcInputs *in, double cstr_speed_kt, double cstr_alt_ft)
+{
+    double alt = fmax(in->fcu_alt_ft, isfinite(cstr_alt_ft) ? cstr_alt_ft : -1e9), k;
+    k = in->green_dot_kt > 80.0 ? in->green_dot_kt : 220.0;
+    if (in->engine_out) k += 25.0;
+    if (in->phase == PH_APPROACH) {   /* getAppManagedSpeed: GD / S / F / VAPP by the flap lever */
+        double conf = in->flap_lever == 0 ? in->green_dot_kt : in->flap_lever == 1 ? in->s_speed_kt
+                    : in->flap_lever == 2 ? in->f_speed_kt
+                    : in->flap_lever == 3 ? (in->landing_conf3 ? in->vapp_kt : in->f_speed_kt) : in->vapp_kt;
+        if (conf > 80.0) k = conf;
+    }
+    if (isfinite(cstr_speed_kt) && cstr_speed_kt > 100.0) k = fmin(k, cstr_speed_kt);
+    if (alt < 14000.0) k = fmin(230.0, k);          /* ICAO maximum holding speeds */
+    else if (alt < 20000.0) k = fmin(240.0, k);
+    else if (alt < 34000.0) k = fmin(265.0, k);
+    else k = fmin(k, isa_mach_to_cas(0.83, alt));
+    if (in->phase <= PH_CRUISE && in->clb_limit_kt > 0 && alt <= in->clb_limit_alt_ft) k = fmin(k, in->clb_limit_kt);
+    else if (in->phase > PH_CRUISE && in->phase < PH_GOAROUND && in->des_limit_kt > 0 && alt <= in->des_limit_alt_ft)
+        k = fmin(k, in->des_limit_kt);
+    if (in->vls_kt > 80.0) k = fmax(k, in->vls_kt);
+    return ceil(k);
+}
+
+/* Enters the hold at the fix with the entry for the arrival track. */
+static void hold_begin_entry(A380XFmgc *g, const A380XFplnLeg *l, const A380XFmgcInputs *in)
+{
+    double c = crs_true(l), R = g->hold_radius_nm, L = g->hold_leg_nm;
+    if (!isfinite(c)) c = 0.0;
+    g->hold_entered = 1;
+    g->hold_entry = a380x_fmgc_hold_entry(c, in->true_track_deg, l->turn != A380X_TURN_LEFT);
+    /* teardrop offset so that the 180 + alpha turn rolls out on the inbound course:
+     * tan(alpha / 2) = R / L (clamped 20..60 deg) */
+    g->hold_teardrop_deg = clampd(2.0 * atan(R / fmax(L, 0.5)) / D2R, 20.0, 60.0);
+    g->hold_phase = g->hold_entry == A380X_HOLD_ENTRY_TEARDROP ? 5 : g->hold_entry == A380X_HOLD_ENTRY_PARALLEL ? 7 : 1;
+}
+
 /* Leg-specific state at activation (crossing directions, holds, DF). */
 static void leg_activate(A380XFmgc *g, const A380XFplnRoute *r, int a, const A380XFmgcInputs *in)
 {
@@ -464,7 +537,7 @@ static void leg_activate(A380XFmgc *g, const A380XFplnRoute *r, int a, const A38
     g->leg = a;
     g->df_frozen = 0;
     g->cross_sign = 0;
-    g->hold_phase = 0; g->hold_entered = 0; g->hold_circuits = 0;
+    g->hold_phase = 0; g->hold_entered = 0; g->hold_circuits = 0; g->hold_entry = A380X_HOLD_ENTRY_NONE;
     if (!in->position_valid) return;
     switch (l->type) {
     case A380X_LEG_CD: case A380X_LEG_FD: case A380X_LEG_VD: {
@@ -483,9 +556,8 @@ static void leg_activate(A380XFmgc *g, const A380XFplnRoute *r, int a, const A38
     case A380X_LEG_HA: case A380X_LEG_HF: case A380X_LEG_HM:
         g->hold_radius_nm = a380x_fmgc_turn_radius_nm(in->tas_kt > 100 ? in->tas_kt : in->gs_kt, A380X_FMGC_DESIGN_BANK_DEG);
         g->hold_leg_nm = hold_leg_length(l, in);
-        if (has_fix(l) && a380x_geo_distance_nm(in->lat_deg, in->lon_deg, l->fix.lat, l->fix.lon) < 2.0) {
-            g->hold_entered = 1; g->hold_phase = 1;   /* direct entry at the fix */
-        }
+        if (has_fix(l) && a380x_geo_distance_nm(in->lat_deg, in->lon_deg, l->fix.lat, l->fix.lon) < 2.0)
+            hold_begin_entry(g, l, in);   /* sequenced over the fix */
         break;
     default:
         break;
@@ -496,13 +568,26 @@ static void leg_activate(A380XFmgc *g, const A380XFplnRoute *r, int a, const A38
 static int hold_step(A380XFmgc *g, const A380XFplnLeg *l, const A380XFmgcInputs *in, Elem *e)
 {
     if (!g->hold_entered) {
-        if (e->kind == A380X_LNAV_DIRECT && e->dtg < fmax(0.5, a380x_fmgc_turn_radius_nm(in->gs_kt, A380X_FMGC_DESIGN_BANK_DEG) * 0.15)) {
-            g->hold_entered = 1; g->hold_phase = 1;
-        }
+        if (e->kind == A380X_LNAV_DIRECT
+            && (e->dtg < fmax(0.5, a380x_fmgc_turn_radius_nm(in->gs_kt, A380X_FMGC_DESIGN_BANK_DEG) * 0.15)
+                || (e->dtg < 1.5 && fabs(adiff(in->true_track_deg, e->desired)) > 90.0)))
+            hold_begin_entry(g, l, in);
         return 0;
     }
     if ((l->flags & A380X_LEGF_HOLD_IMM_EXIT) && g->hold_phase != 0 && g->hold_phase != 4) g->hold_phase = 4;
     switch (g->hold_phase) {
+    case 5: if (e->along >= e->length) g->hold_phase = 6; break;          /* teardrop leg flown */
+    case 6: if (e->progress >= e->sweep - 1.0) g->hold_phase = 0; break;  /* rolled out inbound */
+    case 7: if (e->along >= e->length) g->hold_phase = 8; break;          /* parallel leg flown */
+    case 8: if (e->progress >= e->sweep - 1.0) g->hold_phase = 9; break;
+    case 9:                                                               /* back over the fix */
+        if (e->dtg < 0.6 || (e->dtg < 1.5 && fabs(adiff(in->true_track_deg, e->desired)) > 90.0)) {
+            g->hold_circuits++;
+            if (l->type == A380X_LEG_HF) return 1;
+            if (l->type == A380X_LEG_HA && isfinite(l->alt_db.alt1_ft) && in->alt_ft >= l->alt_db.alt1_ft - 50.0) return 1;
+            g->hold_phase = 1;
+        }
+        break;
     case 1: if (e->progress >= 178.0) g->hold_phase = 2; break;
     case 2: if (e->along >= e->length) g->hold_phase = 3; break;
     case 3: if (e->progress >= 178.0) g->hold_phase = 0; break;
@@ -929,6 +1014,7 @@ void a380x_fmgc_init(A380XFmgc *g)
     g->leg = -1;
     g->out.active_leg = -1;
     g->idle_factor = 1.0;
+    g->vs_filt_fpm = NAN;
 }
 
 const A380XFmgcOutputs *a380x_fmgc_outputs(const A380XFmgc *g) { return &g->out; }
@@ -942,6 +1028,8 @@ static void outputs_reset(A380XFmgcOutputs *o)
     o->speed_limit_dist_nm = o->managed_altitude_ft = o->toc_dist_from_ppos_nm = NAN;
     o->tod_lat = o->tod_lon = o->decel_lat = o->decel_lon = o->toc_lat = o->toc_lon = NAN;
     o->tod_leg = o->decel_leg = o->toc_leg = -1;
+    o->hold_speed_kt = NAN;
+    o->hold_leg_index = -1;
 }
 
 static void leg_identity_store(A380XFmgc *g, const A380XFplnRoute *r, int a)
@@ -985,6 +1073,263 @@ static double lookahead_speed(const A380XFplnRoute *r, int a, double dtg, double
             target = sc.speed;
     }
     return target;
+}
+
+/* FBW updateHoldingSpeed (spec 07 section 5.8): the holding speed of the active hold leg, or of the
+ * next leg when it is a hold - the managed target from the deceleration distance before its fix. */
+static void hold_speed_update(A380XFmgc *g, const A380XFplnRoute *r, int a, const A380XFmgcInputs *in)
+{
+    A380XFmgcOutputs *o = &g->out;
+    const A380XFplnLeg *l;
+    int k = -1;
+    if (a < 0 || a >= r->count || in->on_ground) return;
+    if (is_leg(&r->el[a]) && a380x_leg_is_hx(r->el[a].type)) k = a;
+    else if (a + 1 < r->count && is_leg(&r->el[a + 1]) && a380x_leg_is_hx(r->el[a + 1].type)) k = a + 1;
+    if (k < 0) return;
+    l = &r->el[k];
+    {
+        A380XFplnSpdCstr sc = a380x_fpln_eff_spd(l);
+        A380XFplnAltCstr ac = a380x_fpln_eff_alt(l);
+        double cs = (sc.desc == '-' || sc.desc == '@') && isfinite(sc.speed) && sc.speed > 100.0 ? sc.speed : NAN;
+        o->hold_speed_kt = a380x_fmgc_holding_speed(in, cs, ac.desc && isfinite(ac.alt1_ft) ? ac.alt1_ft : NAN);
+    }
+    o->hold_leg_index = k;
+    if (k == a) {
+        o->hold_decel_reached = 1;
+        o->hold_entry = g->hold_entry;
+    } else {
+        double v = in->cas_kt > 60.0 ? in->cas_kt : o->hold_speed_kt;
+        double dd = clampd((v - o->hold_speed_kt) * 0.15, 3.0, 20.0);
+        o->hold_decel_reached = isfinite(o->dtg_active_nm) && o->dtg_active_nm <= dd;
+    }
+}
+
+/* ---- pseudo waypoints (ND symbols + MFD F-PLN lines) ---------------------------------------- */
+
+/* Point `ahead` NM along the ACTIVE plan from PPOS: the rest of the active leg (rem_active), then
+ * the leg lengths of the profile (holds 0), placed on the straight line back from each termination.
+ * 0 beyond a discontinuity, a manual leg, the missed approach or the end of the plan. */
+static int point_ahead(const A380XFplnRoute *r, int a, const A380XFmgcInputs *in, double rem_active, double ahead,
+                       double *lat, double *lon, int *leg, double *before_term)
+{
+    double cum = 0.0, plat = in->lat_deg, plon = in->lon_deg, llat = in->lat_deg, llon = in->lon_deg;
+    int k, end = r->first_missed_appr_index < r->count ? r->first_missed_appr_index : r->count;
+    *lat = *lon = *before_term = NAN; *leg = -1;
+    if (!isfinite(ahead) || ahead < 0.0) return 0;
+    for (k = a; k < end; ++k) {
+        const A380XFplnLeg *l = &r->el[k];
+        double len, geo;
+        if (!is_leg(l) || !fin2(l->term_lat, l->term_lon)) return 0;
+        geo = a380x_geo_distance_nm(plat, plon, l->term_lat, l->term_lon);
+        if (k == a) { len = isfinite(rem_active) && rem_active > 0.05 ? rem_active : geo; llat = l->term_lat; llon = l->term_lon; }
+        else { len = leg_length(r, k, &llat, &llon); if (!isfinite(len)) return 0; }
+        if (len > 1e-3 && cum + len >= ahead) {
+            double back = cum + len - ahead;
+            a380x_geo_destination(l->term_lat, l->term_lon, a380x_geo_bearing_deg(l->term_lat, l->term_lon, plat, plon),
+                                  geo > 1e-3 ? back * geo / len : 0.0, lat, lon);
+            *leg = k; *before_term = back;
+            return 1;
+        }
+        cum += len; plat = l->term_lat; plon = l->term_lon;
+    }
+    return 0;
+}
+
+/* Distance along the plan from PPOS to the termination of leg k (same convention), NAN. */
+static double ahead_of_term(const A380XFplnRoute *r, int a, const A380XFmgcInputs *in, double rem_active, int k)
+{
+    double cum = 0.0, llat = in->lat_deg, llon = in->lon_deg;
+    int j;
+    for (j = a; j <= k && j < r->count; ++j) {
+        const A380XFplnLeg *l = &r->el[j];
+        double len;
+        if (!is_leg(l) || !fin2(l->term_lat, l->term_lon)) return NAN;
+        if (j == a) {
+            len = isfinite(rem_active) && rem_active > 0.05 ? rem_active : a380x_geo_distance_nm(llat, llon, l->term_lat, l->term_lon);
+            llat = l->term_lat; llon = l->term_lon;
+        } else len = leg_length(r, j, &llat, &llon);
+        if (!isfinite(len)) return NAN;
+        cum += len;
+    }
+    return cum;
+}
+
+static A380XFmgcNdPwp *pwp_new(A380XFmgcOutputs *o, const char *ident, unsigned symbol, A380XPwpColour colour, int mfd)
+{
+    A380XFmgcNdPwp *w;
+    if (o->nd_pwp_count >= A380X_FMGC_MAX_ND_PWP) return NULL;
+    w = &o->nd_pwp[o->nd_pwp_count++];
+    memset(w, 0, sizeof *w);
+    snprintf(w->ident, sizeof w->ident, "%s", ident);
+    w->symbol = symbol; w->colour = colour; w->mfd = mfd;
+    w->lat = w->lon = w->alt_ft = w->speed_kt = w->before_term_nm = NAN;
+    w->leg_index = -1;
+    return w;
+}
+
+/* Places a pseudo waypoint `ahead` NM from PPOS: on the path in NAV, along the track in HDG/TRK
+ * when the symbol has a selected-mode meaning (track_ok: level-off / intercept arrows). */
+static void pwp_place(A380XFmgcNdPwp *w, const A380XFplnRoute *r, int a, const A380XFmgcInputs *in, double rem,
+                      double ahead, int track_ok)
+{
+    int on_path;
+    if (!w) return;
+    w->dist_ahead_nm = ahead;
+    on_path = point_ahead(r, a, in, rem, ahead, &w->lat, &w->lon, &w->leg_index, &w->before_term_nm);
+    w->nd = in->nav_engaged ? (on_path ? A380X_PWP_ND_PATH : A380X_PWP_ND_NONE)
+                            : (track_ok ? A380X_PWP_ND_TRACK : A380X_PWP_ND_NONE);
+}
+
+/* First constraint leg at/after the active one of the given kind whose limit (climb: upper, descent:
+ * lower) is within 150 ft of alt_ft, -1. */
+static int constraint_leg(const A380XFplnRoute *r, int a, A380XFplnCstrType kind, double alt_ft)
+{
+    int k, end = r->first_missed_appr_index < r->count ? r->first_missed_appr_index : r->count;
+    for (k = a; k < end; ++k) {
+        double lo, hi, lim;
+        if (!is_leg(&r->el[k])) return -1;
+        if (r->el[k].cstr_type != kind || !cstr_window(&r->el[k], &lo, &hi)) continue;
+        lim = kind == A380X_CSTR_CLB ? hi : lo;
+        if (isfinite(lim) && fabs(lim - alt_ft) <= 150.0) return k;
+    }
+    return -1;
+}
+
+/* Distance to climb from alt_ft to target_ft at the present V/S, the rate falling linearly with
+ * altitude to zero at the A380 ceiling (classical absolute-ceiling approximation; the FBW FMS
+ * integrates its performance model instead): t = (C - h0) / VS0 * ln((C - h0) / (C - h1)). */
+#define FMGC_CLIMB_CEILING_FT 43000.0
+double a380x_fmgc_climb_distance_nm(double alt_ft, double target_ft, double vs_fpm, double gs_kt)
+{
+    const double c = FMGC_CLIMB_CEILING_FT;
+    double t_min;
+    if (!(vs_fpm > 1.0) || !(target_ft > alt_ft)) return 0.0;
+    if (alt_ft >= c - 1000.0 || target_ft >= c - 500.0) t_min = (target_ft - alt_ft) / vs_fpm;
+    else t_min = (c - alt_ft) / vs_fpm * log((c - alt_ft) / (c - target_ft));
+    return t_min * fmax(gs_kt, 60.0) / 60.0;
+}
+
+/* Distance before the destination where the descent profile first reaches alt_ft ahead, NAN. */
+static double profile_reaches(const A380XFmgcOutputs *o, double alt_ft)
+{
+    int j;
+    for (j = o->profile_count - 1; j >= 1; --j) {
+        const A380XFmgcProfilePoint *hi = &o->profile[j], *lo = &o->profile[j - 1];
+        if (hi->alt_ft >= alt_ft && lo->alt_ft < alt_ft) {
+            double f = hi->alt_ft > lo->alt_ft ? (hi->alt_ft - alt_ft) / (hi->alt_ft - lo->alt_ft) : 0.0;
+            return hi->dist_to_dest_nm + f * (lo->dist_to_dest_nm - hi->dist_to_dest_nm);
+        }
+    }
+    return NAN;
+}
+
+/* FBW PseudoWaypoints / VNAV checkpoints, port subset: climb (T/C or level-off at the FCU / an
+ * altitude constraint, start of climb at that constraint, climb speed limit), T/D, descent speed
+ * limit, DECEL, descent level-off, start of descent after an ALT CST level-off, profile intercept.
+ * Colours: managed vertical mode magenta, selected cyan; T/D white; DECEL magenta with managed speed,
+ * else white; start of climb / descent cyan when CLB / DES is armed, else white. */
+static void pseudo_waypoints(A380XFmgc *g, const A380XFplnRoute *r, int a, const A380XFmgcInputs *in, double rem)
+{
+    A380XFmgcOutputs *o = &g->out;
+    A380XFmgcNdPwp *w;
+    const double vs = g->vs_filt_fpm, gs = fmax(in->gs_kt, 60.0), crz = in->cruise_alt_ft;
+    const int vm = in->fg_vertical_mode;
+    const int clb = vm == A380X_FMGC_VM_CLB, des = vm == A380X_FMGC_VM_DES;
+    const int climbing = clb || vm == A380X_FMGC_VM_OP_CLB || vm == A380X_FMGC_VM_SRS || (vm == A380X_FMGC_VM_VS_FPA && vs > 100.0);
+    const int descending = des || vm == A380X_FMGC_VM_OP_DES || (vm == A380X_FMGC_VM_VS_FPA && vs < -100.0);
+    int i, j;
+    if (in->on_ground || !in->position_valid || a < 0) return;
+    /* ---- climb ---- */
+    if (climbing && vs > 300.0 && in->phase <= PH_CRUISE) {
+        int cstr = clb && o->managed_altitude_is_constraint;
+        double target = clb && isfinite(o->managed_altitude_ft) ? o->managed_altitude_ft : in->fcu_alt_ft;
+        int toc;
+        if (clb && crz > 0) target = fmin(target, crz);   /* managed climb levels at the cruise level (ALT CRZ) */
+        toc = !cstr && crz > 0 && target >= crz - 50.0;
+        if (target > in->alt_ft + 100.0) {
+            w = pwp_new(o, toc ? "(T/C)" : "LEVEL", A380X_PWP_CLIMB_LEVEL_OFF, clb ? A380X_PWP_MAGENTA : A380X_PWP_CYAN, toc);
+            pwp_place(w, r, a, in, rem, a380x_fmgc_climb_distance_nm(in->alt_ft, target, vs, gs), 1);
+            if (w) w->alt_ft = toc ? crz : target;
+        }
+        if (!toc && crz > in->alt_ft + 100.0 && (w = pwp_new(o, "(T/C)", A380X_PWP_CLIMB_LEVEL_OFF, A380X_PWP_MAGENTA, 1))) {
+            pwp_place(w, r, a, in, rem, a380x_fmgc_climb_distance_nm(in->alt_ft, crz, vs, gs), 0);
+            w->nd = A380X_PWP_ND_NONE;   /* the level-off below the cruise level is the ND symbol */
+            w->alt_ft = crz;
+        }
+        if (cstr) {   /* the climb resumes at the constraint waypoint */
+            int k = constraint_leg(r, a, A380X_CSTR_CLB, target);
+            if (k >= 0 && (w = pwp_new(o, "START", A380X_PWP_START_OF_CLIMB, A380X_PWP_CYAN, 0))) {
+                pwp_place(w, r, a, in, rem, ahead_of_term(r, a, in, rem, k), 0);
+                w->alt_ft = target;
+            }
+        }
+        if (in->clb_limit_kt > 0 && in->clb_limit_alt_ft > in->alt_ft + 100.0 && target > in->clb_limit_alt_ft
+            && (w = pwp_new(o, "(SPDLIM)", A380X_PWP_SPEED_CHANGE, A380X_PWP_MAGENTA, 1))) {
+            pwp_place(w, r, a, in, rem, a380x_fmgc_climb_distance_nm(in->alt_ft, in->clb_limit_alt_ft, vs, gs), 0);
+            if (!in->speed_managed) w->nd = A380X_PWP_ND_NONE;
+            w->alt_ft = in->clb_limit_alt_ft; w->speed_kt = in->clb_limit_kt;
+        }
+    } else if (vm == A380X_FMGC_VM_ALT && in->alt_constraint_mode && in->clb_armed && in->phase <= PH_CLIMB) {
+        int k = constraint_leg(r, a, A380X_CSTR_CLB, in->alt_ft);
+        if (k >= 0 && (w = pwp_new(o, "START", A380X_PWP_START_OF_CLIMB, A380X_PWP_CYAN, 0))) {
+            pwp_place(w, r, a, in, rem, ahead_of_term(r, a, in, rem, k), 0);
+            w->alt_ft = in->alt_ft;
+        }
+    }
+    /* ---- descent profile ---- */
+    if (o->vnav_valid && isfinite(o->dist_to_dest_nm) && in->phase >= PH_CLIMB && in->phase <= PH_DESCENT) {
+        if (o->before_tod && isfinite(o->tod_dist_nm)
+            && (w = pwp_new(o, "(T/D)", A380X_PWP_START_OF_DESCENT, A380X_PWP_WHITE, 1))) {
+            pwp_place(w, r, a, in, rem, o->dist_to_dest_nm - o->tod_dist_nm, 0);
+            w->alt_ft = crz > 0 ? crz : in->alt_ft;
+        }
+        if (in->des_limit_kt > 0 && in->alt_ft > in->des_limit_alt_ft + 100.0 && isfinite(o->speed_limit_dist_nm)
+            && o->speed_limit_dist_nm < o->dist_to_dest_nm
+            && (w = pwp_new(o, "(SPDLIM)", A380X_PWP_SPEED_CHANGE, A380X_PWP_MAGENTA, 1))) {
+            pwp_place(w, r, a, in, rem, o->dist_to_dest_nm - o->speed_limit_dist_nm, 0);
+            if (!in->speed_managed) w->nd = A380X_PWP_ND_NONE;
+            w->speed_kt = in->des_limit_kt;
+        }
+        if (!o->decel_reached && isfinite(o->decel_dist_nm) && o->decel_dist_nm < o->dist_to_dest_nm
+            && (w = pwp_new(o, "(DECEL)", A380X_PWP_DECEL, in->speed_managed ? A380X_PWP_MAGENTA : A380X_PWP_WHITE, 1)))
+            pwp_place(w, r, a, in, rem, o->dist_to_dest_nm - o->decel_dist_nm, 0);
+    }
+    /* ---- descent level-off / start of descent / intercept ---- */
+    if (descending && vs < -300.0 && in->phase >= PH_CRUISE && in->phase <= PH_APPROACH) {
+        double target = des && isfinite(o->managed_altitude_ft) ? o->managed_altitude_ft : in->fcu_alt_ft;
+        if (target < in->alt_ft - 100.0) {
+            double ahead = NAN;
+            if (des && in->des_submode == 0 && o->vnav_valid) {
+                double d2d = profile_reaches(o, target);
+                if (isfinite(d2d)) ahead = o->dist_to_dest_nm - d2d;
+            }
+            if (!isfinite(ahead) || ahead < 0.0) ahead = (in->alt_ft - target) / -vs * gs / 60.0;
+            if ((w = pwp_new(o, "LEVEL", A380X_PWP_DESCENT_LEVEL_OFF, des ? A380X_PWP_MAGENTA : A380X_PWP_CYAN, 0))) {
+                pwp_place(w, r, a, in, rem, ahead, 1);
+                w->alt_ft = target;
+            }
+        }
+    } else if (vm == A380X_FMGC_VM_ALT && in->alt_constraint_mode && in->des_armed && in->phase >= PH_DESCENT) {
+        int k = constraint_leg(r, a, A380X_CSTR_DES, in->alt_ft);
+        if (k >= 0 && (w = pwp_new(o, "START", A380X_PWP_START_OF_DESCENT, A380X_PWP_CYAN, 0))) {
+            pwp_place(w, r, a, in, rem, ahead_of_term(r, a, in, rem, k), 0);
+            w->alt_ft = in->alt_ft;
+        }
+    }
+    if (in->phase == PH_DESCENT && o->vnav_valid && !o->before_tod && (des || in->des_armed) && fabs(o->vdev_ft) > 250.0) {
+        double closure = vs - o->path_vs_fpm, t = fabs(closure) > 50.0 ? -o->vdev_ft / closure : -1.0;
+        if (t > 0.0 && t < 30.0 && (w = pwp_new(o, "INTCPT", A380X_PWP_INTERCEPT_PROFILE, A380X_PWP_CYAN, 0)))
+            pwp_place(w, r, a, in, rem, t * gs / 60.0, 1);
+    }
+    /* nearest first, nothing behind the aircraft */
+    for (i = 0, j = 0; i < o->nd_pwp_count; ++i)
+        if (isfinite(o->nd_pwp[i].dist_ahead_nm) && o->nd_pwp[i].dist_ahead_nm > 0.0) o->nd_pwp[j++] = o->nd_pwp[i];
+    o->nd_pwp_count = j;
+    for (i = 1; i < o->nd_pwp_count; ++i) {
+        A380XFmgcNdPwp t = o->nd_pwp[i];
+        for (j = i; j > 0 && o->nd_pwp[j - 1].dist_ahead_nm > t.dist_ahead_nm; --j) o->nd_pwp[j] = o->nd_pwp[j - 1];
+        o->nd_pwp[j] = t;
+    }
 }
 
 static void managed_targets(A380XFmgc *g, const A380XFlightPlans *fp, const A380XFmgcInputs *in)
@@ -1034,6 +1379,13 @@ static void managed_targets(A380XFmgc *g, const A380XFlightPlans *fp, const A380
             }
         }
     }
+    /* holding speed (active hold, or decelerating for the next one) outside the approach speeds */
+    if (o->hold_decel_reached && isfinite(o->hold_speed_kt) && in->phase >= PH_CLIMB && in->phase <= PH_DESCENT
+        && !(in->phase == PH_DESCENT && g->decel_latched)) {
+        o->speed_valid = 1;
+        o->speed_kt = o->hold_speed_kt;
+        o->speed_is_mach = 0;
+    }
 }
 
 void a380x_fmgc_update(A380XFmgc *g, A380XFlightPlans *fp, const A380XFmgcInputs *in, double dt)
@@ -1047,6 +1399,10 @@ void a380x_fmgc_update(A380XFmgc *g, A380XFlightPlans *fp, const A380XFmgcInputs
     outputs_reset(o);
     if (!g || !in) return;
     g->timer += dt > 0 ? dt : 0;
+    /* V/S for the level-off predictions: 4 s first-order filter */
+    if (!isfinite(in->vs_fpm)) g->vs_filt_fpm = 0.0;
+    else if (!isfinite(g->vs_filt_fpm)) g->vs_filt_fpm = in->vs_fpm;
+    else g->vs_filt_fpm += (in->vs_fpm - g->vs_filt_fpm) * (dt > 0 ? fmin(1.0, dt / 4.0) : 0.0);
     if (in->phase != PH_DESCENT && in->phase != PH_APPROACH) g->decel_latched = 0;
     p = fp ? a380x_fpln_plan(fp, A380X_PLAN_ACTIVE) : NULL;
     if (!p || !in->position_valid || p->active_leg_index < 0 || p->active_leg_index >= p->pri.count) {
@@ -1161,6 +1517,8 @@ void a380x_fmgc_update(A380XFmgc *g, A380XFlightPlans *fp, const A380XFmgcInputs
     } else if (is_leg(&r->el[a]) && fin2(r->el[a].term_lat, r->el[a].term_lon)) {
         rem_active = a380x_geo_distance_nm(in->lat_deg, in->lon_deg, r->el[a].term_lat, r->el[a].term_lon);
     }
+    if (is_leg(&r->el[a]) && a380x_leg_is_hx(r->el[a].type) && has_fix(&r->el[a]))   /* holding: exit at the fix */
+        rem_active = a380x_geo_distance_nm(in->lat_deg, in->lon_deg, r->el[a].fix.lat, r->el[a].fix.lon);
     /* ---- VNAV ---- */
     if (in->phase == PH_DESCENT && in->idle_speed_descent && in->vs_fpm < -300.0 && in->tas_kt > 150.0 && dt > 0) {
         /* idle descent performance: still-air gradient flown at idle with the speed on target */
@@ -1179,7 +1537,42 @@ void a380x_fmgc_update(A380XFmgc *g, A380XFlightPlans *fp, const A380XFmgcInputs
     /* T/C from the current climb rate (port estimate) */
     if (in->phase <= PH_CLIMB && in->cruise_alt_ft > in->alt_ft + 100.0 && in->vs_fpm > 300.0 && in->gs_kt > 60.0)
         o->toc_dist_from_ppos_nm = (in->cruise_alt_ft - in->alt_ft) / in->vs_fpm * in->gs_kt / 60.0;
+    hold_speed_update(g, r, a, in);
     managed_targets(g, fp, in);
+    pseudo_waypoints(g, r, a, in, rem_active);
+}
+
+size_t a380x_fmgc_nd_pwp_json(const A380XFmgcNdPwp *list, int count, char *out, size_t cap)
+{
+    static const int colour_flag[4] = {0, 131072, 32768, 65536};   /* white, magenta, cyan, amber */
+    size_t n = 0;
+    int i, first = 1, w;
+    if (!out || cap < 3) return 0;
+#define PWP_PUT(...) do { w = snprintf(out + n, cap - n, __VA_ARGS__); if (w < 0 || (size_t)w >= cap - n) goto overflow; n += (size_t)w; } while (0)
+    PWP_PUT("[");
+    for (i = 0; list && i < count && i < A380X_FMGC_MAX_ND_PWP; ++i) {
+        const A380XFmgcNdPwp *p = &list[i];
+        char ident[sizeof p->ident];
+        size_t k, m = 0;
+        if (p->nd == A380X_PWP_ND_NONE || !isfinite(p->dist_ahead_nm)) continue;
+        if (p->nd == A380X_PWP_ND_PATH && !fin2(p->lat, p->lon)) continue;
+        for (k = 0; k < sizeof p->ident && p->ident[k]; ++k)   /* labels are fixed: keep JSON-safe characters only */
+            if ((p->ident[k] >= 'A' && p->ident[k] <= 'Z') || (p->ident[k] >= '0' && p->ident[k] <= '9') || strchr("()/ -", p->ident[k]))
+                ident[m++] = p->ident[k];
+        ident[m < sizeof ident ? m : sizeof ident - 1] = 0;
+        PWP_PUT("%s{\"ident\":\"%s\",\"pwp\":%u,\"type\":%d", first ? "" : ",", ident, p->symbol, colour_flag[(unsigned)p->colour & 3u]);
+        if (p->nd == A380X_PWP_ND_PATH) PWP_PUT(",\"lat\":%.5f,\"lon\":%.5f", p->lat, p->lon);
+        PWP_PUT(",\"dist\":%.1f", p->dist_ahead_nm);
+        if (isfinite(p->alt_ft)) PWP_PUT(",\"alt\":%.0f", p->alt_ft);
+        PWP_PUT("}");
+        first = 0;
+    }
+    PWP_PUT("]");
+#undef PWP_PUT
+    return n;
+overflow:
+    snprintf(out, cap, "[]");
+    return 0;
 }
 
 /* ============================================================================================ */
@@ -1239,59 +1632,26 @@ void a380x_fmgc_predictions(const A380XFmgc *g, const A380XFlightPlans *fp, cons
     }
     feed->leg_pred = legs;
     feed->leg_pred_count = r->count;
-    /* pseudo waypoints (dist_from_start in the plan's cumulative distance reference) */
-    if (dleg >= 0 && isfinite(r->el[dleg].cum_dist_nm) && o->vnav_valid) {
-        struct { const char *id; double d2d; } pw[2] = {{"T/D", o->tod_dist_nm}, {"DECEL", o->decel_dist_nm}};
-        int w;
-        for (w = 0; w < 2 && feed->pwp_count < A380X_FPLN_MAX_PWP; ++w) {
-            double from_start;
-            if (!isfinite(pw[w].d2d) || pw[w].d2d >= o->dist_to_dest_nm) continue;
-            from_start = r->el[dleg].cum_dist_nm - pw[w].d2d;
-            for (k = a; k <= dleg; ++k) {
-                if (is_leg(&r->el[k]) && isfinite(r->el[k].cum_dist_nm) && r->el[k].cum_dist_nm >= from_start) {
-                    A380XFplnPwp *pp = &feed->pwp[feed->pwp_count++];
-                    memset(pp, 0, sizeof *pp);
-                    snprintf(pp->ident, sizeof pp->ident, "%s", pw[w].id);
-                    pp->along_leg_index = k;
-                    pp->dist_from_start_nm = (float)from_start;
-                    pp->pred.valid = 1;
-                    pp->pred.seconds_from_present = (float)((o->dist_to_dest_nm - pw[w].d2d) / gs * 3600.0);
-                    pp->pred.altitude_ft = (float)(w == 0 ? crz : NAN);
-                    pp->pred.speed = NAN; pp->pred.efob_kg = NAN;
-                    pp->pred.dist_from_aircraft_nm = (float)(o->dist_to_dest_nm - pw[w].d2d);
-                    pp->pred.alt_cstr_met = pp->pred.spd_cstr_met = 1;
-                    break;
-                }
-            }
-        }
+    /* pseudo waypoints: the FMGC list (nearest first, same distances as the ND symbols), placed by
+     * leg and distance in the plan's cumulative distance reference */
+    for (k = 0; k < o->nd_pwp_count && feed->pwp_count < A380X_FPLN_MAX_PWP; ++k) {
+        const A380XFmgcNdPwp *w = &o->nd_pwp[k];
+        A380XFplnPwp *pp;
+        if (!w->mfd || w->leg_index < a || w->leg_index >= r->count || !isfinite(r->el[w->leg_index].cum_dist_nm)) continue;
+        pp = &feed->pwp[feed->pwp_count++];
+        memset(pp, 0, sizeof *pp);
+        snprintf(pp->ident, sizeof pp->ident, "%s", w->ident);
+        pp->along_leg_index = w->leg_index;
+        pp->dist_from_start_nm = (float)(r->el[w->leg_index].cum_dist_nm - w->before_term_nm);
+        pp->pred.valid = 1;
+        pp->pred.seconds_from_present = (float)(w->dist_ahead_nm / gs * 3600.0);
+        pp->pred.altitude_ft = (float)w->alt_ft;
+        pp->pred.speed = (float)w->speed_kt;
+        pp->pred.efob_kg = NAN;
+        pp->pred.dist_from_aircraft_nm = (float)w->dist_ahead_nm;
+        pp->pred.alt_cstr_met = pp->pred.spd_cstr_met = 1;
     }
-    if (isfinite(o->toc_dist_from_ppos_nm) && feed->pwp_count < A380X_FPLN_MAX_PWP) {
-        double c2 = 0.0;
-        llat = in->lat_deg; llon = in->lon_deg;
-        for (k = a; k < r->count && k < r->first_missed_appr_index; ++k) {
-            const A380XFplnLeg *l = &r->el[k];
-            double len;
-            if (!is_leg(l)) continue;
-            len = k == a ? o->dtg_active_nm : leg_length(r, k, &llat, &llon);
-            if (k == a && fin2(l->term_lat, l->term_lon)) { llat = l->term_lat; llon = l->term_lon; }
-            if (!isfinite(len)) break;
-            if (c2 + len >= o->toc_dist_from_ppos_nm && isfinite(l->cum_dist_nm)) {
-                A380XFplnPwp *pp = &feed->pwp[feed->pwp_count];
-                memmove(&feed->pwp[1], &feed->pwp[0], sizeof(feed->pwp[0]) * (size_t)feed->pwp_count);
-                feed->pwp_count++;
-                memset(pp = &feed->pwp[0], 0, sizeof *pp);
-                snprintf(pp->ident, sizeof pp->ident, "T/C");
-                pp->along_leg_index = k;
-                pp->dist_from_start_nm = (float)(l->cum_dist_nm - (c2 + len - o->toc_dist_from_ppos_nm));
-                pp->pred.valid = 1;
-                pp->pred.seconds_from_present = (float)(o->toc_dist_from_ppos_nm / gs * 3600.0);
-                pp->pred.altitude_ft = (float)crz;
-                pp->pred.speed = NAN; pp->pred.efob_kg = NAN;
-                pp->pred.dist_from_aircraft_nm = (float)o->toc_dist_from_ppos_nm;
-                pp->pred.alt_cstr_met = pp->pred.spd_cstr_met = 1;
-                break;
-            }
-            c2 += len;
-        }
-    }
+    feed->hold_speed_kt = (float)o->hold_speed_kt;
+    feed->hold_leg_index = o->hold_leg_index;
+    feed->hold_decel_reached = o->hold_decel_reached;
 }

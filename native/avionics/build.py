@@ -112,6 +112,11 @@ TERRAIN_LAYER_CHECK = HERE.parent.parent / "tools/terrain_layer_check.js"
 TERRAIN_PATCH = HERE.parent.parent / "tools/patch_xp_kit_nd.py"
 TERRAIN_PATCH_TEST = HERE.parent.parent / "tools/test_patch_xp_kit_nd.py"
 TERRAIN_SCENARIOS = ("arc", "rose", "peaks", "approach")
+# FMGC pseudo waypoints on the web ND: layer xp-kit-nd/fmgc-pwp-layer.js (inserted by tools/patch_xp_kit_nd.py),
+# checked with JavaScriptCore on the closed-loop flight's ND states (test_fmgc_flight writes nav.route +
+# nav.pseudo with the plugin's serializer); the native NDs draw the same list (a380x_nd_pwp.inc).
+PWP_LAYER = HERE / "xp-kit-nd/fmgc-pwp-layer.js"
+PWP_LAYER_CHECK = HERE.parent.parent / "tools/pwp_layer_check.js"
 EWD_DATA_TEST = HERE / "test_ewd_data.c"
 EWD_RENDER_TEST = HERE / "test_ewd_render.c"
 EWD_FONT = HERE / "fonts/FBW-Display-EIS-A380.ttf"
@@ -157,7 +162,7 @@ MFD_TESTS = (("test_mfd_formats", "core"), ("test_fms_core", "core"), ("test_nav
              ("test_mfd_ui", "core"), ("test_mfd_render", "render"), ("test_sd", "render"))
 MFD_OPTIONAL_TESTS = (("test_mfd_pages_a", "render"), ("test_mfd_page_perf", "render"),
                       ("test_mfd_page_fpln", "render"), ("test_mfd_pages_h", "render"))
-EXTRA_INPUTS = [TERRAIN_TEST, TERRAIN_ADAPTER_TEST, TERRAIN_LAYER, HERE / "xp-kit/bridge.js", HERE / "xp-kit-nd/native-bridge.js",
+EXTRA_INPUTS = [TERRAIN_TEST, TERRAIN_ADAPTER_TEST, TERRAIN_LAYER, PWP_LAYER, HERE / "xp-kit/bridge.js", HERE / "xp-kit-nd/native-bridge.js",
     FMGC_FLIGHT_TEST, EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", HERE / "test_xpkit_zero_copy.c", XPKIT_SURFACE, ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, *AUTOLAND_SOURCES, AUTOLAND_TEST, AUTOLAND_SIM_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
     EWD_DATA_TEST, EWD_RENDER_TEST, FCU_MOTION_TEST, FCU_LIGHT_TEST, ISIS_TEST, CONTROL_MOTION_TEST,
     *CXX_SOURCES, *[p for p in HERE.glob("*.h") if not p.name.startswith("._")],
@@ -436,7 +441,7 @@ def main() -> None:
     run([clang, *warnings, str(FCU_RENDER_TEST), "-lm", "-o", str(fcu_render_binary)])
     fcu_render_result = run([str(fcu_render_binary), str(output)]).strip()
     for preview in (output / "pfd-climb.svg", output / "pfd-approach.svg", output / "nd-fbw-arc.svg",
-                    output / "nd-fbw-rose.svg", output / "nd-fbw-plan.svg"):
+                    output / "nd-fbw-rose.svg", output / "nd-fbw-plan.svg", output / "nd-fbw-pwp.svg"):
         preview.write_text(preview.read_text().replace("PFD_FONT_DATA_URI",font_data_uri))
     isis_binary = output / "test_isis"
     isis_preview_dir = output / "isis-previews"
@@ -588,9 +593,19 @@ def main() -> None:
     run([clang, *warnings, str(FMGC_FLIGHT_TEST), str(CORE), str(GUIDANCE), *fmgc_core_objects, *mac_laws,
          "-lc++", "-lm", "-o", str(fmgc_flight_binary)])
     xplane_root = args.datarefs.resolve().parents[2] if args.datarefs else Path("/nonexistent")
-    fmgc_flight_output = run([str(fmgc_flight_binary), str(xplane_root), str(output / "fmgc-flight.csv")])
+    pwp_fixture_dir = output / "nd-pwp"
+    pwp_fixture_dir.mkdir()
+    fmgc_flight_output = run([str(fmgc_flight_binary), str(xplane_root), str(output / "fmgc-flight.csv"), str(pwp_fixture_dir)])
     (output / "fmgc-flight.txt").write_text(fmgc_flight_output)
     fmgc_flight_result = fmgc_flight_output.strip().splitlines()[-1]
+    pwp_fixtures = sorted(pwp_fixture_dir.glob("pwp-*.json"))
+    pwp_layer_result = None
+    if JSC.exists() and pwp_fixtures:
+        pwp_layer_result = run([str(JSC), str(PWP_LAYER_CHECK), "--", str(HERE / "xp-kit/bridge.js"),
+                                str(HERE / "xp-kit-nd/native-bridge.js"), str(TERRAIN_LAYER), str(PWP_LAYER),
+                                *[str(p) for p in pwp_fixtures]]).strip().splitlines()[-1]
+        if not pwp_layer_result.startswith("PWP LAYER OK"):
+            raise RuntimeError("ND pseudo-waypoint layer check failed: " + pwp_layer_result)
     mfd_adapter_binary = output / "test_mfd_adapter"
     run([clang, *warnings, "-Wno-deprecated-declarations", "-DAPL=1", "-DXPLM200=1", "-DXPLM210=1",
          "-DXPLM300=1", "-DXPLM301=1", "-DXPLM400=1", "-DXPLM410=1", *mfd_page_flags, "-I", str(headers),
@@ -1161,6 +1176,12 @@ def main() -> None:
         "fms_core_test_result": mfd_test_results["test_fms_core"],
         "fmgc_guidance_test_result": mfd_test_results["test_fmgc_guidance"],
         "fmgc_closed_loop_flight_result": fmgc_flight_result,
+        "fmgc_nd_pseudo_waypoints": {
+            "web_layer": {"file": "xp-kit-nd/fmgc-pwp-layer.js", "sha256": digest(PWP_LAYER)},
+            "web_layer_check_result": pwp_layer_result,
+            "flight_states": [{"file": f"nd-pwp/{p.name}", "sha256": digest(p)} for p in pwp_fixtures],
+            "native_preview": "nd-fbw-pwp.svg",
+        },
         "navdata_test_result": mfd_test_results["test_navdata"],
         "mfd_render_test_result": mfd_test_results["test_mfd_render"],
         "mfd_page_test_results": {name: mfd_test_results[name] for name, _ in mfd_optional_tests},

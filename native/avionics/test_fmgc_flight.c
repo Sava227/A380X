@@ -11,7 +11,14 @@
  * pitch/roll actuator response of test_guidance.c. It is physically reasonable, so the run proves
  * mode sequencing, path geometry, constraint logic and loop stability, not X-Plane gains.
  *
- * Usage: test_fmgc_flight <X-Plane root> [csv trace]. Without navigation data it prints SKIPPED.
+ * The plan carries a crew-entered HM hold at BPK (inbound 314, right turns) entered with a teardrop from
+ * the CHT -> BPK track, one racetrack circuit and IMMEDIATE EXIT in the outbound leg; the FMGC pseudo
+ * waypoints (T/C, T/D, DECEL ...) are checked against where the flight actually levels off / starts
+ * down / decelerates, and written as ND state fixtures (nav.route + nav.pseudo, the JSON of the plugin)
+ * for tools/pwp_layer_check.js and the real ND helper captures.
+ *
+ * Usage: test_fmgc_flight <X-Plane root> [csv trace] [fixture dir]. Without navigation data it prints
+ * SKIPPED.
  */
 #include "a380x_avionics_core.h"
 #include "a380x_fmgc_guidance.h"
@@ -264,8 +271,72 @@ static int build_plan(void)
     TMP(a380x_fpln_set_star(fp, A380X_PLAN_ACTIVE, 0, "LEST1M"));
     for (k = 0; k < 6 && (d = find_disco(&hk_plan(fp, A380X_PLAN_ACTIVE)->pri)) > 0; ++k)
         TMP(a380x_fpln_delete_element(fp, A380X_PLAN_ACTIVE, 0, d));
+    {   /* HOLD at BPK: computed default, modified to inbound 314 / right / 1 min (teardrop from CHT) */
+        const A380XFplnRoute *r = &hk_plan(fp, A380X_PLAN_ACTIVE)->pri;
+        A380XFplnHold dflt, mod;
+        int bpk = -1, hm;
+        for (k = 0; k < r->count; ++k) if (!strcmp(r->el[k].ident, "BPK")) { bpk = k; break; }
+        if (bpk < 0 || a380x_fpln_default_hold(fp, A380X_PLAN_ACTIVE, 0, bpk, 6000.0f, 0, &dflt) != 0) { printf("no BPK for the hold\n"); return 0; }
+        mod = dflt; mod.inbound_crs_mag = 314.0f; mod.turn = A380X_TURN_RIGHT; mod.time_min = 1.0f; mod.dist_nm = NAN;
+        hm = a380x_fpln_add_or_edit_hold(fp, A380X_PLAN_ACTIVE, 0, bpk, &mod, &mod, &dflt);
+        if (hm < 0) { printf("hold insert failed %d\n", hm); return 0; }
+        if (a380x_fpln_has_tmpy(fp)) { a380x_fms_tmpy_begin(&fms); a380x_fms_tmpy_insert(&fms); }
+    }
 #undef TMP
     return 1;
+}
+
+/* FG vertical mode class of the FMGC pseudo waypoints (the adapter's mapping, a380x_fms_adapter.inc). */
+static int fmgc_vm(const A380XGuidanceState *s, double vs)
+{
+    switch (s->vertical_mode) {
+    case A380X_B1_SRS: return A380X_FMGC_VM_SRS;
+    case A380X_B1_CLB: return A380X_FMGC_VM_CLB;
+    case A380X_B1_OP_CLB: return A380X_FMGC_VM_OP_CLB;
+    case A380X_B1_DES: return A380X_FMGC_VM_DES;
+    case A380X_B1_OP_DES: return A380X_FMGC_VM_OP_DES;
+    case A380X_B1_VS: case A380X_B1_FPA: return A380X_FMGC_VM_VS_FPA;
+    case A380X_B1_ALT: case A380X_B1_ALT_CST: case A380X_B1_ALT_CRZ: return A380X_FMGC_VM_ALT;
+    case A380X_B1_ALT_STAR: case A380X_B1_ALT_CST_STAR: case A380X_B1_ALT_CRZ_STAR:
+        return vs >= 0 ? (s->altitude_managed ? A380X_FMGC_VM_CLB : A380X_FMGC_VM_OP_CLB) : (s->altitude_managed ? A380X_FMGC_VM_DES : A380X_FMGC_VM_OP_DES);
+    case A380X_B1_GS: case A380X_B1_F_GS: case A380X_B1_GS_STAR: case A380X_B1_F_GS_STAR: case A380X_B1_APP_DES: return A380X_FMGC_VM_APPROACH;
+    default: return A380X_FMGC_VM_OTHER;
+    }
+}
+
+static const A380XFmgcNdPwp *pwp_find(const A380XFmgcOutputs *o, const char *ident)
+{
+    int k;
+    for (k = 0; k < o->nd_pwp_count; ++k) if (!strcmp(o->nd_pwp[k].ident, ident)) return &o->nd_pwp[k];
+    return NULL;
+}
+
+/* ND state fixture: aircraft, the ACTIVE route (as a380x_xpkit_nd_data.inc sends it) and nav.pseudo. */
+static void write_nd_fixture(const char *dir, const char *name, const Aircraft *ac, const A380XFmgcOutputs *g)
+{
+    char path[1024], pseudo[2048];
+    const A380XFplnPlan *p = hk_plan(fp, A380X_PLAN_ACTIVE);
+    FILE *f;
+    int k, n = 0;
+    if (!dir) return;
+    snprintf(path, sizeof path, "%s/%s.json", dir, name);
+    if (!(f = fopen(path, "w"))) { printf("cannot write %s\n", path); return; }
+    if (!a380x_fmgc_nd_pwp_json(g->nd_pwp, g->nd_pwp_count, pseudo, sizeof pseudo)) snprintf(pseudo, sizeof pseudo, "[]");
+    fprintf(f, "{\"name\":\"%s\",\"lat\":%.7f,\"lon\":%.7f,\"trueHeading\":%.2f,\"trueTrack\":%.2f,\"groundSpeed\":%.1f,"
+            "\"altitude\":%.0f,\"magVar\":%.2f,\"route\":[", name, ac->lat, ac->lon, ac->psi, ac->trk, ac->gs_kt, ac->h_ft,
+            magvar_at(ac->lat, ac->lon));
+    for (k = 0; p && k < p->pri.count; ++k) {
+        const A380XFplnLeg *l = &p->pri.el[k];
+        if ((l->flags & A380X_LEGF_DISCONTINUITY) || !isfinite(l->term_lat) || !isfinite(l->term_lon)) continue;
+        fprintf(f, "%s{\"ident\":\"%s\",\"lat\":%.7f,\"lon\":%.7f,\"active\":%s", n++ ? "," : "", l->ident, l->term_lat, l->term_lon,
+                k == p->active_leg_index ? "true" : "false");
+        if ((l->type == A380X_LEG_TF || l->type == A380X_LEG_DF || l->type == A380X_LEG_CF) && isfinite(l->start_lat) && isfinite(l->start_lon))
+            fprintf(f, ",\"start\":[%.7f,%.7f]", l->start_lat, l->start_lon);
+        fprintf(f, "}");
+    }
+    fprintf(f, "],\"pseudo\":%s}\n", pseudo);
+    fclose(f);
+    printf("    ND fixture %s: %s\n", name, pseudo);
 }
 
 static void print_plan(void)
@@ -330,6 +401,13 @@ int main(int argc, char **argv)
     double next_speed_log_alt = 2000;
     int climbing_log = 1;
     double max_alt = 0, crz_level_err = NAN, lvl_cst_err[8]; int n_lvl = 0;
+    /* hold at BPK and pseudo waypoints */
+    const char *fixture_dir = argc > 3 ? argv[3] : NULL;
+    int hold_leg = -1, hold_seen[10] = {0}, hold_entry = 0, hold_exit_cmd = 0, hold_done = 0, hold_circuits = 0;
+    double hold_xtk_in = 0, hold_cas_err = 0, hold_speed = NAN, hold_t0 = -1, hold_t1 = -1e9, hold_xtk_max = 0, hold_phase2_t = -1, hold_max_bank = 0, hold_alt0 = NAN, hold_alt1 = NAN, hold_fcu_t = 0;
+    double toc_pred = NAN, toc_flown = 0, toc_err = NAN, spdlim_pred = NAN, spdlim_flown = 0, spdlim_err = NAN;
+    double td_pwp_ahead = NAN, td_pwp_pos_err = NAN, decel_lat = NAN, decel_lon = NAN, decel_err = NAN, mfd_td_err = NAN;
+    int toc_armed = 0, spdlim_armed = 0, fix_climb = 0, fix_cruise = 0, fix_descent = 0, fix_hold = 0, decel_snap = 0, hold_fcu = 0, des_pushed = 0;
 
     if (argc < 2) { printf("usage: test_fmgc_flight <X-Plane root> [trace.csv]\n"); return 2; }
     memset(&cfg, 0, sizeof cfg);
@@ -469,8 +547,79 @@ int main(int argc, char **argv)
         gin.idle_speed_descent = gs.thrust_mode == A380X_A1A2_THR_IDLE && gs.athr_active
             && (gs.vertical_mode == A380X_B1_OP_DES || (gs.vertical_mode == A380X_B1_DES && gs.des_submode == 1))
             && fabs(cas - gs.speed_target_knots) < 5.0;
+        gin.fg_vertical_mode = fmgc_vm(&gs, ac.vs_fpm);
+        gin.clb_armed = gs.clb_armed; gin.des_armed = gs.des_armed; gin.alt_constraint_mode = gs.alt_constraint;
+        gin.speed_managed = gs.speed_managed; gin.des_submode = gs.des_submode;
+        gin.clb_limit_kt = perf(A380X_FMS_F_CLB_SPD_LIM); gin.clb_limit_alt_ft = perf(A380X_FMS_F_CLB_SPD_LIM_ALT);
         a380x_fmgc_update(&fmgc, fp, &gin, dt);
         g = a380x_fmgc_outputs(&fmgc);
+        /* ---- hold at BPK (crew: IMMEDIATE EXIT 20 s into the outbound leg of the first full circuit) ---- */
+        {
+            const A380XFplnRoute *r = &hk_plan(fp, A380X_PLAN_ACTIVE)->pri;
+            if (g->active_leg >= 0 && r->el[g->active_leg].type == A380X_LEG_HM) {
+                if (hold_leg < 0) { hold_t0 = t; hold_alt0 = ac.h_ft; }
+                hold_leg = g->active_leg;
+                if (fmgc.hold_phase >= 0 && fmgc.hold_phase < 10) hold_seen[fmgc.hold_phase]++;
+                if (fmgc.hold_entry && !hold_entry) {
+                    hold_entry = fmgc.hold_entry;
+                    printf("t=%6.1f HOLD BPK entered: %s entry (arrival track %.1f, inbound %.1f true), hold speed %.0f kt, radius %.2f NM leg %.2f NM\n",
+                           t, hold_entry == A380X_HOLD_ENTRY_TEARDROP ? "TEARDROP" : hold_entry == A380X_HOLD_ENTRY_PARALLEL ? "PARALLEL" : "DIRECT",
+                           ac.trk, r->el[hold_leg].course_deg + r->el[hold_leg].magvar_deg, g->hold_speed_kt, fmgc.hold_radius_nm, fmgc.hold_leg_nm);
+                }
+                if (fmgc.hold_circuits > hold_circuits) {
+                    hold_circuits = fmgc.hold_circuits;
+                    printf("t=%6.1f HOLD BPK circuit %d over the fix at %.0f ft %.0f kt\n", t, hold_circuits, ac.h_ft, cas);
+                }
+                if (fmgc.hold_phase == 0 && g->kind == A380X_LNAV_LINE && isfinite(g->dtg_active_nm) && g->dtg_active_nm > 0.7
+                    && fabs(g->xtk_right_nm) > hold_xtk_in) hold_xtk_in = fabs(g->xtk_right_nm);
+                if (fabs(ac.phi) > hold_max_bank) hold_max_bank = fabs(ac.phi);
+                if (g->kind != A380X_LNAV_DIRECT && fabs(g->xtk_right_nm) > hold_xtk_max) hold_xtk_max = fabs(g->xtk_right_nm);
+                hold_speed = g->hold_speed_kt;
+                if (t - hold_t0 > 90 && isfinite(hold_speed) && fabs(cas - hold_speed) > hold_cas_err) hold_cas_err = fabs(cas - hold_speed);
+                if (fmgc.hold_phase == 2 && hold_phase2_t < 0 && hold_circuits >= 1) hold_phase2_t = t;
+                if (!hold_exit_cmd && hold_phase2_t >= 0 && t - hold_phase2_t > 20) {
+                    a380x_fpln_set_hold_imm_exit(fp, hold_leg, 1); hold_exit_cmd = 1;
+                    printf("t=%6.1f HOLD BPK: IMMEDIATE EXIT (outbound leg) at %.0f ft\n", t, ac.h_ft);
+                }
+                if (!fix_hold && fmgc.hold_phase == 6) {
+                    fix_hold = 1;
+                    write_nd_fixture(fixture_dir, "pwp-hold", &ac, g);
+                }
+            } else if (hold_leg >= 0 && !hold_done) {
+                hold_done = 1; hold_alt1 = ac.h_ft; hold_t1 = t;
+                printf("t=%6.1f HOLD BPK exited after %.0f s: TO %s\n", t, t - hold_t0, g->active_leg >= 0 ? r->el[g->active_leg].ident : "-");
+            }
+        }
+        /* ---- pseudo waypoints vs the flight ---- */
+        {
+            const A380XFmgcNdPwp *w;
+            if (hold_done && !spdlim_armed && ac.h_ft > 7000 && ac.h_ft < 9000 && gs.vertical_mode == A380X_B1_CLB && (w = pwp_find(g, "(SPDLIM)"))
+                && isfinite(w->alt_ft)) {
+                spdlim_armed = 1; spdlim_pred = w->dist_ahead_nm; spdlim_flown = 0;
+            }
+            if (spdlim_armed == 1) { spdlim_flown += ac.gs_kt * dt / 3600.0; if (ac.h_ft >= 10000) { spdlim_armed = 2; spdlim_err = spdlim_flown - spdlim_pred; } }
+            if (hold_done && !toc_armed && ac.h_ft > 12000 && gs.vertical_mode == A380X_B1_CLB && (w = pwp_find(g, "(T/C)"))) {
+                toc_armed = 1; toc_pred = w->dist_ahead_nm; toc_flown = 0;
+                CHECK(w->nd == A380X_PWP_ND_PATH && w->colour == A380X_PWP_MAGENTA && w->symbol == A380X_PWP_CLIMB_LEVEL_OFF, "T/C pseudo waypoint symbol");
+            }
+            if (toc_armed == 1) {
+                toc_flown += ac.gs_kt * dt / 3600.0;
+                if (gs.vertical_mode == A380X_B1_ALT_CRZ_STAR || gs.vertical_mode == A380X_B1_ALT_CRZ || a380x_guidance_fma_vertical(&gs) == A380X_B1_ALT_CRZ_STAR)
+                    { toc_armed = 2; toc_err = toc_flown - toc_pred; }
+            }
+            if (!fix_climb && hold_done && ac.h_ft > 8000 && gs.vertical_mode == A380X_B1_CLB) { fix_climb = 1; write_nd_fixture(fixture_dir, "pwp-climb", &ac, g); }
+            if (!fix_cruise && a380x_fms_phase(&fms) == A380X_FMS_PHASE_CRUISE && (w = pwp_find(g, "(T/D)")) && w->dist_ahead_nm < 30) {
+                A380XFplnPredFeed feed; static A380XFplnWptPred legs[A380X_FPLN_MAX_ELEMENTS];
+                int j;
+                fix_cruise = 1; write_nd_fixture(fixture_dir, "pwp-cruise", &ac, g);
+                a380x_fmgc_predictions(&fmgc, fp, &gin, &feed, legs);
+                for (j = 0; j < feed.pwp_count; ++j) if (!strcmp(feed.pwp[j].ident, "(T/D)")) mfd_td_err = feed.pwp[j].pred.dist_from_aircraft_nm - w->dist_ahead_nm;
+            }
+            if (!fix_descent && fcu_des_set > 0 && ac.h_ft < 15000 && gs.vertical_mode == A380X_B1_DES) { fix_descent = 1; write_nd_fixture(fixture_dir, "pwp-descent", &ac, g); }
+            if (!decel_snap && a380x_fms_phase(&fms) == A380X_FMS_PHASE_DESCENT && (w = pwp_find(g, "(DECEL)")) && w->dist_ahead_nm < 15 && w->nd == A380X_PWP_ND_PATH) {
+                decel_snap = 1; decel_lat = w->lat; decel_lon = w->lon;
+            }
+        }
         /* ---- guidance inputs (FCU adapter mapping) ---- */
         memset(&i, 0, sizeof i);
         i.powered = 1; i.on_ground = ac.on_ground; i.attitude_valid = i.airdata_valid = 1; i.athr_speed_valid = 1;
@@ -512,14 +661,45 @@ int main(int argc, char **argv)
         }
         if (ap_engaged && !gs.ap1) { printf("t=%6.1f AP1 DISCONNECTED at %.0f ft (cas %.0f pitch %.1f bank %.1f)\n", t, ac.h_ft, cas, ac.theta, ac.phi); stop_reason = 3; break; }
         if (levers_cl > 0 && levers_cl == t) printf("t=%6.1f THR RED %.0f ft: levers CL\n", t, ac.h_ft);
+        {   /* crew: "hold at BPK, maintain 6000" (FCU 6000 once BPK is the TO waypoint), then FCU FL240 + ALT push
+             * (managed climb) when the hold is exited */
+            const A380XFplnRoute *r = &hk_plan(fp, A380X_PLAN_ACTIVE)->pri;
+            if (hold_fcu == 0 && g->active_leg >= 0 && !strcmp(r->el[g->active_leg].ident, "BPK") && r->el[g->active_leg].type == A380X_LEG_TF) {
+                hold_fcu = 1; gs.selected_altitude_ft = 6000; a380x_fms_on_fcu_alt_turn(&fms);
+                printf("t=%6.1f FCU 6000 (hold at BPK)\n", t);
+            }
+            if (hold_fcu == 1 && hold_done) {
+                hold_fcu = 2; hold_fcu_t = t; gs.selected_altitude_ft = 24000; a380x_fms_on_fcu_alt_turn(&fms);
+                printf("t=%6.1f FCU FL240 (climb after the hold)\n", t);
+            }
+            if (hold_fcu == 2 && t - hold_fcu_t >= 2.0) {
+                hold_fcu = 3;
+                a380x_guidance_command(&gs, &i, A380X_FCU_ALT_PUSH, 0); a380x_fms_on_fcu_alt_push_pull(&fms);
+                printf("t=%6.1f ALT push\n", t);
+            }
+        }
         if (fcu_des_set == 0 && a380x_fms_phase(&fms) == A380X_FMS_PHASE_CRUISE && isfinite(g->tod_dist_nm) && isfinite(g->dist_to_dest_nm)
             && g->dist_to_dest_nm <= g->tod_dist_nm + 2.0) {
-            /* crew: descent clearance 3000 ft 2 NM before T/D, ALT push (early descent) */
+            /* crew: descent clearance 3000 ft 2 NM before T/D (FCU 3000), ALT push 1 s later (early descent) */
             tod_pred = g->tod_dist_nm; des_start_d2d = g->dist_to_dest_nm;
+            {
+                const A380XFmgcNdPwp *w = pwp_find(g, "(T/D)");
+                if (w) {
+                    double e, n;
+                    td_pwp_ahead = w->dist_ahead_nm;
+                    /* the T/D symbol 2 NM ahead on the path: distance from the aircraft along the present track */
+                    e = (w->lon - ac.lon) * 60.0 * cos(ac.lat * D2R); n = (w->lat - ac.lat) * 60.0;
+                    td_pwp_pos_err = hypot(e, n) - (g->dist_to_dest_nm - g->tod_dist_nm);
+                }
+            }
             gs.selected_altitude_ft = 3000; a380x_fms_on_fcu_alt_turn(&fms);
-            a380x_guidance_command(&gs, &i, A380X_FCU_ALT_PUSH, 0); a380x_fms_on_fcu_alt_push_pull(&fms);
             fcu_des_set = t;
-            printf("t=%6.1f FCU 3000, ALT push %.1f NM before T/D (T/D %.1f NM from destination)\n", t, g->dist_to_dest_nm - g->tod_dist_nm, g->tod_dist_nm);
+            printf("t=%6.1f FCU 3000 %.1f NM before T/D (T/D %.1f NM from destination)\n", t, g->dist_to_dest_nm - g->tod_dist_nm, g->tod_dist_nm);
+        }
+        if (fcu_des_set > 0 && !des_pushed && t - fcu_des_set >= 1.0) {
+            des_pushed = 1;
+            a380x_guidance_command(&gs, &i, A380X_FCU_ALT_PUSH, 0); a380x_fms_on_fcu_alt_push_pull(&fms);
+            printf("t=%6.1f ALT push %.1f NM before T/D\n", t, g->dist_to_dest_nm - g->tod_dist_nm);
         }
         /* speed brakes on MORE DRAG (above the path at idle) or too fast at idle on the path; FCU 1000 ft
          * on the final (stands for the missed-approach / final-descent FCU setting) */
@@ -585,7 +765,12 @@ int main(int argc, char **argv)
             if (fb == A380X_B1_ALT_CRZ && prev_b1 != fb) crz_level_err = ac.h_ft - 24000;
             prev_a = fa; prev_b1 = fb; prev_c1 = fc; prev_arm = arm;
         }
-        if (a380x_fms_phase(&fms) != prev_phase) { printf("t=%6.1f FMS phase %d at %.0f ft, %.1f NM to destination\n", t, a380x_fms_phase(&fms), ac.h_ft, g->dist_to_dest_nm); prev_phase = a380x_fms_phase(&fms); }
+        if (a380x_fms_phase(&fms) != prev_phase) {
+            printf("t=%6.1f FMS phase %d at %.0f ft, %.1f NM to destination\n", t, a380x_fms_phase(&fms), ac.h_ft, g->dist_to_dest_nm);
+            prev_phase = a380x_fms_phase(&fms);
+            if (prev_phase == A380X_FMS_PHASE_APPROACH && decel_snap)   /* DECEL symbol vs where the approach phase began */
+                decel_err = a380x_geo_distance_nm(ac.lat, ac.lon, decel_lat, decel_lon);
+        }
         if (g->active_leg != prev_leg) {
             const A380XFplnRoute *r = &hk_plan(fp, A380X_PLAN_ACTIVE)->pri;
             /* constraint compliance at the termination of the leg just completed */
@@ -612,7 +797,8 @@ int main(int argc, char **argv)
         }
         if (!climbing_log && fcu_des_set == 0) next_speed_log_alt = 22000;
         /* path tracking statistics while NAV is engaged */
-        if (gs.lateral_mode == A380X_C1_NAV && g->lnav_valid && g->kind != A380X_LNAV_TRACK && g->kind != A380X_LNAV_HEADING && g->kind != A380X_LNAV_DIRECT) {
+        if (gs.lateral_mode == A380X_C1_NAV && g->lnav_valid && g->kind != A380X_LNAV_TRACK && g->kind != A380X_LNAV_HEADING && g->kind != A380X_LNAV_DIRECT
+            && !(g->active_leg >= 0 && g->active_leg == hold_leg) && !(hold_done && t - hold_t1 < 90.0)) {
             double x = fabs(g->xtk_right_nm);
             if (g->in_transition || g->kind == A380X_LNAV_ARC) { if (x > max_xtk_turn) max_xtk_turn = x; }
             else if (t - t_seq < 60.0) { if (x > max_xtk_recover) max_xtk_recover = x; }
@@ -660,6 +846,24 @@ int main(int argc, char **argv)
         CHECK(ok, "%s altitude constraint missed (%.0f ft)", cs[k].ident, cs[k].alt);
         CHECK(sok, "%s speed constraint missed (%.0f kt)", cs[k].ident, cs[k].cas);
     }
+    printf("hold BPK: entry %d (2 = teardrop), phases teardrop %d/%d inbound %d turn %d outbound %d back %d exit %d, circuits %d,"
+           " inbound |XTK| %.3f NM, max |XTK| %.2f NM, max bank %.1f deg, hold speed %.0f kt (max |CAS - hold| after 90 s %.1f kt), %.0f -> %.0f ft, exited %d\n",
+           hold_entry, hold_seen[5], hold_seen[6], hold_seen[0], hold_seen[1], hold_seen[2], hold_seen[3], hold_seen[4], hold_circuits,
+           hold_xtk_in, hold_xtk_max, hold_max_bank, hold_speed, hold_cas_err, hold_alt0, hold_alt1, hold_done);
+    printf("pseudo waypoints: (SPDLIM) predicted %.1f NM, flown %.1f (err %+.1f); (T/C) predicted %.1f NM above FL120, flown %.1f (err %+.1f);"
+           " (T/D) at the descent clearance %.2f NM ahead (position err %+.2f NM, MFD line err %+.3f); DECEL symbol %.2f NM from where the approach phase began\n",
+           spdlim_pred, spdlim_pred + spdlim_err, spdlim_err, toc_pred, toc_pred + toc_err, toc_err, td_pwp_ahead, td_pwp_pos_err, mfd_td_err, decel_err);
+    CHECK(hold_entry == A380X_HOLD_ENTRY_TEARDROP, "BPK hold entry %d", hold_entry);
+    CHECK(hold_seen[5] && hold_seen[6] && hold_seen[0] && hold_seen[1] && hold_seen[2] && hold_seen[4] && hold_done, "hold phases");
+    CHECK(hold_circuits >= 1 && hold_xtk_in < 0.3, "hold inbound XTK %.3f NM", hold_xtk_in);
+    CHECK(hold_xtk_max < 1.0, "hold max XTK %.2f NM", hold_xtk_max);
+    CHECK(fabs(hold_alt1 - 6000) < 100 && fabs(hold_alt0 - 6000) < 100, "hold altitude %.0f -> %.0f", hold_alt0, hold_alt1);
+    CHECK(hold_cas_err < 10.0, "hold speed error %.1f kt", hold_cas_err);
+    CHECK(isfinite(td_pwp_ahead) && fabs(td_pwp_ahead - 2.0) < 0.15 && fabs(td_pwp_pos_err) < 0.3, "T/D symbol %.2f NM ahead, err %.2f", td_pwp_ahead, td_pwp_pos_err);
+    CHECK(isfinite(mfd_td_err) && fabs(mfd_td_err) < 0.01, "MFD (T/D) vs ND distance %.3f", mfd_td_err);
+    CHECK(isfinite(decel_err) && decel_err < 1.5, "DECEL symbol %.2f NM from the approach phase activation", decel_err);
+    CHECK(isfinite(spdlim_err) && fabs(spdlim_err) < 1.5, "(SPDLIM) %.1f NM off", spdlim_err);
+    CHECK(isfinite(toc_err) && fabs(toc_err) < 0.2 * toc_pred, "(T/C) %.1f NM off", toc_err);
     printf("modes seen: SRS %d CLB %d ALT CST* %d ALT CST %d ALT CRZ %d DES %d (on path %d, above %d, below %d); "
            "A/THR THR CLB %d THR IDLE %d SPEED %d MACH %d; NAV engaged at %.0f ft RA\n",
            seen[A380X_B1_SRS], seen[A380X_B1_CLB], seen[A380X_B1_ALT_CST_STAR], seen[A380X_B1_ALT_CST], seen[A380X_B1_ALT_CRZ],
@@ -681,6 +885,6 @@ int main(int argc, char **argv)
     a380x_fpln_destroy(fp);
     a380x_nav_destroy(nav);
     if (failures) { printf("FMGC closed-loop flight: %d check(s) FAILED\n", failures); return 1; }
-    printf("FMGC closed-loop flight passed: SID/enroute/STAR/approach to 1500 ft, constraints met, FMA sequence above\n");
+    printf("FMGC closed-loop flight passed: SID with a teardrop-entry hold, enroute/STAR/approach to 1500 ft, constraints met, pseudo waypoints, FMA sequence above\n");
     return 0;
 }

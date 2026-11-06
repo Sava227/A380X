@@ -98,7 +98,9 @@ box and readout drawn by the production GL code into a software rasterizer.
    `package_nd` inlines the layer in a full ND build; for the reused verified page
    (`--xpkit-assets`) `reuse_verified_assets` inserts it with `tools/patch_xp_kit_nd.py` (known page hash,
    exact anchor, idempotent, refreshes an older layer) and records `nd_terrain_patch` and the new
-   `nd.html` hash in the display manifest.
+   `nd.html` hash in the display manifest. The tool inserts an ordered list of layers (`LAYERS`): this one,
+   then the FMGC pseudo-waypoint layer `fmgc-pwp-layer.js` (AUTOPILOT_DEVELOPMENT.md); the record lists
+   each layer's hash.
 6. **Native NDs** (no web renderer: Windows without the WebView2 host, or a build without xp-kit): the
    same raster as one RGBA texture per ND (only changed rows re-uploaded), one quad under the map layers of
    `draw_nd` / `draw_nd_fbw`; the FBW TERR box on the 768 x 1024 layout, `TERR <max>/<min>` in the 180 x 234

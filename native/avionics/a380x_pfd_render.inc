@@ -1371,12 +1371,15 @@ static void nd_draw_fpln_plan(const EfisNdCanvas *map,int side,int plan_index)
     }
 }
 
+#include "a380x_nd_pwp.inc"   /* FMGC pseudo waypoints (T/C, T/D, DECEL, level-off ...) */
+
 /* Returns 1 when the native FMS has a route to show (the stock X-Plane FMS route is then ignored). */
 static int nd_draw_fms_route(const EfisNdCanvas *map,int side)
 {
     int drew=0;
     if (nd_fpln_plan_drawable(A380X_PLAN_ACTIVE)) { nd_draw_fpln_plan(map,side,A380X_PLAN_ACTIVE); drew=1; }
     if (nd_fpln_plan_drawable(A380X_PLAN_TEMPORARY)) { nd_draw_fpln_plan(map,side,A380X_PLAN_TEMPORARY); drew=1; }
+    if (nd_fpln_plan_drawable(A380X_PLAN_ACTIVE)) nd_draw_fmgc_pwps(map,side);
     return drew;
 }
 

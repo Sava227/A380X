@@ -22,7 +22,9 @@
  *     speed) tangent to both legs, anticipation R*tan(turn/2); fly-over legs sequence at the fix;
  *   - DF legs: pursuit of the fix while turning, then a frozen great-circle line;
  *   - course legs (CA/CD/CI/CR, VA/VD/VI/VR/VM): track / heading hold, no XTK;
- *   - holds: racetrack (inbound leg, 180 deg turns of the hold radius), entered directly;
+ *   - holds: racetrack (inbound leg, 180 deg turns of the hold radius) with direct, teardrop and
+ *     parallel entries chosen by the ICAO / Airbus entry sectors (+-5 deg in favour of direct); hold
+ *     speed as FBW's getHoldingSpeed (spec 07 section 5.8);
  *   - descent path: built backwards from the destination with an idle gradient (3.0 deg nominal,
  *     scaled to ground distance with the current TAS/GS ratio and by an idle factor learned while
  *     descending at idle with the speed on the elevator, 0.7..1.3), coded FPA legs as geometric
@@ -48,6 +50,44 @@ extern "C" {
 
 #define A380X_FMGC_DESIGN_BANK_DEG   20.0   /* transition radius design bank */
 #define A380X_FMGC_MAX_PROFILE      (A380X_FPLN_MAX_ELEMENTS + 4)
+#define A380X_FMGC_MAX_ND_PWP        10
+
+/* ND pseudo-waypoint symbols: the FBW ND PseudoWaypointLayer `typePwp` flags (NdPwpSymbolTypeFlags
+ * as used by the pinned FBW A380X ND bundle) and colours (NdSymbolTypeFlags MagentaColor 131072,
+ * AmberColor 65536, CyanColor 32768, else white). */
+enum {
+    A380X_PWP_DECEL = 2, A380X_PWP_START_OF_DESCENT = 4, A380X_PWP_SPEED_CHANGE = 8,
+    A380X_PWP_CLIMB_LEVEL_OFF = 16, A380X_PWP_DESCENT_LEVEL_OFF = 32, A380X_PWP_START_OF_CLIMB = 64,
+    A380X_PWP_INTERCEPT_PROFILE = 128
+};
+typedef enum { A380X_PWP_WHITE = 0, A380X_PWP_MAGENTA, A380X_PWP_CYAN, A380X_PWP_AMBER } A380XPwpColour;
+typedef enum {
+    A380X_PWP_ND_NONE = 0,          /* MFD F-PLN only */
+    A380X_PWP_ND_PATH,              /* on the flight-plan path at lat/lon (NAV engaged) */
+    A380X_PWP_ND_TRACK              /* along the present track, dist_ahead_nm (HDG / TRK) */
+} A380XPwpNdPlacement;
+typedef struct {
+    char ident[12];                 /* MFD label "(T/C)", "(T/D)", "(DECEL)", "(SPDLIM)"; ND only:
+                                       "LEVEL", "START", "INTCPT" */
+    unsigned symbol;                /* A380X_PWP_* (one flag) */
+    A380XPwpColour colour;
+    A380XPwpNdPlacement nd;
+    int mfd;                        /* shown on the MFD F-PLN (ACTIVE) */
+    double lat, lon;                /* NAN when not on the path */
+    double dist_ahead_nm;           /* along the path (or track) from PPOS */
+    double alt_ft, speed_kt;        /* predictions (NAN) */
+    int leg_index;                  /* ACTIVE leg it lies on, -1 */
+    double before_term_nm;          /* distance before that leg's termination */
+} A380XFmgcNdPwp;
+
+/* FG vertical mode classes for the pseudo waypoints (the adapter maps the FMA B1 message). */
+typedef enum {
+    A380X_FMGC_VM_OTHER = 0, A380X_FMGC_VM_SRS, A380X_FMGC_VM_CLB, A380X_FMGC_VM_OP_CLB,
+    A380X_FMGC_VM_DES, A380X_FMGC_VM_OP_DES, A380X_FMGC_VM_VS_FPA, A380X_FMGC_VM_ALT, A380X_FMGC_VM_APPROACH
+} A380XFmgcVertMode;
+
+/* Hold entry types (ICAO PANS-OPS Vol I / Airbus FCOM sectors). */
+typedef enum { A380X_HOLD_ENTRY_NONE = 0, A380X_HOLD_ENTRY_DIRECT, A380X_HOLD_ENTRY_TEARDROP, A380X_HOLD_ENTRY_PARALLEL } A380XHoldEntry;
 
 /* Lateral path element kinds of the active guidance segment. */
 typedef enum {
@@ -87,6 +127,11 @@ typedef struct {
     int    nav_armed;
     int    vertical_managed;        /* CLB, DES, ALT CST engaged */
     int    idle_speed_descent;      /* OP DES / DES above path at THR IDLE, speed on target (idle learning) */
+    /* FG modes for the ND pseudo-waypoint symbols (managed magenta / selected cyan / armed) */
+    int    fg_vertical_mode;        /* A380XFmgcVertMode (ALT: ALT, ALT*, ALT CST, ALT CRZ) */
+    int    clb_armed, des_armed, alt_constraint_mode, speed_managed, des_submode;
+    double clb_limit_kt, clb_limit_alt_ft;   /* climb speed limit; 0 = none */
+    int    engine_out;              /* hold speed + 25 kt */
 } A380XFmgcInputs;
 
 typedef struct {
@@ -138,6 +183,15 @@ typedef struct {
     A380XFmgcProfilePoint profile[A380X_FMGC_MAX_PROFILE];
     double tod_lat, tod_lon, decel_lat, decel_lon, toc_lat, toc_lon;  /* NAN when unknown */
     int    tod_leg, decel_leg, toc_leg; /* leg index the pseudo waypoint lies on (-1) */
+    /* pseudo waypoints ahead of the aircraft, nearest first: the ND symbols and the MFD F-PLN lines
+     * (a380x_fmgc_predictions) come from this one list */
+    int    nd_pwp_count;
+    A380XFmgcNdPwp nd_pwp[A380X_FMGC_MAX_ND_PWP];
+    /* holding */
+    A380XHoldEntry hold_entry;      /* entry chosen for the active hold leg */
+    double hold_speed_kt;           /* holding speed of the active / next hold, NAN */
+    int    hold_leg_index;          /* that hold leg, -1 */
+    int    hold_decel_reached;      /* the hold speed is the managed target */
 } A380XFmgcOutputs;
 
 typedef struct {
@@ -159,9 +213,12 @@ typedef struct {
     /* DME / radial legs: crossing direction at activation */
     int      cross_sign;
     /* hold */
-    int      hold_phase;            /* 0 inbound, 1 turn at fix, 2 outbound, 3 turn back */
+    int      hold_phase;            /* 0 inbound, 1 turn at fix, 2 outbound, 3 turn back, 4 IMM EXIT,
+                                       5/6 teardrop leg/turn, 7/8/9 parallel leg/turn/direct */
     int      hold_entered, hold_circuits;
-    double   hold_radius_nm, hold_leg_nm;
+    double   hold_radius_nm, hold_leg_nm, hold_teardrop_deg;
+    A380XHoldEntry hold_entry;
+    double   vs_filt_fpm;           /* smoothed V/S for the level-off predictions */
     /* FMS phase / decel latch, learned idle descent gradient factor */
     int      decel_latched;
     double   idle_factor;            /* learned idle gradient / nominal (0.7..1.3) */
@@ -192,6 +249,22 @@ double a380x_fmgc_turn_radius_nm(double gs_kt, double bank_deg);
 double a380x_fmgc_anticipation_nm(double gs_kt, double track_change_deg);
 /* Idle descent gradient of the port's profile model, ft per NM. */
 double a380x_fmgc_idle_gradient_ft_nm(double alt_ft, double speed_limit_alt_ft);
+/* Climb distance to a level at the present V/S (rate falling linearly to zero at a 43000 ft ceiling),
+ * NM at gs_kt: the T/C / climb level-off / climb speed-limit pseudo waypoints. */
+double a380x_fmgc_climb_distance_nm(double alt_ft, double target_ft, double vs_fpm, double gs_kt);
+/* Hold entry for an arrival track (true) at a hold with inbound course `inbound_true` and turns
+ * right (> 0) or left. Sectors relative to the inbound course, right turns: direct -110..+70 deg,
+ * teardrop +70..+140, parallel otherwise; within 5 deg of a direct-sector boundary direct is kept,
+ * within 5 deg of the teardrop/parallel boundary teardrop (ICAO +-5 deg flexibility). */
+A380XHoldEntry a380x_fmgc_hold_entry(double inbound_true, double arrival_track_true, int right_turns);
+/* FBW getHoldingSpeed (spec 07 section 5.8): cstr_* NAN when none. */
+double a380x_fmgc_holding_speed(const A380XFmgcInputs *in, double cstr_speed_kt, double cstr_alt_ft);
+
+/* JSON array of the ND pseudo waypoints (those with an ND placement) for the FBW ND bundle's
+ * PseudoWaypointLayer, as the xp-kit ND state `nav.pseudo` carries it: [{"ident","pwp" (typePwp),
+ * "type" (colour flag), "lat","lon" (on the path), "dist" (NM ahead), "alt"}]. Returns the length,
+ * or 0 (and "[]" when cap allows) if it does not fit. */
+size_t a380x_fmgc_nd_pwp_json(const A380XFmgcNdPwp *list, int count, char *out, size_t cap);
 
 /* Basic F-PLN predictions for the MFD (A380XFplnPredFeed): pseudo waypoints T/C, T/D, DECEL and
  * per-leg distance/time/altitude from the profile. legs must hold A380X_FPLN_MAX_ELEMENTS entries. */
