@@ -453,6 +453,7 @@ static void xpkit_guidance_words(XpKitJson *j) {
 }
 #undef XPKIT_BIT
 #include "a380x_xpkit_nd_data.inc"
+#include "a380x_xpkit_terrain.inc"   /* TERRAIN on ND rasters for the web NDs */
 #include "a380x_xpkit_mfd.inc"
 #include "a380x_xpkit_sd.inc"
 /* ---- helper supervision ---- */
@@ -763,6 +764,8 @@ static void xpkit_publish_state(double now) {
     }
     xpkit_append(&j,"\"_end\":0},\"nav\":");
     xpkit_nd_json(&j);
+    xpkit_append(&j,",\"terrain\":");
+    xpkit_terrain_json(&j);
     xpkit_append(&j,"}");
     if(j.failed) { xpkit_health[3]++; return; }
     uint32_t seq=atomic_load_explicit(&xpkit_shared->state_seq,memory_order_relaxed);

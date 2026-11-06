@@ -11,6 +11,7 @@ static const Color MAGENTA = {1.0f, 0.22f, 0.95f};
 static void ewd_font_draw(float x, float y, const char *text, float size,
                           Color color, float tracking, int anchor);
 static void ewd_font_clip_y(float y0, float y1);
+#include "a380x_terrain_render.inc"   /* TERRAIN on ND image, TERR box, pointer elevation readout */
 
 typedef struct { int mach_visible, excessive_attitude; } PfdDisplayState;
 static PfdDisplayState pfd_display_state[2];
@@ -1270,27 +1271,12 @@ static void nd_diamond(float x,float y,float size,Color color)
     line(x,y-size,x-size,y,color); line(x-size,y,x,y+size,color);
 }
 
+/* TERRAIN on ND (a380x_terrain_render.inc): the side's swept EGPWS raster under the map symbols,
+ * scaled to this map and clipped to its box. Nothing while TERR is off or unavailable. */
 static void nd_draw_terrain(const EfisNdCanvas *map,int side)
 {
-    const EfisNdTerrain *terrain=&nd_data.terrain[side];
-    int i;
-    float size=terrain->span_nm*.10f*map->radius/map->range_nm;
     if (!efis[side].terr || efis[side].zoom) return;
-    size=fmaxf(1.0f,fminf(12.0f,size));
-    for (i=0;i<EFIS_ND_TERRAIN_COUNT;++i) {
-        const EfisNdTerrainPoint *point=&terrain->points[i];
-        float px,py,relative;
-        Color color;
-        if (!point->valid || point->water ||
-            !nd_map_point(map,point->lat,point->lon,&px,&py) ||
-            !nd_map_visible(map,px,py,size)) continue;
-        relative=point->altitude_ft-nd_data.altitude_ft;
-        if (relative>2000.0f) color=(Color){.50f,.025f,.01f};
-        else if (relative>-500.0f) color=(Color){.44f,.25f,.01f};
-        else if (relative>-2000.0f) color=(Color){.035f,.20f,.035f};
-        else color=(Color){.01f,.065f,.02f};
-        rectangle(map->cx+px-size,map->cy+py-size,map->cx+px+size,map->cy+py+size,color);
-    }
+    terrain_gl_draw(side,map->cx,map->cy,map->radius/map->range_nm,map->clip_l,map->clip_r,map->clip_b,map->clip_t);
 }
 
 /* ---- Native FMS flight plan on the ND (FBW: ACTIVE solid green, TMPY dashed yellow, missed
@@ -1634,7 +1620,15 @@ static void draw_nd(const Side *side, float x, float y, const char *side_name)
     else if(nd_data.route_count==0&&mode>=2&&!nd_fpln_plan_drawable(A380X_PLAN_ACTIVE)&&
             !nd_fpln_plan_drawable(A380X_PLAN_TEMPORARY)) text_at(x+8,y+183,"NO F-PLN",GREY);
     if(efis[index].wx_requested) text_at(x+116,y+183,"WX INOP",AMBER);
-    else if(efis[index].terr && !efis[index].zoom) text_at(x+98,y+183,nd_data.terrain[index].valid_count?"TERR LOCAL":"TERR N/A",nd_data.terrain[index].valid_count?GREEN:AMBER);
+    else if(efis[index].terr && !efis[index].zoom) {
+        /* TERRAIN on ND: highest / lowest elevation in hundreds of feet (FBW TERR box values). */
+        char upper[16],lower[16];
+        if(!nd_data.terrain[index].on) text_at(x+98,y+183,"TERR N/A",AMBER);
+        else if(terr_threshold_text(&nd_data.terrain[index].shown,upper,lower)) {
+            snprintf(value,sizeof(value),"TERR%s%s%s",upper,lower[0]?"/":"",lower);
+            text_at(x+86,y+183,value,CYAN);
+        } else text_at(x+120,y+183,"TERR",CYAN);
+    }
     else if(efis[index].traf) text_at(x+129,y+183,nd_data.traffic_available?"TRAF":"TCAS N/A",CYAN);
     if(pfd_glare.chrono_mode[index]) {
         int seconds=pfd_glare.chrono_mode[index]==2?pfd_glare.chrono_frozen[index]:pfd_glare.chrono_seconds[index];

@@ -290,7 +290,10 @@ static int xpkit_draw_sd(void);
 #include "a380x_eng_start.inc"        /* ENG START selector + FADEC automatic start (after the feedback selector) */ /* key travel, SWITCHING / SURV / ECAM CP lamps (after SD, ADIRS, FMS) */
 #include "a380x_fws_adapter.inc"
 #include "a380x_aurals.inc"            /* cockpit aurals: callouts, CRC, C-chord, stall, V1 (after FWS, FMS, guidance) */
+#include "a380x_terrain_adapter.inc"   /* TERRAIN on ND: probes, cache, sweep (after SURV, EFIS, ND data) */
+static void terrain_draw_overlay(int side);   /* a380x_terrain_render.inc */
 #define XPKIT_ND_OVERLAY(side) (plugin_enabled && cds_overlay((side) ? A380X_ELN_DU_FO_ND : A380X_ELN_DU_CAPT_ND, 0, 0, 768, 1024))
+#define XPKIT_ND_TERRAIN_OVERLAY(side) terrain_draw_overlay(side)
 #include "a380x_xpkit_adapter.inc"
 
 static float flight_loop(float elapsed_since_last_call, float elapsed_since_last_loop,
@@ -395,6 +398,7 @@ static float flight_loop(float elapsed_since_last_call, float elapsed_since_last
     cfb_update();
     engs_update();
     a380x_efb_update(dt);
+    terrain_update();   /* TERRAIN on ND: before the xp-kit publication that carries its rasters */
     xpkit_update();
     return -1.0f;
 }
@@ -679,6 +683,7 @@ PLUGIN_API int XPluginStart(char *name, char *signature, char *description)
         unregister_outputs();
         return 0;
     }
+    terrain_init();
     XPLMRegisterFlightLoopCallback(flight_loop, -1.0f, NULL);
     xpkit_init();
     native_displays_init();
@@ -707,6 +712,8 @@ PLUGIN_API void XPluginStop(void)
     mfda_shutdown(); fmsa_shutdown();
     adirs_window_shutdown(); adirs_shutdown();
     ewd_font_shutdown();
+    terrain_gl_shutdown();
+    terrain_shutdown();
     fcu_font_shutdown();
     mfd_gl_shutdown();
     a380x_efb_shutdown();

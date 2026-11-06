@@ -12,6 +12,10 @@
 #ifndef XPKIT_ND_OVERLAY
 #define XPKIT_ND_OVERLAY(side) 0
 #endif
+/* TERRAIN on ND simulator-aid elevation readout beside the pointer (a380x_terrain_render.inc). */
+#ifndef XPKIT_ND_TERRAIN_OVERLAY
+#define XPKIT_ND_TERRAIN_OVERLAY(side) ((void)0)
+#endif
 #define XPKIT_ND_EVENTS 32
 #define XPKIT_ND_ZOOM_MAX 6
 #define XPKIT_ND_ZOOM_DEFAULT 1 /* 0.1 NM compass diameter: close airport/stand view. */
@@ -142,6 +146,7 @@ static void xpkit_nd_draw_device(void *refcon) {
     }
     d->presented_frame=rendered?xpkit_uploaded[d->side+2]:0;
     xpkit_nd_draw_cursor(d);
+    if(plugin_enabled)XPKIT_ND_TERRAIN_OVERLAY(d->side);
     glPopMatrix();
     glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
     if(xpkit_shared)atomic_fetch_add_explicit(&xpkit_shared->nd_profile[d->side].draw_count,1,memory_order_relaxed);

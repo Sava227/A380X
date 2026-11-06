@@ -77,8 +77,12 @@ static void xf_apply(float *x,float *y) {
 static void glColor3f(float r,float g,float b) { current_color=(Color){r,g,b}; }
 static void glLineWidth(float width) { line_width=width; }
 static void glBegin(int kind) { primitive=kind; primitive_start=vertex_count; }
+/* textured-quad capture (TERRAIN on ND), set by glTexCoord2f below */
+static float mock_tex_u[4],mock_tex_v[4],mock_quad_x[4],mock_quad_y[4];
+static int mock_quad_vertex=-1;
 static void glVertex2f(float x,float y) {
     assert(isfinite(x) && isfinite(y));
+    if(mock_quad_vertex>=0) { mock_quad_x[mock_quad_vertex]=x; mock_quad_y[mock_quad_vertex]=y; if(mock_quad_vertex==3) mock_quad_vertex=-1; }
     assert(vertex_count<ARRAY_LEN(vertices));
     xf_apply(&x,&y);
     vertices[vertex_count++]=(CapturedVertex){x,y,current_color};
@@ -101,6 +105,42 @@ static void glEnd(void) {
     }
 }
 static void XPLMSetGraphicsState(int a,int b,int c,int d,int e,int f,int g) { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g; }
+/* Texture mock for the TERRAIN on ND image (a380x_terrain_render.inc): RGBA storage per texture,
+ * textured quads recorded with their bounds and texture coordinates. */
+typedef unsigned int GLuint;
+#define GL_TEXTURE_2D 0x0DE1
+#define GL_TEXTURE_MIN_FILTER 0x2801
+#define GL_TEXTURE_MAG_FILTER 0x2800
+#define GL_TEXTURE_WRAP_S 0x2802
+#define GL_TEXTURE_WRAP_T 0x2803
+#define GL_NEAREST 0x2600
+#define GL_CLAMP_TO_EDGE 0x812F
+#define GL_RGBA 0x1908
+#define GL_UNSIGNED_BYTE 0x1401
+static struct { int width,height; unsigned char *rgba; } mock_textures[8];
+static int mock_texture_count,mock_bound,mock_textured_quads,mock_sub_uploads;
+static void XPLMGenerateTextureNumbers(int *ids,int count) { int i;for(i=0;i<count;++i) ids[i]=++mock_texture_count; assert(mock_texture_count<8); }
+static void XPLMBindTexture2d(int id,int unit) { (void)unit; mock_bound=id; }
+static void glTexParameteri(int target,int name,int value) { (void)target;(void)name;(void)value; }
+static void glTexImage2D(int target,int level,int internal,int width,int height,int border,int format,int type,const void *data) {
+    (void)target;(void)level;(void)internal;(void)border;(void)format;(void)type;
+    assert(mock_bound>0 && !data);
+    free(mock_textures[mock_bound].rgba);
+    mock_textures[mock_bound].rgba=calloc((size_t)width*height,4);
+    mock_textures[mock_bound].width=width;mock_textures[mock_bound].height=height;
+}
+static void glTexSubImage2D(int target,int level,int x,int y,int width,int height,int format,int type,const void *data) {
+    int row;(void)target;(void)level;(void)format;(void)type;
+    assert(mock_bound>0 && x==0 && width==mock_textures[mock_bound].width && y+height<=mock_textures[mock_bound].height);
+    for(row=0;row<height;++row) memcpy(mock_textures[mock_bound].rgba+((size_t)(y+row)*width)*4,(const unsigned char *)data+(size_t)row*width*4,(size_t)width*4);
+    ++mock_sub_uploads;
+}
+static void glDeleteTextures(int count,const GLuint *ids) { (void)count;(void)ids; }
+static void glColor4f(float r,float g,float b,float a) { (void)a; current_color=(Color){r,g,b}; }
+static void glTexCoord2f(float u,float v) {
+    mock_quad_vertex=(mock_quad_vertex+1)%4; mock_tex_u[mock_quad_vertex]=u; mock_tex_v[mock_quad_vertex]=v;
+    if(mock_quad_vertex==3) ++mock_textured_quads;
+}
 static float XPLMGetElapsedTime(void) { return clock_seconds; }
 static void XPLMDrawString(float *rgb,int x,int y,const char *text,void *wrap,int font) {
     Color c={rgb[0],rgb[1],rgb[2]}; (void)wrap;(void)font;
@@ -398,17 +438,46 @@ static void test_nd(void) {
     nd_data.traffic_altitude_m[3]=304.8f;
     clear_capture();draw_nd(&refs.side[0],0,0,"CAPT");assert(has_label("+10"));
     clear_capture();draw_nd(&refs.side[1],0,0,"F/O");assert(!has_label("+10"));
-    /* A failed/missing terrain sample leaves the map uncoloured. The small
-     * elevation raster only appears from valid scenery-probe samples. */
+    /* TERRAIN on ND (a380x_terrain_render.inc): nothing until the side's raster is on; then one
+     * textured quad at the raster's place on this map (legacy 180 x 234 ROSE: radius 76 = 80 NM), the
+     * pattern pixels uploaded row by row, the FBW TERR box values in the status line. */
     nd_test_state();efis[0].terr=1;
-    clear_capture();draw_nd(&refs.side[0],0,0,"CAPT");
-    assert(has_label("TERR N/A")&&count_color((Color){.44f,.25f,.01f})==0);
-    nd_data.terrain[0].span_nm=40;nd_data.terrain[0].valid_count=1;
-    nd_data.terrain[0].points[0]=(EfisNdTerrainPoint){.25,.25,5500,1,0};
-    clear_capture();draw_nd(&refs.side[0],0,0,"CAPT");
-    assert(has_label("TERR LOCAL")&&count_color((Color){.44f,.25f,.01f})==4);
-    clear_capture();draw_nd(&refs.side[1],0,0,"F/O");
-    assert(!has_label("TERR LOCAL")&&count_color((Color){.44f,.25f,.01f})==0);
+    clear_capture();mock_textured_quads=0;draw_nd(&refs.side[0],0,0,"CAPT");
+    assert(has_label("TERR N/A")&&mock_textured_quads==0);
+    terr_display_reset(&nd_data.terrain[0]);
+    nd_data.terrain[0].on=1;assert(terr_geometry(2,80,&nd_data.terrain[0].geo));
+    nd_data.terrain[0].cls[20][42]=TERR_RED_HIGH;nd_data.terrain[0].cls[20][43]=TERR_GREEN_SOLID;
+    nd_data.terrain[0].shown=(TerrThresholds){3000,TERR_LEVEL_GREEN,9100,TERR_LEVEL_RED,0};
+    clear_capture();mock_textured_quads=mock_sub_uploads=0;draw_nd(&refs.side[0],0,0,"CAPT");
+    assert(has_label("TERR 92/ 30")&&mock_textured_quads==1&&mock_sub_uploads==nd_data.terrain[0].geo.rows);
+    {   /* the image's aircraft reference (384, 384) at the legacy ROSE centre, 76/80 units per NM */
+        const float k=(76.0f/80.0f)/nd_data.terrain[0].geo.px_per_nm;
+        const unsigned char *rgba=mock_textures[mock_bound].rgba;
+        const int w=mock_textures[mock_bound].width;
+        assert(fabsf(mock_quad_x[0]-fmaxf(90+(45-384)*k,5))<.01f && fabsf(mock_quad_y[0]-fminf(104+(384-128)*k,183))<.01f);
+        assert(w==85*8 && mock_textures[mock_bound].height==32*8);
+        /* row 20 col 43 solid green, col 42 high-density red: pixel (336, 160) tile (0, 4) on */
+        assert(rgba[((size_t)(20*8)*w+43*8)*4+1]==255&&rgba[((size_t)(20*8)*w+43*8)*4+3]==255);
+        assert(rgba[((size_t)(20*8)*w+42*8)*4+0]==255&&rgba[((size_t)(20*8)*w+42*8)*4+1]==0);
+    }
+    clear_capture();mock_sub_uploads=0;draw_nd(&refs.side[0],0,0,"CAPT");assert(mock_sub_uploads==0);   /* unchanged rows */
+    nd_data.terrain[0].cls[5][5]=TERR_WATER;
+    clear_capture();mock_sub_uploads=0;draw_nd(&refs.side[0],0,0,"CAPT");assert(mock_sub_uploads==1);   /* one changed row */
+    clear_capture();mock_textured_quads=0;draw_nd(&refs.side[1],0,0,"F/O");
+    assert(!has_label("TERR 92/ 30")&&mock_textured_quads==0);
+    /* Pointer elevation readout (simulator aid) beside the pointer, flipped left near the right edge. */
+    memset(&nd_data.terrain_pointer[0],0,sizeof(nd_data.terrain_pointer[0]));
+    clear_capture();terrain_draw_overlay(0);assert(label_count==0&&vertex_count==0);
+    nd_data.terrain_pointer[0].inside=nd_data.terrain_pointer[0].shown=1;
+    nd_data.terrain_pointer[0].x=400;nd_data.terrain_pointer[0].y=300;
+    snprintf(nd_data.terrain_pointer[0].text,sizeof(nd_data.terrain_pointer[0].text),"SIM ELEV 4250 FT");
+    clear_capture();terrain_draw_overlay(0);
+    label=find_label("SIM ELEV 4250 FT");
+    assert(label&&label->x>400&&label->y<1024-300&&count_color((Color){.10f,.11f,.13f})==4);
+    nd_data.terrain_pointer[0].x=740;
+    clear_capture();terrain_draw_overlay(0);
+    label=find_label("SIM ELEV 4250 FT");assert(label&&label->x<740);
+    terrain_gl_shutdown();assert(!terrain_gl[0].texture);
     efis[0].zoom=1;clear_capture();draw_nd(&refs.side[0],0,0,"CAPT");
     assert(has_label("AIRPORT MAP N/A")&&count_color((Color){.44f,.25f,.01f})==0);
     nd_test_state();efis[0].zoom=1;refs.side[0].nd_range_nm=1;
@@ -566,6 +635,30 @@ static void nd_fbw_arc_state(void) {
             vd->elevation_ft[i] = vd->water[i] ? 0.0f : 8000.0f * (float)(i - EFIS_VD_COLUMNS / 3) / (EFIS_VD_COLUMNS / 3 - 1);
         }
     }
+}
+/* TERRAIN on ND in the FBW-layout native ND (a380x_nd_fbw.inc): the raster quad placed about the ARC
+ * aircraft reference (384, 620) at 498 px per range, under the map; the FBW TERR box values. */
+static void test_nd_fbw_terrain(void) {
+    TerrDisplay *d = &nd_data.terrain[0];
+    nd_fbw_arc_state();
+    efis[0].terr = 1;
+    clear_capture(); mock_textured_quads = 0; draw_nd_fbw_arc(&refs.side[0], 0);
+    assert(mock_textured_quads == 0 && !has_label("TERR"));
+    terr_display_reset(d);
+    d->on = 1; assert(terr_geometry(3, 40, &d->geo));
+    d->cls[30][40] = TERR_RED_HIGH;
+    d->shown = (TerrThresholds){3000, TERR_LEVEL_YELLOW, 9100, TERR_LEVEL_RED, 0};
+    clear_capture(); mock_textured_quads = 0; draw_nd_fbw_arc(&refs.side[0], 0);
+    assert(mock_textured_quads == 1 && has_label("TERR") && has_label(" 92") && has_label(" 30"));
+    /* 498 px per range on both layouts: the image keeps its pixel size, its top edge 498 px above the
+     * aircraft line minus the FBW offset (626 - 128), clipped by the map box at y 80 */
+    assert(fabsf(mock_quad_x[0] - 6.0f) < .01f && fabsf(mock_quad_y[0] - fminf(NDY(620) + (626 - 128), NDY(80))) < .01f);
+    assert(fabsf(mock_tex_u[0]) < 1e-6f && fabsf(mock_tex_u[1] - 756.0f / 760.0f) < 1e-5f);   /* clipped at x 762 */
+    d->shown = (TerrThresholds){-1, 0, -1, 0, 0};
+    clear_capture(); draw_nd_fbw_arc(&refs.side[0], 0);
+    assert(!has_label("TERR"));   /* no terrain in view: box hidden */
+    terr_display_reset(d); efis[0].terr = 0;
+    fmsa_fpln = NULL;
 }
 static void test_vd_terrain(void) {
     static const Color VD_TERRAIN = {0.48f, 0.24f, 0.09f};
@@ -858,6 +951,7 @@ int main(int argc,char **argv) {
     test_nd_fbw_arc();
     test_nd_fbw_rose_plan();
     test_vd_terrain();
+    test_nd_fbw_terrain();
     test_altitude_drums();
     test_rising_ground();
     test_pfd_bank_direction();

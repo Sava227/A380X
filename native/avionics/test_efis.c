@@ -257,6 +257,17 @@ static void exercise(void)
     command(0, "wx_toggle"); command(0, "taxi_toggle");
     assert(efis[0].wx_requested && efis[0].taxi_requested && !XPLMGetDatai(efis_boundary[0].wx));
     assert(!efis[1].wx_requested && !efis[1].taxi_requested);
+    /* WX and TERR: one ND surveillance overlay (FBW pSurvFilter NONE / WX / TERR). */
+    command(0, "terr_toggle");
+    assert(efis[0].terr && !efis[0].wx_requested && XPLMGetDatai(efis_boundary[0].terr) && !efis[1].terr);
+    command(0, "wx_toggle");
+    assert(efis[0].wx_requested && !efis[0].terr && !XPLMGetDatai(efis_boundary[0].terr));
+    command(0, "wx_toggle"); assert(!efis[0].wx_requested && !efis[0].terr);
+    command(0, "terr_toggle"); command(0, "terr_toggle"); assert(!efis[0].terr && !efis[0].wx_requested);
+    command(0, "wx_toggle"); XPLMSetDatai(efis_boundary[0].terr, 1); efis_update(.1f);
+    assert(efis[0].terr && !efis[0].wx_requested);   /* stock EFIS_terrain_on replaces WX too */
+    efis_update(.1f); assert(efis[0].terr);
+    command(0, "terr_toggle"); assert(!efis[0].terr && !XPLMGetDatai(efis_boundary[0].terr));
     command(0, "vor1_toggle"); command(1, "vor2_toggle");
     assert(XPLMGetDatai(efis_boundary[0].vor1) == 2 && XPLMGetDatai(efis_boundary[1].vor1) == 1);
     assert(XPLMGetDatai(efis_boundary[1].vor2) == 2 && XPLMGetDatai(efis_boundary[0].vor2) == 1);
