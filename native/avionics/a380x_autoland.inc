@@ -104,7 +104,7 @@ static void landing_exit_on_ground(A380XGuidanceState *s, const A380XGuidanceInp
 
 static void landing_go_around(A380XGuidanceState *s, const A380XGuidanceInputs *i, int valid) {
     A380XLandingState *l = &s->land;
-    int n, count = 0, rising;
+    int n, count = 0, rising;   /* previous_toga_count: levers at or beyond the GA TLA */
     if (lever_inputs_valid(i))
         for (n = 0; n < 4; ++n) if (landing_tla(i, i->throttle_lever_ratio[n]) >= GA_TLA_DEG) ++count;
     rising = count >= GA_MIN_LEVERS && l->previous_toga_count < GA_MIN_LEVERS;
@@ -158,6 +158,9 @@ static void landing_modes(A380XGuidanceState *s, const A380XGuidanceInputs *i, d
     l->touchdown_s = i->on_ground ? l->touchdown_s + dt : 0;
     if (!i->powered) { landing_clear(l); l->go_around_active = l->retard_active = 0; l->capability = 0; l->bc1 = 0; return; }
     landing_go_around(s, i, valid);
+    /* APEngagedLogic groundGa: on the ground a go-around or any lever at TLA >= 36.7 deg disengages
+     * the AP (FD guidance continues). */
+    if (i->on_ground && ap && (l->go_around_active || l->previous_toga_count > 0)) { disconnect(s, 1); ap = 0; }
     if (!l->land_active) {
         int engage = valid && !i->on_ground && s->approach_selected && (ap || fd) && ra_ok &&
             ra < LAND_ENGAGE_RA_FT && s->lateral_mode == A380X_C1_LOC && s->vertical_mode == A380X_B1_GS &&

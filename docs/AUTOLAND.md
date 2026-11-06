@@ -38,6 +38,7 @@ logic.
 | ROLL OUT (`ROLL OUT`) | LAND, on ground below 50 ft RA for 0.36 s | With LAND (the pilot disconnects the AP) |
 | RETARD (A/THR FMA `IDLE`) | A/THR active, LAND, AP engaged, RA <= 50 ft (`CompareToConstant_const_d4`) | A/THR off (levers to IDLE, reverse, disconnect), GA, alpha floor, LAND reset |
 | SRS GA + GA TRK | Rising edge of >= 2 levers at TLA >= 36.7 deg, flap lever >= 1, not 30 s on ground, guidance valid; airborne or in LAND | Another vertical and lateral mode selected |
+| AP disengage on ground | Any lever at TLA >= 36.7 deg or a go-around while on the ground (FBW `APEngagedLogic` groundGa); the FD keeps SRS/GA TRK | - |
 
 In LAND the LOC and APPR pushbuttons, HDG/ALT/V/S push/pull and ALT are
 ineffective, as in the FBW PRIM. A lost localizer or glideslope does not revert
@@ -130,6 +131,7 @@ pedals (ACF: nose gear 90 deg low speed / 7 deg high speed); FBW's separate
   X-Plane's `position/beta` is positive nose-right). Verify in-sim.
 - The port's AP speed guard is VLS - 10 kt in approach/GA modes (standing in for
   the alpha-prot + 1 deg disconnect) and not applied in LAND; elsewhere VLS as before.
+  (In the FBW PRIM the VLS/VMAX/attitude terms only inhibit AP engagement.)
 - LAND/ROLL OUT convert the angular localizer deviation with the distance to
   the localizer antenna (X-Plane navaid database by frequency) instead of the
   ILS DME, which X-Plane usually places at the glide antenna. FBW clamps this

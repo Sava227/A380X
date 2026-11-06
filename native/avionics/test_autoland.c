@@ -187,6 +187,15 @@ static void test_go_around(void) {
     i.radio_height_ft = 0; i.on_ground = 1; i.vertical_speed_fpm = 0; run(&s, &i, 31);
     levers(&i, 1); run(&s, &i, .2); assert(!s.land.go_around_active && s.land.rollout_active);
     a380x_guidance_destroy(&s);
+    /* GA from the roll-out (within 30 s): SRS/GA TRK for the FD, the AP disengages on the ground. */
+    established(&s, &i);
+    i.radio_height_ft = 380; run(&s, &i, 1.4);
+    i.radio_height_ft = 0; i.on_ground = 1; i.vertical_speed_fpm = 0; run(&s, &i, 2);
+    assert(s.land.rollout_active && s.ap1);
+    levers(&i, 1); run(&s, &i, .1);
+    assert(s.land.go_around_active && s.vertical_mode == A380X_B1_SRS && !s.ap1 && !s.ap2 && s.disconnect_warning);
+    assert(s.guidance_valid);
+    a380x_guidance_destroy(&s);
     /* Pause holds the yaw output at zero (the adapter releases the lease). */
     established(&s, &i);
     i.radio_height_ft = 380; run(&s, &i, 1.4); i.radio_height_ft = 0; i.on_ground = 1; run(&s, &i, .5);
