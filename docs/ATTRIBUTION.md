@@ -33,3 +33,11 @@ The PFD/native FCU presentation also follows the pinned A380 instrument sources
 and FlyByWire's public A380 AFS/EFIS documentation. No proprietary Airbus
 manual, FlightFactor implementation or other aircraft vendor's assets were
 imported for this update.
+
+## TERRAIN on ND
+
+`native/avionics/a380x_terrain.h` ports the terrain-on-ND colour bands, peaks mode, histogram statistics,
+TERR threshold modes, A380 scan-line transition timing and dot patterns from FlyByWire SimBridge
+(`flybywiresim/simbridge` revision `f5932323e2f21dd44a5fcfa3e3aab0cdb35b2f36`, GPL-3.0,
+`apps/server/src/terrain`). The elevations come from X-Plane's own scenery through terrain probes; no
+SimBridge terrain database, Honeywell or Airbus data is included. See `docs/ND_TERRAIN.md`.

@@ -24,7 +24,7 @@
     arc: 'M0,312 a492,492 0 0 1 768,0 L768,562 L648,562 L591,625 L0,625 L0,312',
     rose: 'M45,155 L282,155 a250,250 0 0 1 204,0 L723,155 L723,384 L45,384 L45,155',
   };
-  let canvas = null, context = null, patterns = null, drawnKey = '', revision = 0, capturedRevision = -1;
+  let canvas = null, context = null, patterns = null, drawnKey = '', revision = 0, capturedRevision = -1, scale = 1;
   let lastCells = null;
 
   const patternOn = (pattern, x, y) => {
@@ -69,10 +69,13 @@
     const container = map?.parentNode;
     if (!container) return false;
     if (!canvas || canvas.parentNode !== container) {
+      // Backing store at the capture scale (the helper's device scale factor): a 1:1 layer to composite,
+      // the 1-px pattern dots scaled by nearest-neighbour sampling.
+      scale = Math.max(1, Math.min(4, Number(window.devicePixelRatio) || 1));
       canvas = document.createElement('canvas');
-      canvas.width = 768; canvas.height = 768;
+      canvas.width = canvas.height = Math.round(768 * scale);
       canvas.className = 'a380x-terrain';
-      canvas.style.cssText = 'position:absolute;top:0;left:0;width:768px;height:768px;pointer-events:none;image-rendering:pixelated';
+      canvas.style.cssText = 'position:absolute;top:0;left:0;width:768px;height:768px;pointer-events:none';
       container.insertBefore(canvas, container.firstChild);
       context = canvas.getContext('2d');
       patterns = makePatterns();
@@ -80,6 +83,8 @@
     return true;
   }
   function draw(t) {
+    context.setTransform(scale, 0, 0, scale, 0, 0);
+    context.imageSmoothingEnabled = false;
     context.clearRect(0, 0, 768, 768);
     if (!t) return true;
     const runs = decode(t.cells, t.rows, t.cols);

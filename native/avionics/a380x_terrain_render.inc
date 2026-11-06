@@ -144,9 +144,9 @@ static void terrain_draw_overlay(int side)
     float w, x, y_down, top, bottom;
     if (side < 0 || side > 1 || !p->shown || !p->text[0]) return;
     w = (float)strlen(p->text) * size * 0.625f + 18.0f;   /* EIS glyph advance 40 / 64 */
-    x = p->x + 24.0f; y_down = p->y + 28.0f;
-    if (x + w > 764.0f) x = p->x - 24.0f - w;
-    if (y_down + h > 1020.0f) y_down = p->y - 28.0f - h;
+    x = p->x + 46.0f; y_down = p->y + 20.0f;            /* clear of the 80 x 80 cursor's arms */
+    if (x + w > 764.0f) x = p->x - 46.0f - w;
+    if (y_down + h > 1020.0f) y_down = p->y - 20.0f - h;
     top = 1024.0f - y_down; bottom = top - h;
     XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
     terrain_fill(x, bottom, x + w, top, 0.10f, 0.11f, 0.13f, 0.88f);

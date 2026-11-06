@@ -19,7 +19,7 @@ g.addEventListener = function () {};
 g.MouseEvent = function () {};
 function check(c, message) { if (!c) throw new Error('terrain layer check failed: ' + message); }
 function Ctx() { this.ops = []; this.fillStyle = null; }
-['clearRect', 'save', 'restore', 'translate', 'beginPath', 'rect', 'clip'].forEach(function (name) {
+['clearRect', 'save', 'restore', 'translate', 'beginPath', 'rect', 'clip', 'setTransform'].forEach(function (name) {
   Ctx.prototype[name] = function () { this.ops.push([name].concat(Array.prototype.slice.call(arguments))); };
 });
 Ctx.prototype.fill = function () { this.ops.push(['fill', this.fillStyle]); };
