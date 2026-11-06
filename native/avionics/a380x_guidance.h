@@ -1,10 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * A380 FCU state adapter; actual AP/FD outer-loop laws are vendored FlyByWire.
- * This is not the complete PRIM/FCU/FMS computer network or an autoland system.
+ * This is not the complete PRIM/FCU/FMS computer network. LAND/FLARE/ROLL OUT, RETARD and
+ * SRS GA / GA TRK follow the FBW PRIM FG mode logic (a380x_autoland.h, docs/AUTOLAND.md).
  */
 #ifndef A380X_GUIDANCE_H
 #define A380X_GUIDANCE_H
 #include "a380x_avionics_core.h"
+#include "a380x_autoland.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -14,6 +16,10 @@ typedef struct {
     double loc_deviation_dots; /* positive: localizer needle RIGHT */
     double gs_deviation_dots;  /* positive: glideslope needle UP */
     double course_deg, gs_angle_deg, distance_nm; /* course is MAGNETIC */
+    /* Optional: distance to the LOCALIZER antenna (the DME is often at the glide antenna). The
+     * ROLL OUT law converts the angular deviation to metres with it; zero/invalid = use DME. */
+    int localizer_distance_valid;
+    double localizer_distance_nm;
 } A380XIlsInputs;
 
 typedef struct {
@@ -54,6 +60,10 @@ typedef struct {
      * N1 to the lever's N1), replacing the 0.88-at-CL approximation when valid. */
     int athr_inhibited, athr_ceiling_valid;
     double athr_ceiling;
+    /* Landing (a380x_autoland.inc). Missing data keeps LAND/GA unavailable: radio_height_ft is 0
+     * when invalid, so LAND requires radio_height_valid; GA requires a flap handle index >= 1. */
+    int radio_height_valid, flap_handle_index;
+    double rudder_ratio; /* pilot rudder pedal position [-1,1], +right; FBW ROLL OUT entry value */
 } A380XGuidanceInputs;
 
 typedef enum {
@@ -97,6 +107,8 @@ typedef struct {
     double held_altitude_ft, last_selected_altitude_ft;
     int have_previous_ils, previous_powered, takeoff_detent_active, all_levers_idle;
     int alpha_floor_latched, alpha_floor_inhibited, initialized;
+    /* LAND/FLARE/ROLL OUT/RETARD/GA sub-state and the yaw (rudder) actuator output. */
+    A380XLandingState land;
 } A380XGuidanceState;
 
 void a380x_guidance_init(A380XGuidanceState *state, const A380XGuidanceInputs *inputs);

@@ -51,7 +51,7 @@ static int fcu_authority_handler(XPLMCommandRef command,XPLMCommandPhase phase,v
         case FCUA_AP1_TOGGLE: XPLMCommandOnce(fcu_authority.ap1); break;
         case FCUA_AP2_TOGGLE: XPLMCommandOnce(fcu_authority.ap2); break;
         case FCUA_AP_OFF:
-            if (guidance.ap1 || guidance.ap2 || fcu.own_pitch || fcu.own_roll)
+            if (guidance.ap1 || guidance.ap2 || fcu.own_pitch || fcu.own_roll || fcu.own_yaw)
                 XPLMCommandOnce(fcu_authority.ap_off);
             break;
         case FCUA_ATHR_ON: if (!guidance.athr_armed) XPLMCommandOnce(fcu_authority.athr); break;
@@ -127,7 +127,7 @@ static void fcu_authority_guard(void)
     for(i=0;i<3;++i) if(fcu_authority.stock_servos[i]
         && XPLMGetDatai(fcu_authority.stock_servos[i])) native_ap=1;
     native_athr=fcu_authority.stock_athr && XPLMGetDatai(fcu_authority.stock_athr)>0;
-    if(native_ap && (guidance.ap1 || guidance.ap2 || fcu.own_pitch || fcu.own_roll)) {
+    if(native_ap && (guidance.ap1 || guidance.ap2 || fcu.own_pitch || fcu.own_roll || fcu.own_yaw)) {
         XPLMCommandOnce(fcu_authority.ap_off);
         release_ap_controls();
         if(!fcu_authority.ap_warning)

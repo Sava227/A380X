@@ -256,6 +256,7 @@ static void read_side(Side *side, int powered)
 #include "a380x_adirs_adapter.inc"
 #include "a380x_adirs_window.inc"
 #include "a380x_fcu_adapter.inc"
+#include "a380x_autoland_adapter.inc"   /* localizer antenna distance for LAND / ROLL OUT */
 #include "a380x_efis.inc"
 #include "a380x_efis_nd.inc"
 #include "a380x_efis_airport.inc"
@@ -568,6 +569,7 @@ PLUGIN_API int XPluginStart(char *name, char *signature, char *description)
     a380x_flight_phase_init(&phase_state);
     if (!find_inputs() || !register_outputs()) return 0;
     if (!fcu_init()) { unregister_outputs(); return 0; }
+    fcu_localizer_distance_provider = autoland_localizer_distance;
     if (!lighting_init()) { fcu_shutdown(); unregister_outputs(); return 0; }
     if (!du_init()) { lighting_shutdown(); fcu_shutdown(); unregister_outputs(); return 0; }
     if (!glare_init()) { du_shutdown(); lighting_shutdown(); fcu_shutdown(); unregister_outputs(); return 0; }

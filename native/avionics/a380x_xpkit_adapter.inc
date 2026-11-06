@@ -330,6 +330,7 @@ static void xpkit_guidance_words(XpKitJson *j) {
         case A380X_B1_ALT:d3=XPKIT_BIT(20,1);break;
         case A380X_B1_GS_STAR:d3=XPKIT_BIT(21,1);break;
         case A380X_B1_GS:d3=XPKIT_BIT(22,1);break;
+        case A380X_B1_SRS:d3=XPKIT_BIT(16,1);break;   /* PITCH GA (SRS takeoff is not ported) */
         default:break; /* Unsupported modes are not invented. */
     }
     switch(g->lateral_mode) {
@@ -342,6 +343,19 @@ static void xpkit_guidance_words(XpKitJson *j) {
         case A380X_C1_TRACK:d4=XPKIT_BIT(17,1);break;
         case A380X_C1_RWY_TRK:d4=XPKIT_BIT(19,1);break;
         default:break;
+    }
+    {
+        /* PrimFgPublisher.ts bit map: word 1 bit 23 LAND, 27 LAND 2 capability; word 2 bit 28 LAND armed;
+         * word 3 bit 24 FLARE; word 4 bits 25 ALIGN / 26 ROLL OUT. LAND replaces the G/S and LOC words
+         * (FMA.tsx BC1Cell). LAND 3 fail-passive/fail-op bits 28/29 are never set by this port. */
+        const A380XLandingState *l=&g->land;
+        if(l->land_active) {
+            d3&=~(XPKIT_BIT(21,1)|XPKIT_BIT(22,1)); d4&=~(XPKIT_BIT(13,1)|XPKIT_BIT(14,1));
+        }
+        d1|=XPKIT_BIT(23,l->land_active)|XPKIT_BIT(27,l->capability==A380X_LAND_CAPABILITY_LAND2);
+        d2|=XPKIT_BIT(28,g->approach_selected && !l->land_active);
+        d3|=XPKIT_BIT(24,l->land_active && l->flare_active);
+        d4|=XPKIT_BIT(25,l->align_active)|XPKIT_BIT(26,l->rollout_active);
     }
     uint32_t d5=XPKIT_BIT(11,g->trk_fpa_mode)|XPKIT_BIT(12,g->mach_mode)|XPKIT_BIT(13,g->true_heading)|
         XPKIT_BIT(14,g->metric_alt)|XPKIT_BIT(17,g->speed_managed)|XPKIT_BIT(18,!g->speed_managed)|XPKIT_BIT(28,g->mode_reversion);
@@ -376,7 +390,8 @@ static void xpkit_guidance_words(XpKitJson *j) {
         XPW("FG_DISCRETE_WORD_4",d4,g->initialized);
         XPW("FG_DISCRETE_WORD_5",d5,g->initialized);
         XPW("FG_DISCRETE_WORD_6",0,g->initialized);
-        XPW("FG_ATS_DISCRETE_WORD",XPKIT_BIT(11,g->athr_armed)|XPKIT_BIT(12,g->athr_active),g->initialized);
+        XPW("FG_ATS_DISCRETE_WORD",XPKIT_BIT(11,g->athr_armed)|XPKIT_BIT(12,g->athr_active)|
+            XPKIT_BIT(19,g->land.retard_active),g->initialized);
         XPW("FG_ATS_FMA_DISCRETE_WORD",ats,g->initialized);
         XPW("ROLL_FD_COMMAND_1",g->fd_roll_error_deg,g->guidance_valid);
         XPW("ROLL_FD_COMMAND_2",g->fd_roll_error_deg,g->guidance_valid);
@@ -391,6 +406,13 @@ static void xpkit_guidance_words(XpKitJson *j) {
         XPW("V_3",pfd_guidance.f_speed_knots,pfd_guidance.f_speed_knots>0);
         XPW("V_4",pfd_guidance.s_speed_knots,pfd_guidance.s_speed_knots>0);
 #undef XPW
+    }
+    /* FcdcPublisher.ts FG word 1 (FMA D1D2 capability): bit 18 LAND, 19 GA, 24 LAND 2. */
+    for(int unit=1;unit<=2;++unit) {
+        char prefix[64]; snprintf(prefix,sizeof(prefix),"L:A32NX_FCDC_%d_",unit);
+        xpkit_word(j,prefix,"FG_DISCRETE_WORD_1",XPKIT_BIT(18,g->land.land_active)|
+            XPKIT_BIT(19,g->land.go_around_active)|XPKIT_BIT(24,g->land.capability==A380X_LAND_CAPABILITY_LAND2),
+            g->initialized);
     }
     for(int side=0;side<2;++side) {
         const EfisSide *e=&efis[side]; char prefix[64];

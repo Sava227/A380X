@@ -3,17 +3,19 @@
  * Guidance never derives modes/targets from native AP/FD/FMS state. A separate
  * authority monitor reads native servo status solely to detect contention.
  * Overrides are leased while engaged and released on pause/failure/unload.
+ * The yaw (rudder pedal / nosewheel) lease is taken only in LAND ALIGN and ROLL OUT
+ * (a380x_autoland.inc) with the same ownership and release rules as pitch/roll.
  */
 #include "a380x_elec_power.h"
 typedef struct {
     XPLMDataRef paused, replay, magvar, tas, pitch_rate, roll_rate, yaw_rate;
     XPLMDataRef alpha, beta, weight, vmax, mmo, pressure_altitude;
     XPLMDataRef g_axial, g_side, g_normal, gs_angle[2];
-    XPLMDataRef override_pitch, override_roll, override_throttle, override_all;
+    XPLMDataRef override_pitch, override_roll, override_throttle, override_all, override_heading;
     XPLMDataRef pitch, roll, engine_throttle, pilot_rudder;
     XPLMDataRef axis_assignments, axis_values, axis_minimum, axis_maximum;
     XPLMCommandRef native_disconnect;
-    int own_pitch, own_roll, own_throttle, suppress_native_disconnect;
+    int own_pitch, own_roll, own_throttle, own_yaw, suppress_native_disconnect;
 } FcuBoundary;
 static FcuBoundary fcu;
 /* Thrust-lever / FADEC module link (a380x_thrust.inc, docs/THRUST_LEVERS.md). All zero while the
@@ -66,6 +68,8 @@ static FcuPublished fcu_outputs[] = {
     FCUR("loc_active"), FCUR("approach_active"), FCUR("altitude_step_ft"),
     FCUR("servo_active"), FCUR("ls_captain"), FCUR("ls_first_officer"),
     FCUR("athr_armed"), FCUR("altitude_hold_active"),
+    FCUR("land_active"), FCUR("flare_active"), FCUR("rollout_active"), FCUR("retard_active"),
+    FCUR("go_around_active"), FCUR("land_capability"), FCUR("yaw_servo_active"),
 };
 #undef FCUR
 static float fcu_get_float(void *refcon) { return ((FcuPublished *)refcon)->value; }
@@ -74,10 +78,15 @@ static float normalized_heading(float value) { return fmodf(fmodf(value,360.0f)+
 
 #include "a380x_fcu_motion.inc"
 
+static void release_yaw_control(void)
+{
+    if (fcu.own_yaw) { XPLMSetDataf(fcu.pilot_rudder,0); XPLMSetDatai(fcu.override_heading,0); fcu.own_yaw=0; }
+}
 static void release_ap_controls(void)
 {
     if (fcu.own_pitch) { XPLMSetDataf(fcu.pitch,0); XPLMSetDatai(fcu.override_pitch,0); fcu.own_pitch=0; }
     if (fcu.own_roll) { XPLMSetDataf(fcu.roll,0); XPLMSetDatai(fcu.override_roll,0); fcu.own_roll=0; }
+    release_yaw_control();
 }
 static void release_thrust_control(void)
 {
@@ -94,6 +103,9 @@ static int controls_available(void)
 
 /* Optional observer of applied FCU commands (the native FMS knob events, spec 07 section 2.1). */
 static void (*fcu_command_observer)(A380XFcuCommand command);
+/* Optional distance (nm) to the tuned localizer antenna of a receiver side (a380x_autoland_adapter.inc);
+ * returns a negative value when unknown. NULL keeps the DME distance. */
+static double (*fcu_localizer_distance_provider)(int side);
 
 #include "a380x_fcu_thrust.inc"
 #include "a380x_fcu_authority.inc"
@@ -168,7 +180,9 @@ static int pilot_override(void)
             if (assignments[i]>=1 && assignments[i]<=3 && isfinite(value) && fabsf(value-0.5f)>0.20f) return 1;
         }
     }
-    return fabsf(XPLMGetDataf(fcu.pilot_rudder))>0.35f;
+    /* While the yaw lease is held, yoke_heading_ratio is this plugin's own pedal output: only the
+     * physical rudder axis above (assignment 3) can then signal a pilot pedal override. */
+    return !fcu.own_yaw && fabsf(XPLMGetDataf(fcu.pilot_rudder))>0.35f;
 }
 
 static void read_guidance_inputs(float dt)
@@ -240,6 +254,9 @@ static void read_guidance_inputs(float dt)
     read_pfd_aircraft();
     guidance_inputs.vmax_knots=pfd_aircraft.vmax_knots;
     guidance_inputs.vls_knots=pfd_aircraft.vls_knots;
+    guidance_inputs.radio_height_valid=s->radio_altitude_valid;
+    guidance_inputs.flap_handle_index=pfd_aircraft.flap_handle_index;
+    guidance_inputs.rudder_ratio=fcu.own_yaw ? guidance.land.yaw_servo : XPLMGetDataf(fcu.pilot_rudder);
     for (i=0;i<2;++i) {
         A380XIlsInputs *ils=&guidance_inputs.ils[i];
         Side *side=&refs.side[i];
@@ -271,6 +288,11 @@ static void read_guidance_inputs(float dt)
         ils->course_deg=course;
         ils->gs_angle_deg=angle;
         ils->distance_nm=side->nav_dme_valid ? side->nav_dme_nm : 0;
+        if (fcu_localizer_distance_provider && side->loc_valid) {
+            double distance=fcu_localizer_distance_provider(i);
+            ils->localizer_distance_valid=isfinite(distance) && distance>0 && distance<60;
+            ils->localizer_distance_nm=ils->localizer_distance_valid ? distance : 0;
+        }
         if (side->air_valid && side->navigation_valid && dt>0 && dt<=0.5f && !guidance_inputs.paused) {
             if (side->trend_initialized) {
                 float target=fmaxf(-50,fminf(50,(side->ias_value-side->previous_ias_value)/dt*10));
@@ -297,6 +319,10 @@ static void publish_guidance(void)
     A380_FCU_OUT(fcu.own_pitch && fcu.own_roll); A380_FCU_OUT(guidance.ls1); A380_FCU_OUT(guidance.ls2);
     A380_FCU_OUT(guidance.athr_armed);
     A380_FCU_OUT(guidance.guidance_valid && guidance.vertical_mode==A380X_B1_ALT);
+    A380_FCU_OUT(guidance.land.land_active); A380_FCU_OUT(guidance.land.flare_active);
+    A380_FCU_OUT(guidance.land.rollout_active); A380_FCU_OUT(guidance.land.retard_active);
+    A380_FCU_OUT(guidance.land.go_around_active); A380_FCU_OUT(guidance.land.capability);
+    A380_FCU_OUT(fcu.own_yaw);
 #undef A380_FCU_OUT
     memset(&pfd_guidance,0,sizeof(pfd_guidance));
 #define COPY(v) pfd_guidance.v=guidance.v
@@ -317,7 +343,16 @@ static void publish_guidance(void)
     pfd_guidance.vmax_knots=guidance_inputs.vmax_knots;
     publish_pfd_aircraft();
     published.fma_a1a2=guidance.thrust_mode; published.fma_b1=guidance.vertical_mode;
-    published.fma_c1=guidance.lateral_mode; published.fma_a3=0; published.fma_d1d2=0;
+    published.fma_c1=guidance.lateral_mode; published.fma_a3=0;
+    {
+        /* Landing capability (a380x_autoland.inc): LAND 2 at most; LAND 3 is never annunciated. */
+        A380XD1D2Inputs d1d2; memset(&d1d2,0,sizeof(d1d2));
+        d1d2.land_mode_armed=guidance.approach_selected && !guidance.land.land_active;
+        d1d2.land_mode_active=guidance.land.land_active;
+        d1d2.land2_capacity=guidance.land.capability==A380X_LAND_CAPABILITY_LAND2;
+        published.fma_d1d2=guidance_inputs.powered ? a380x_compute_d1d2(&d1d2) : A380X_D1D2_NONE;
+    }
+    pfd_guidance.fma_bc1=guidance.land.bc1;
 }
 
 static void update_guidance(float dt)
@@ -327,7 +362,8 @@ static void update_guidance(float dt)
     read_guidance_inputs(dt);
     if ((guidance.ap1||guidance.ap2) && (!controls_available() || pilot_override()
         || (fcu.own_pitch && !XPLMGetDatai(fcu.override_pitch))
-        || (fcu.own_roll && !XPLMGetDatai(fcu.override_roll))))
+        || (fcu.own_roll && !XPLMGetDatai(fcu.override_roll))
+        || (fcu.own_yaw && !XPLMGetDatai(fcu.override_heading))))
         a380x_guidance_command(&guidance,&guidance_inputs,A380X_FCU_AP_DISCONNECT,0);
     if ((guidance.athr_armed || guidance.athr_active)
         && ((XPLMGetDatai(fcu.override_throttle) && !fcu.own_throttle && !fcu_thrust_link.lease)
@@ -344,9 +380,21 @@ static void update_guidance(float dt)
             if (!fcu.own_roll) { XPLMSetDatai(fcu.override_roll,1); fcu.own_roll=1; }
             XPLMSetDataf(fcu.pitch,(float)guidance.pitch_servo);
             XPLMSetDataf(fcu.roll,(float)guidance.roll_servo);
+            /* Yaw only in ALIGN/ROLL OUT. A foreign heading override at that moment is contention:
+             * the AP cannot land without its rudder channel, so it disconnects (AP OFF warning). */
+            if (guidance.land.yaw_active) {
+                if (!fcu.own_yaw && XPLMGetDatai(fcu.override_heading)) {
+                    a380x_guidance_command(&guidance,&guidance_inputs,A380X_FCU_AP_DISCONNECT,0);
+                    release_ap_controls();
+                } else {
+                    if (!fcu.own_yaw) { XPLMSetDatai(fcu.override_heading,1); fcu.own_yaw=1; }
+                    XPLMSetDataf(fcu.pilot_rudder,(float)guidance.land.yaw_servo);
+                }
+            } else release_yaw_control();
         } else {
             if (fcu.own_pitch) { XPLMSetDataf(fcu.pitch,0); XPLMSetDatai(fcu.override_pitch,0); fcu.own_pitch=0; }
             if (fcu.own_roll) { XPLMSetDataf(fcu.roll,0); XPLMSetDatai(fcu.override_roll,0); fcu.own_roll=0; }
+            release_yaw_control();
         }
         if (guidance.athr_active && (!XPLMGetDatai(fcu.override_throttle)||fcu.own_throttle||fcu_thrust_link.lease)) {
             XPLMSetDatai(fcu.override_throttle,1); fcu.own_throttle=1;
@@ -414,6 +462,7 @@ static int fcu_init(void)
     RAW(override_roll,"sim/operation/override/override_joystick_roll");
     RAW(override_throttle,"sim/operation/override/override_throttles");
     RAW(override_all,"sim/operation/override/override_joystick");
+    RAW(override_heading,"sim/operation/override/override_joystick_heading");
     RAW(pitch,"sim/joystick/yoke_pitch_ratio"); RAW(roll,"sim/joystick/yoke_roll_ratio");
     RAW(engine_throttle,"sim/flightmodel/engine/ENGN_thro_use"); RAW(pilot_rudder,"sim/joystick/yoke_heading_ratio");
     RAW(axis_assignments,"sim/joystick/joystick_axis_assignments"); RAW(axis_values,"sim/joystick/joystick_axis_values");
