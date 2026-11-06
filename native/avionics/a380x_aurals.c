@@ -165,6 +165,7 @@ void aurals_update(Aurals *a, const AurInputs *in, AurOutputs *out)
         a->was_powered = 0; a->powered_for = 0.0;
         a->voice = a->pending = -1;
         a->retard_active = 0;
+        a->port_stall = 0;
         a->prev_v1 = (unsigned char)(in->v1 != 0);
         a->prev_cchord_once = (unsigned char)(in->cchord_once != 0);
         a->prev_reversion = (unsigned char)(in->mode_reversion != 0);
@@ -176,8 +177,16 @@ void aurals_update(Aurals *a, const AurInputs *in, AurOutputs *out)
     if (!a->was_powered) { a->was_powered = 1; a->powered_for = 0.0; }
     else if (isfinite(in->dt) && in->dt > 0.0 && in->dt < 1.0) a->powered_for += in->dt;
 
+    /* Port stall warning: below VSW (re-arms 3 kt above it) or at the flight model's stall AoA,
+     * airborne above 60 kt. */
+    if (in->on_ground || !in->cas_valid || !isfinite(in->cas_kt) || in->cas_kt <= 60.0) a->port_stall = 0;
+    else {
+        int slow = isfinite(in->vsw_kt) && in->vsw_kt > 60.0 &&
+                   in->cas_kt < in->vsw_kt + (a->port_stall ? 3.0 : 0.0);
+        a->port_stall = slow || in->aoa_stall_warning;
+    }
     /* Stall: looped, silences the synthetic voice while it lasts. */
-    stall = in->stall && a->seconds[AUR_STALL] > 0.0;
+    stall = (in->stall || a->port_stall) && a->seconds[AUR_STALL] > 0.0;
     if (stall) {
         if (voice_busy(a)) out->stop_voice = 1;
         a->voice = a->pending = -1;

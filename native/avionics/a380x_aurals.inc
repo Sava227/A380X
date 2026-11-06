@@ -39,7 +39,7 @@ static struct {
     int loaded;
     FMOD_CHANNEL *channel[AUR_SLOTS];
     unsigned generation[AUR_SLOTS];   /* a completion callback only clears the play it belongs to */
-    XPLMDataRef seatbelt, tla[4];
+    XPLMDataRef seatbelt, tla[4], stall_raw;
     int audible;
 } aur;
 
@@ -190,6 +190,10 @@ static void aurals_update_frame(float dt)
     in.cchord_once = fwsa_fws.out.aural_cchord_once; in.cchord_cont = fwsa_fws.out.aural_cchord_cont;
     in.v1 = fwsa_fws.out.aural_v1; in.stall = fwsa_fws.out.stall_warning;
     in.cavalry = fwsa_fws.out.aural_cavalry_charge;
+    if (!aur.stall_raw) aur.stall_raw = XPLMFindDataRef("sim/cockpit2/annunciators/stall_warning");
+    in.aoa_stall_warning = aur.stall_raw && XPLMGetDatai(aur.stall_raw) != 0;
+    in.cas_valid = guidance_inputs.airdata_valid; in.cas_kt = guidance_inputs.ias_knots;
+    in.vsw_kt = pfd_guidance.stall_warning_knots;
     in.mode_reversion = guidance.mode_reversion;
     in.seatbelt_valid = aur.seatbelt != NULL;
     in.seatbelt_sign = aur.seatbelt ? XPLMGetDatai(aur.seatbelt) : 0;

@@ -9,6 +9,7 @@
  */
 #include <stddef.h>
 #include "a380x_flaps.h"
+#include "a380x_fms_speeds.h"
 /* FLAPS lever / FBW SFCC feed, filled by a380x_flaps.inc every frame (ready = 0: the legacy X-Plane
  * handle interpretation below applies). Also read by the FWS adapter and the xp-kit SFCC words. */
 static A380XFlapsFeed flaps_feed;
@@ -294,6 +295,27 @@ static void read_pfd_aircraft(void)
        spoiler_handle<=0&&p->spoiler_ratio<=.0001){
         p->vls_knots=pfd_clean_vls(guidance_inputs.weight_kg,guidance_inputs.pressure_altitude_ft);
         p->clean_performance_valid=p->vls_knots>0;
+    }
+    /* Stall warning speed without an aircraft-systems provider (docs/PFD_IMPLEMENTATION.md, "Stall warning
+     * speed"). This port has no Airbus normal-law alpha protection, so the speed scale shows VSW, the
+     * red/black barber pole of the laws without protection, instead of alpha prot / alpha max, and the
+     * stall warning aural uses the same speed (a380x_aurals). VS1g: FBW A380 operating-speed tables
+     * (a380x_operating_speeds) at the aircraft's actual mass and flap lever (CG 30 %MAC when the FMS has
+     * none); VSW = max(1.05 VS1g, VS1g + 5 kt) * sqrt(nz): the CS 25.207(c) stall-warning margin, raised
+     * with the load factor. */
+    if(!p->envelope_valid&&guidance_inputs.airdata_valid&&guidance_inputs.weight_kg>200000.0&&
+       guidance_inputs.weight_kg<700000.0&&p->flap_handle_index>=0&&p->flap_handle_index<=4){
+        static XPLMDataRef g_normal;
+        A380XOperatingSpeeds ops;
+        double nz=1.0;
+        if(!g_normal)g_normal=XPLMFindDataRef("sim/flightmodel/forces/g_nrml");
+        if(g_normal){double g=XPLMGetDataf(g_normal);if(isfinite(g))nz=fmin(2.5,fmax(0.5,g));}
+        if(p->on_ground)nz=1.0;
+        a380x_operating_speeds(guidance_inputs.weight_kg,30.0,guidance_inputs.ias_knots,p->flap_handle_index,
+                               A380X_SPEEDS_PHASE_APPROACH,0.0,guidance_inputs.pressure_altitude_ft,0.0,1,0.0,
+                               1013.25,&ops);
+        if(isfinite(ops.vs1g)&&ops.vs1g>60.0&&ops.vs1g<300.0)
+            p->stall_warning_knots=fmax(1.05*ops.vs1g,ops.vs1g+5.0)*sqrt(nz);
     }
 }
 static void publish_pfd_aircraft(void)

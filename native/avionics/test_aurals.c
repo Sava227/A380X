@@ -125,6 +125,18 @@ int main(void)
     assert(loops[AUR_STALL] == 30);
     expect("stall", "500");
 
+    /* Port stall warning: below VSW airborne (3 kt hysteresis), the flight-model AoA warning, never on
+     * the ground or below 60 kt; it silences the voice like the FWS stall warning. */
+    reset(); in = base(); in.ra_ft = 3000.0; in.cas_valid = 1; in.vsw_kt = 140.0;
+    in.cas_kt = 150.0; step(&in); assert(!loops[AUR_STALL]);
+    in.cas_kt = 139.0; for (int i = 0; i < 10; ++i) step(&in); assert(loops[AUR_STALL] == 10);
+    in.cas_kt = 142.0; step(&in); assert(loops[AUR_STALL] == 11);          /* still inside the hysteresis */
+    in.cas_kt = 143.5; step(&in); assert(loops[AUR_STALL] == 11);          /* cleared above VSW + 3 kt */
+    in.aoa_stall_warning = 1; step(&in); assert(loops[AUR_STALL] == 12);   /* flight-model AoA warning */
+    in.on_ground = 1; step(&in); assert(loops[AUR_STALL] == 12);           /* never on the ground */
+    in.on_ground = 0; in.aoa_stall_warning = 0; in.cas_kt = 50.0; step(&in); assert(loops[AUR_STALL] == 12);
+    printf("%-34s below VSW, hysteresis, AoA warning, ground and 60 kt inhibits\n", "port stall warning");
+
     /* FWS attention getters: CRC loops, C-chord once / continuous, triple click on reversion. */
     reset(); in = base(); in.ra_ft = 5000.0;
     in.crc = 1; for (int i = 0; i < 10; ++i) step(&in); in.crc = 0; step(&in);

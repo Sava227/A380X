@@ -47,6 +47,10 @@ typedef struct {
     int thrust_above_idle;           /* any thrust lever above IDLE */
     int crc, cchord_once, cchord_cont, v1, stall;   /* FWS requests; v1 and cchord_once are pulses */
     int cavalry;                                    /* FWS cavalry charge (A/P OFF): level */
+    /* Port stall warning (no alpha protection in this port, so the FWS normal-law gate never warns):
+     * airborne above 60 kt and below VSW (3 kt hysteresis), or the flight model's stall-warning AoA. */
+    int cas_valid; double cas_kt, vsw_kt;
+    int aoa_stall_warning;
     int mode_reversion;
     int seatbelt_valid, seatbelt_sign;              /* sign 0 off, > 0 on */
 } AurInputs;
@@ -71,6 +75,7 @@ typedef struct {
     int pending; double pending_since;
     unsigned char prev_v1, prev_cchord_once, prev_reversion;
     int prev_seatbelt;
+    int port_stall;
 } Aurals;
 
 void aurals_init(Aurals *a);

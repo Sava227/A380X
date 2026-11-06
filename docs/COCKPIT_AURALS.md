@@ -22,7 +22,7 @@ while still requested; a one-shot callout that fell outside the cockpit is not r
 | `hundred_above`, `minimum` | FMS PERF APPR minimum: RADIO (DH, radio altitude) or else BARO (MDA, baro altitude), 100 ft above and at the minimum, descending. They replace the altitude callout of that moment. |
 | `retard` | 20 ft (manual landing) or 10 ft (A/P engaged) while a thrust lever is above IDLE (TLA > 2°); repeated every ~1.4 s until IDLE (at most six). After RETARD the numeric callouts below that height are not called. |
 | `v1` | FWS V1 callout pulse (takeoff, V1 reached). |
-| `stall` | FWS stall warning; looped ("STALL STALL" + cricket); silences the synthetic voice. |
+| `stall` | Looped ("STALL STALL" + cricket); silences the synthetic voice. Sounds for the FWS stall warning and for the port stall warning: airborne above 60 kt and below VSW (the red/black barber pole on the PFD; clears 3 kt above it), or at the flight model's stall-warning angle of attack (15° in the .acf). The FWS warning alone never sounds here because it requires alternate/direct law and this port always reports normal law without implementing alpha protection. |
 | `crc_master_warning` | FWS CRC (continuous repetitive chime) while requested — it replaces the glareshield's old synthetic 640 Hz master-warning tone for those warnings. |
 | `cchord` | FWS altitude alert: once (C-chord) or looped (continuous C-chord). |
 | `triple_click` | FMA mode reversion (rising edge). |
