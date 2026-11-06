@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Read-only, cached X-Plane navigation/FMS/TCAS/scenery sources for both NDs.
  * Include after a380x_efis.inc and before the flight loop. No synthetic traffic,
- * terrain or airport-layout geometry is generated when source data is absent.
+ * terrain or airport-layout geometry is generated when source data is absent. TERRAIN on ND has its
+ * own cache and sweep (a380x_terrain_adapter.inc); nd_data.terrain[] holds its rasters.
  */
 #include "a380x_efis_nd.h"
 static EfisNdData nd_data;
@@ -103,45 +104,6 @@ static void efis_nd_read_radios(void)
         vor->valid=(types[i]&xplm_Nav_VOR)!=0 && vor->id[0] && isfinite(vor->bearing_mag);
         vor->dme_valid=vor->valid && nd_source.vor_has_dme[i] &&
             XPLMGetDatai(nd_source.vor_has_dme[i]) && isfinite(vor->distance_nm);
-    }
-}
-
-static void efis_nd_update_terrain(int side,float dt)
-{
-    EfisNdTerrain *terrain=&nd_data.terrain[side];
-    float span=fminf(40.0f,fmaxf(1.0f,efis[side].range_nm)),mx=0,my=0;
-    int sample;
-    if (!efis[side].terr || efis[side].zoom || !nd_data.position_valid || !nd_source.probe) return;
-    terrain->age+=dt;
-    efis_nd_project(terrain->lat,terrain->lon,nd_data.lat,nd_data.lon,0,&mx,&my);
-    if (terrain->span_nm!=span || hypotf(mx,my)>span*.1f ||
-        (terrain->next_sample>=EFIS_ND_TERRAIN_COUNT && terrain->age>10.0f)) {
-        memset(terrain,0,sizeof(*terrain));
-        terrain->lat=nd_data.lat; terrain->lon=nd_data.lon; terrain->span_nm=span;
-    }
-    /* Two probes per side per frame. Scenery probing is expensive; once the
-     * grid is filled it is retained for ten seconds or until the map moves. */
-    for (sample=0;sample<2 && terrain->next_sample<EFIS_ND_TERRAIN_COUNT;++sample) {
-        int index=terrain->next_sample++;
-        float north=((float)(index/EFIS_ND_TERRAIN_DIM)-4.0f)*span*.25f;
-        float east=((float)(index%EFIS_ND_TERRAIN_DIM)-4.0f)*span*.25f;
-        EfisNdTerrainPoint *point=&terrain->points[index];
-        double local_x,local_y,local_z,hit_lat,hit_lon,hit_alt;
-        XPLMProbeInfo_t hit;
-        double distance_nm=hypot(east,north),bearing=atan2(east,north);
-        double d=distance_nm/3440.065,lat=terrain->lat*M_PI/180.0,lon=terrain->lon*M_PI/180.0;
-        double target_lat=asin(sin(lat)*cos(d)+cos(lat)*sin(d)*cos(bearing));
-        double target_lon=lon+atan2(sin(bearing)*sin(d)*cos(lat),cos(d)-sin(lat)*sin(target_lat));
-        if (distance_nm>40.0) continue; /* Never color distant unloaded scenery. */
-        point->lat=target_lat*180.0/M_PI; point->lon=target_lon*180.0/M_PI;
-        XPLMWorldToLocal(point->lat,point->lon,20000.0,&local_x,&local_y,&local_z);
-        memset(&hit,0,sizeof(hit)); hit.structSize=sizeof(hit);
-        if (XPLMProbeTerrainXYZ(nd_source.probe,(float)local_x,(float)local_y,(float)local_z,&hit)
-            !=xplm_ProbeHitTerrain) continue;
-        XPLMLocalToWorld(hit.locationX,hit.locationY,hit.locationZ,&hit_lat,&hit_lon,&hit_alt);
-        if (!isfinite(hit_alt)) continue;
-        point->altitude_ft=(float)(hit_alt*3.280839895);
-        point->water=hit.is_wet; point->valid=1; ++terrain->valid_count;
     }
 }
 
@@ -303,7 +265,6 @@ static void efis_nd_update(float dt)
             XPLMGetDatavf(nd_source.traffic_altitude,nd_data.traffic_altitude_m,0,64);
         }
     }
-    efis_nd_update_terrain(0,dt); efis_nd_update_terrain(1,dt);
 #if !defined(A380X_XPKIT)
     efis_nd_update_vd_terrain(0); efis_nd_update_vd_terrain(1);
 #endif

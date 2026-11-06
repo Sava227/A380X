@@ -95,6 +95,16 @@ CLOCK_RENDER_TEST = HERE / "test_clock_render.c"
 EFIS_TEST = HERE / "test_efis.c"
 EFIS_ND_TEST = HERE / "test_efis_nd.c"
 EFIS_AIRPORT_TEST = HERE / "test_efis_airport.c"
+# TERRAIN on ND (docs/ND_TERRAIN.md): XPLM-free core a380x_terrain.h, adapter a380x_terrain_adapter.inc (mock XPLM
+# probes + software GL: native image / TERR box / pointer readout), web layer xp-kit-nd/terrain-layer.js checked
+# with JavaScriptCore on the adapter's own states, nd.html patch tools/patch_xp_kit_nd.py.
+TERRAIN_TEST = HERE / "test_terrain.c"
+TERRAIN_ADAPTER_TEST = HERE / "test_terrain_adapter.c"
+TERRAIN_LAYER = HERE / "xp-kit-nd/terrain-layer.js"
+TERRAIN_LAYER_CHECK = HERE.parent.parent / "tools/terrain_layer_check.js"
+TERRAIN_PATCH = HERE.parent.parent / "tools/patch_xp_kit_nd.py"
+TERRAIN_PATCH_TEST = HERE.parent.parent / "tools/test_patch_xp_kit_nd.py"
+TERRAIN_SCENARIOS = ("arc", "rose", "peaks", "approach")
 EWD_DATA_TEST = HERE / "test_ewd_data.c"
 EWD_RENDER_TEST = HERE / "test_ewd_render.c"
 EWD_FONT = HERE / "fonts/FBW-Display-EIS-A380.ttf"
@@ -139,7 +149,8 @@ MFD_TESTS = (("test_mfd_formats", "core"), ("test_fms_core", "core"), ("test_nav
              ("test_mfd_ui", "core"), ("test_mfd_render", "render"), ("test_sd", "render"))
 MFD_OPTIONAL_TESTS = (("test_mfd_pages_a", "render"), ("test_mfd_page_perf", "render"),
                       ("test_mfd_page_fpln", "render"), ("test_mfd_pages_h", "render"))
-EXTRA_INPUTS = [EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", HERE / "test_xpkit_zero_copy.c", XPKIT_SURFACE, ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
+EXTRA_INPUTS = [TERRAIN_TEST, TERRAIN_ADAPTER_TEST, TERRAIN_LAYER,
+    HERE / "xp-kit/bridge.js", HERE / "xp-kit-nd/native-bridge.js", EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", HERE / "test_xpkit_zero_copy.c", XPKIT_SURFACE, ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
     EWD_DATA_TEST, EWD_RENDER_TEST, FCU_MOTION_TEST, FCU_LIGHT_TEST, ISIS_TEST, CONTROL_MOTION_TEST,
     *CXX_SOURCES, *[p for p in HERE.glob("*.h") if not p.name.startswith("._")],
     *[p for p in HERE.glob("*.inc") if not p.name.startswith("._")],
@@ -213,7 +224,8 @@ def main() -> None:
                     "XPLMUtilities.h", "XPLMMenus.h", "XPLMSound.h", "XPLMNavigation.h", "XPLMScenery.h", "XPLMPlanes.h")
     inputs = [headers / name for name in header_names]
     for path in [*inputs, framework, import_library, PLUGIN, CORE, CORE_HEADER, EFB, EFB_HEADER, TEST,
-                 EWD_FONT, EWD_FONT_HEADER, EWD_FONT_GENERATOR, DETENT_CLICK_GENERATOR, ISIS_FONT, ISIS_FONT_HEADER, ISIS_FONT_GENERATOR, *FCU_FONTS, FCU_FONT_HEADER, FCU_FONT_GENERATOR, FCU_RENDER_TEST, MFD_FONT_HEADER, MFD_FONT_GENERATOR, *MFD_SOURCES, *EXTRA_INPUTS]:
+                 EWD_FONT, EWD_FONT_HEADER, EWD_FONT_GENERATOR, DETENT_CLICK_GENERATOR, ISIS_FONT, ISIS_FONT_HEADER, ISIS_FONT_GENERATOR, *FCU_FONTS, FCU_FONT_HEADER, FCU_FONT_GENERATOR, FCU_RENDER_TEST, MFD_FONT_HEADER, MFD_FONT_GENERATOR, *MFD_SOURCES, *EXTRA_INPUTS,
+                 TERRAIN_LAYER_CHECK, TERRAIN_PATCH, TERRAIN_PATCH_TEST]:
         if not path.is_file():
             parser.error(f"Missing build input: {path}")
     clang = shutil.which(args.clang)
@@ -475,6 +487,50 @@ def main() -> None:
     airport_test_binary = output / "test_efis_airport"
     run([clang, *warnings, str(EFIS_AIRPORT_TEST), "-lm", "-o", str(airport_test_binary)])
     airport_result = run([str(airport_test_binary)]).strip()
+    # TERRAIN on ND: core (also gcc -Werror), adapter + native drawing, web states/previews, JS layer, page patch.
+    terrain_binary = output / "test_terrain"
+    run([clang, *warnings, str(TERRAIN_TEST), "-lm", "-o", str(terrain_binary)])
+    terrain_lines = run([str(terrain_binary)]).strip().splitlines()
+    run([mingw, *warnings, "-c", str(TERRAIN_TEST), "-o", str(output / "test_terrain_win_check.o")])
+    terrain_adapter_binary = output / "test_terrain_adapter"
+    run([clang, *warnings, "-Wno-deprecated-declarations", "-DAPL=1", "-DXPLM200=1", "-DXPLM210=1", "-DXPLM300=1",
+         "-DXPLM301=1", "-DXPLM400=1", "-DXPLM410=1", "-I", str(headers), str(TERRAIN_ADAPTER_TEST), "-lm",
+         "-o", str(terrain_adapter_binary)])
+    terrain_adapter_lines = run([str(terrain_adapter_binary)]).strip().splitlines()
+    terrain_dir = output / "nd-terrain"
+    terrain_dir.mkdir()
+    for scenario in TERRAIN_SCENARIOS:
+        run([str(terrain_adapter_binary), "--json", scenario, str(terrain_dir / f"{scenario}.json")])
+        pam = terrain_dir / f"{scenario}-native.pam"
+        run([str(terrain_adapter_binary), "--capture", scenario, str(pam)])
+        try:
+            from PIL import Image
+            raw = pam.read_bytes()
+            end = raw.index(b"ENDHDR\n") + 7
+            header = dict(line.split(b" ", 1) for line in raw[:end].split(b"\n")[1:-2])
+            size = (int(header[b"WIDTH"]), int(header[b"HEIGHT"]))
+            image = Image.frombytes("RGBA", size, raw[end:end + size[0] * size[1] * 4])
+            flat = Image.new("RGBA", size, (0, 0, 0, 255)); flat.alpha_composite(image)
+            flat.convert("RGB").save(pam.with_suffix(".png"), optimize=True)
+            pam.unlink()
+        except ImportError:
+            pass
+    terrain_previews = [{"file": f"nd-terrain/{p.name}", "sha256": digest(p)}
+                        for p in sorted(terrain_dir.iterdir()) if p.is_file() and not p.name.startswith("._")]
+    terrain_layer_result = None
+    if JSC.exists():
+        terrain_layer_result = run([str(JSC), str(TERRAIN_LAYER_CHECK), "--", str(HERE / "xp-kit/bridge.js"),
+                                    str(HERE / "xp-kit-nd/native-bridge.js"), str(TERRAIN_LAYER),
+                                    *[str(terrain_dir / f"{s}.json") for s in TERRAIN_SCENARIOS]]).strip().splitlines()[-1]
+        if not terrain_layer_result.startswith("TERRAIN LAYER OK"):
+            raise RuntimeError("ND terrain layer check failed: " + terrain_layer_result)
+    patch_test = subprocess.run([_sys.executable, "-m", "unittest", "discover", "-s", str(TERRAIN_PATCH_TEST.parent),
+                                 "-p", TERRAIN_PATCH_TEST.name], text=True, capture_output=True)
+    commands.append({"argv": patch_test.args, "stdout": patch_test.stdout, "stderr": patch_test.stderr,
+                     "returncode": patch_test.returncode})
+    if patch_test.returncode:
+        raise RuntimeError("ND page terrain patch tests failed:\n" + patch_test.stdout + patch_test.stderr)
+    terrain_patch_result = patch_test.stderr.strip().splitlines()[-1]
     contracts = run([str(adapter_test_binary), "--contracts"]).splitlines()
 
     # ---- MFD / FMS core: objects once (host arch, no XPLM include path = proves XPLM-free) ----
@@ -1026,6 +1082,18 @@ def main() -> None:
         "efis_test_result": efis_result,
         "efis_nd_test_result": nd_result,
         "efis_airport_test_result": airport_result,
+        "nd_terrain": {"core_test_result": terrain_lines[-1], "core_measurements": terrain_lines[:-1],
+                       "adapter_test_result": terrain_adapter_lines[-1], "adapter_measurements": terrain_adapter_lines[:-1],
+                       "web_layer_check_result": terrain_layer_result, "page_patch_test_result": terrain_patch_result,
+                       "previews": terrain_previews, "behaviour": "docs/ND_TERRAIN.md",
+                       "fbw_source": ["flybywiresim/simbridge@f5932323 apps/server/src/terrain/processing/gpu/rendering/navigationdisplay.ts",
+                                      "flybywiresim/simbridge@f5932323 apps/server/src/terrain/processing/navigationdisplayrenderer.ts",
+                                      "flybywiresim/simbridge@f5932323 apps/server/src/terrain/processing/gpu/patterns/scanlinemode.ts",
+                                      "flybywiresim/aircraft@2b2612f9 fbw-common/src/systems/instruments/src/ND/TerrainMapThresholds.tsx",
+                                      "flybywiresim/aircraft@2b2612f9 fbw-a380x/src/wasm/fbw_a380/src/model/A380FcuComputer.cpp (WX/TERR overlay)",
+                                      "flybywiresim/aircraft@2b2612f9 fbw-a380x/src/systems/systems-host/Misc/EfisTawsBridge.ts (terrOnNd)"],
+                       "colour_reference": "Honeywell MK V/MK VII EGPWS Pilot's Guide 060-4241-000 Rev H, TAD colour table",
+                       "simulator_tested": False},
         "ewd_data_test_result": ewd_data_result,
         "ewd_render_test_result": ewd_render_result,
         "sd_render_test_result": mfd_test_results["test_sd"],
