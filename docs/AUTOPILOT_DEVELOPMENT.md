@@ -208,9 +208,12 @@ complete Airbus AFS. Takeoff SRS is the FBW law with the port's mode logic; LAND
 RETARD and SRS GA/GA TRK follow the FBW PRIM FG mode logic ([AUTOLAND.md](AUTOLAND.md)). The FMS
 go-around phase, alpha-floor and full flight-envelope protection, FADEC detent logic, TCAS guidance
 and redundant PRIM/ARINC bus networks are outside this implementation. Without LAND engaged the AP
-still disconnects below 100 ft radio altitude in captured glideslope modes. The highest landing
-capability annunciated is LAND 2; LAND 3 SINGLE/DUAL is never shown because the port has no
-redundant monitored computers. Missing performance values (VLS, V1, VR, green dot) are omitted.
+still disconnects below 100 ft radio altitude in captured glideslope modes. The landing
+capability (APPR 1 / LAND 2 / LAND 3 SINGLE / LAND 3 DUAL) follows the FBW PRIM capability terms
+evaluated on the simulated redundancy (two NAV receivers, two radio altimeters, two ADIRS sides,
+AP1+AP2, A/THR, hydraulics, rudder), frozen below 200 ft, with a triple click on a downgrade. It is
+an annunciation from simulated sensors, not certified fail-passive / fail-operational monitoring
+(the port has one guidance computer). Missing performance values (VLS, V1, VR, green dot) are omitted.
 Managed guidance and autoland were verified offline only and need in-simulator tuning.
 
 ## Verification

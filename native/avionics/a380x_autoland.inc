@@ -11,9 +11,10 @@
  * LOC TRACK (with its align/decrab beta command below 30 ft) and ROLL OUT, vertical law FLARE
  * (flare, touchdown derotation) and SRS. Port-specific, needing in-simulator tuning: the rudder
  * pedal servo (the FBW A380 lateral normal law that tracks the beta command is not ported), the
- * RETARD ramp in normalized engine command, the ground pitch-servo bound and the LAND 2 capability
- * gating. The three-PRIM monitoring and the LAND 3 fail-passive/fail-operational capabilities are
- * not ported and are never annunciated.
+ * RETARD ramp in normalized engine command, the ground pitch-servo bound and the mapping of the
+ * LAND capability terms onto the simulated sensors. The three-PRIM monitoring is not ported: LAND 3
+ * SINGLE / DUAL is the capability annunciated from the simulated redundancy, not a certified
+ * fail-passive / fail-operational monitor.
  */
 
 #define LAND_ENGAGE_RA_FT 400.0     /* CompareToConstant_const_b: GS TRK + LOC TRK below 400 ft RA */
@@ -134,19 +135,72 @@ static void landing_go_around(A380XGuidanceState *s, const A380XGuidanceInputs *
         l->go_around_active = 0;
 }
 
-static void landing_capability(A380XGuidanceState *s, const A380XGuidanceInputs *i) {
-    A380XLandingState *l = &s->land;
+/* LAND capability (FMA D1/D2). Terms of the FBW A380 PRIM FG (A380PrimComputerFg.cpp
+ * land_2_capability / land_3_fail_passive_capability / land_3_fail_op_capability at 2baa2b35):
+ *   LAND 2   AP1 or AP2 available, both ILS valid, not all RA failed, rudder, normal law,
+ *            no double ADR/IR failure;
+ *   SINGLE   LAND 2 and A/THR available and not two RA failed;
+ *   DUAL     AP1 and AP2 available, A/THR, rudder, normal law, green and yellow hydraulics,
+ *            not two RA failed, both ILS valid, no ADR/IR rejected.
+ * Port mapping, decided from what the simulator provides (docs/AUTOLAND.md): "available" becomes
+ * engaged (an Airbus FMA shows the capability of the engaged AP/A/THR, so one AP gives SINGLE),
+ * both ILS valid = both NAV receivers valid on LOC and G/S, the same frequency and course and
+ * agreeing deviations; "not two RA failed" of three = both captain and F/O radio altimeters valid
+ * and agreeing; no ADR/IR rejected = both ADIRS sides valid; hydraulics = X-Plane systems 1 and 2
+ * pressurized; LAND 3 also needs the yaw (rollout) channel. There is no flight-control law in
+ * the port; it is not a term. */
+#define LAND_ALERT_HEIGHT_FT 200.0     /* below it (in LAND) the capability is frozen */
+#define LAND_DOWNGRADE_CONFIRM_S 1.0   /* port: a lower capability must persist before it shows */
+#define LAND_DOWNGRADE_HOLD_S 3.0      /* triple-click request level */
+static int landing_ils_pair(const A380XGuidanceInputs *i) {
     const A380XIlsInputs *a = &i->ils[0], *b = &i->ils[1];
-    int both_ils = ils_loc_valid(a) && ils_gs_valid(a) && ils_loc_valid(b) && ils_gs_valid(b) &&
-        fabs(diff(a->course_deg, b->course_deg)) < 1;
-    /* LAND 2 gating, from the FBW land_2_capability terms this port can observe: both ILS valid and
-     * agreeing, RA valid, attitude/air data valid and an AP engaged. The FBW LAND 3 SINGLE/DUAL
-     * terms (three PRIMs, three RAs, hydraulic/electric fail-op) are not modelled. */
-    int land2 = (s->approach_selected || l->land_active) && both_ils && landing_ra_valid(i) &&
-        (s->ap1 || s->ap2) && i->attitude_valid && i->airdata_valid && i->powered;
-    l->capability = land2 ? A380X_LAND_CAPABILITY_LAND2 :
-        (s->approach_selected || l->land_active) && i->powered ? A380X_LAND_CAPABILITY_APPR1 :
-        A380X_LAND_CAPABILITY_NONE;
+    if (!(ils_loc_valid(a) && ils_gs_valid(a) && ils_loc_valid(b) && ils_gs_valid(b))) return 0;
+    if (fabs(diff(a->course_deg, b->course_deg)) >= 1) return 0;
+    if (a->frequency_mhz > 0 && b->frequency_mhz > 0 && fabs(a->frequency_mhz - b->frequency_mhz) > .004) return 0;
+    return fabs(a->loc_deviation_dots - b->loc_deviation_dots) <= .25 &&
+        fabs(a->gs_deviation_dots - b->gs_deviation_dots) <= .5;
+}
+static int landing_ra_pair(const A380XGuidanceInputs *i) {
+    double a = i->side_radio_height_ft[0], b = i->side_radio_height_ft[1];
+    return i->side_radio_height_valid[0] && i->side_radio_height_valid[1] && isfinite(a) && isfinite(b) &&
+        fabs(a - b) <= fmax(15, .05 * fmax(fabs(a), fabs(b)));
+}
+static int landing_capability_conditions(const A380XGuidanceState *s, const A380XGuidanceInputs *i) {
+    const A380XLandingState *l = &s->land;
+    int any_ra = landing_ra_valid(i) || i->side_radio_height_valid[0] || i->side_radio_height_valid[1];
+    int land2, single;
+    if (!i->powered || !(s->approach_selected || l->land_active)) return A380X_LAND_CAPABILITY_NONE;
+    land2 = (s->ap1 || s->ap2) && landing_ils_pair(i) && any_ra && i->rudder_valid &&
+        i->attitude_valid && i->airdata_valid;
+    single = land2 && s->athr_armed && s->athr_active && landing_ra_pair(i) && i->yaw_channel_available;
+    if (single && s->ap1 && s->ap2 && i->hydraulics_valid &&
+        i->side_attitude_valid[0] && i->side_attitude_valid[1] && i->side_airdata_valid[0] && i->side_airdata_valid[1])
+        return A380X_LAND_CAPABILITY_LAND3_DUAL;
+    return single ? A380X_LAND_CAPABILITY_LAND3_SINGLE : land2 ? A380X_LAND_CAPABILITY_LAND2 : A380X_LAND_CAPABILITY_APPR1;
+}
+static void landing_capability(A380XGuidanceState *s, const A380XGuidanceInputs *i, double dt) {
+    A380XLandingState *l = &s->land;
+    int raw = landing_capability_conditions(s, i);
+    l->capability_raw = raw;
+    l->capability_downgrade_s = fmax(0, l->capability_downgrade_s - dt);
+    if (raw == A380X_LAND_CAPABILITY_NONE) {
+        /* APPR cancelled, GA or LAND reset: no capability, no downgrade alert. */
+        l->capability = A380X_LAND_CAPABILITY_NONE; l->capability_frozen = 0; l->capability_down_s = 0;
+    } else {
+        /* Alert height: in LAND below 200 ft the annunciated capability freezes (failures then
+         * rely on the AUTOLAND light); it stays frozen through flare and roll-out. */
+        if (l->land_active && (l->capability_frozen || (landing_ra_valid(i) && i->radio_height_ft < LAND_ALERT_HEIGHT_FT)))
+            l->capability_frozen = 1;
+        if (!l->capability_frozen) {
+            if (raw >= l->capability || l->capability == A380X_LAND_CAPABILITY_NONE) {
+                l->capability = raw; l->capability_down_s = 0;   /* upgrades show at once */
+            } else if ((l->capability_down_s += dt) >= LAND_DOWNGRADE_CONFIRM_S - 1e-9) {
+                l->capability = raw; l->capability_down_s = 0;
+                if (!i->on_ground) l->capability_downgrade_s = LAND_DOWNGRADE_HOLD_S;   /* triple click */
+            }
+        } else l->capability_down_s = 0;
+    }
+    l->capability_downgrade = l->capability_downgrade_s > 0;
 }
 
 /* Called once per update after the LOC/GS capture logic and before the laws step. */
@@ -156,7 +210,12 @@ static void landing_modes(A380XGuidanceState *s, const A380XGuidanceInputs *i, d
     int ap = s->ap1 || s->ap2, fd = s->fd1 || s->fd2, ra_ok = landing_ra_valid(i);
     double ra = ra_ok ? i->radio_height_ft : 1e9;
     l->touchdown_s = i->on_ground ? l->touchdown_s + dt : 0;
-    if (!i->powered) { landing_clear(l); l->go_around_active = l->retard_active = 0; l->capability = 0; l->bc1 = 0; return; }
+    if (!i->powered) {
+        landing_clear(l); l->go_around_active = l->retard_active = 0; l->bc1 = 0;
+        l->capability = l->capability_raw = l->capability_frozen = l->capability_downgrade = 0;
+        l->capability_down_s = l->capability_downgrade_s = 0;
+        return;
+    }
     landing_go_around(s, i, valid);
     /* APEngagedLogic groundGa: on the ground a go-around or any lever at TLA >= 36.7 deg disengages
      * the AP (FD guidance continues). */
@@ -194,7 +253,7 @@ static void landing_modes(A380XGuidanceState *s, const A380XGuidanceInputs *i, d
     l->cancel_request = 0;
     /* SRS GA speed target (the laws step below uses speed_target_knots as V_c). */
     if (l->go_around_active && s->vertical_mode == A380X_B1_SRS) s->speed_target_knots = l->ga_speed_knots;
-    landing_capability(s, i);
+    landing_capability(s, i, dt);
     l->bc1 = !l->land_active ? A380X_BC1_NONE : l->rollout_active ? A380X_BC1_ROLL_OUT :
         l->flare_active ? A380X_BC1_FLARE : A380X_BC1_LAND;
 }

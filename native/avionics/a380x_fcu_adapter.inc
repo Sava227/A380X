@@ -12,6 +12,7 @@ typedef struct {
     XPLMDataRef alpha, beta, weight, vmax, mmo, pressure_altitude;
     XPLMDataRef g_axial, g_side, g_normal, gs_angle[2];
     XPLMDataRef override_pitch, override_roll, override_throttle, override_all, override_heading;
+    XPLMDataRef hydraulic_pressure[2], rudder_failure[2];   /* LAND capability redundancy terms */
     XPLMDataRef pitch, roll, engine_throttle, pilot_rudder;
     XPLMDataRef axis_assignments, axis_values, axis_minimum, axis_maximum;
     XPLMCommandRef native_disconnect;
@@ -281,6 +282,21 @@ static void read_guidance_inputs(float dt)
     guidance_inputs.radio_height_valid=s->radio_altitude_valid;
     guidance_inputs.flap_handle_index=pfd_aircraft.flap_handle_index;
     guidance_inputs.rudder_ratio=fcu.own_yaw ? guidance.land.yaw_servo : XPLMGetDataf(fcu.pilot_rudder);
+    /* LAND capability redundancy (a380x_autoland.inc): both radio altimeters and ADIRS sides, X-Plane
+     * hydraulic systems 1 and 2 (green / yellow) above 900 Plane Maker units (the surfaces adapter
+     * support threshold; nominal 3000), no rudder failure, the rudder override free or ours. */
+    for (i=0;i<2;++i) {
+        Side *side=&refs.side[i];
+        float pressure=XPLMGetDataf(fcu.hydraulic_pressure[i]);
+        guidance_inputs.side_radio_height_valid[i]=side->radio_altitude_valid;
+        guidance_inputs.side_radio_height_ft[i]=side->radio_altitude_valid ? side->radio_altitude_value : 0;
+        guidance_inputs.side_attitude_valid[i]=side->display_valid && side->attitude_valid && side->heading_valid && side->navigation_valid;
+        guidance_inputs.side_airdata_valid[i]=side->air_valid && side->altitude_valid && side->vertical_speed_valid;
+        if (i==0) guidance_inputs.hydraulics_valid=1;
+        if (!(isfinite(pressure) && pressure>=900.0f)) guidance_inputs.hydraulics_valid=0;
+    }
+    guidance_inputs.rudder_valid=XPLMGetDatai(fcu.rudder_failure[0])<6 && XPLMGetDatai(fcu.rudder_failure[1])<6;
+    guidance_inputs.yaw_channel_available=fcu.own_yaw || !XPLMGetDatai(fcu.override_heading);
     for (i=0;i<2;++i) {
         A380XIlsInputs *ils=&guidance_inputs.ils[i];
         Side *side=&refs.side[i];
@@ -308,6 +324,7 @@ static void read_guidance_inputs(float dt)
         XPLMGetDatab(side->nav_identifier,side->nav_ident,0,(int)sizeof(side->nav_ident)-1);
         side->ls_visible=i ? guidance.ls2 : guidance.ls1;
         ils->valid=ils->loc_valid=side->loc_valid; ils->gs_valid=side->gs_valid;
+        ils->frequency_mhz=side->loc_valid ? side->nav_frequency_mhz : 0;
         ils->loc_deviation_dots=side->loc_dots; ils->gs_deviation_dots=-side->gs_dots;
         ils->course_deg=course;
         ils->gs_angle_deg=angle;
@@ -370,14 +387,20 @@ static void publish_guidance(void)
     published.fma_a1a2=guidance.thrust_mode; published.fma_b1=a380x_guidance_fma_vertical(&guidance);
     published.fma_c1=guidance.lateral_mode; published.fma_a3=0;
     {
-        /* Landing capability (a380x_autoland.inc): LAND 2 at most; LAND 3 is never annunciated. */
+        /* Landing capability (a380x_autoland.inc): the annunciated APPR 1 / LAND 2 / LAND 3 SINGLE /
+         * LAND 3 DUAL, exactly one (FBW computeD1D2Message would show LAND 2 before LAND 3). */
         A380XD1D2Inputs d1d2; memset(&d1d2,0,sizeof(d1d2));
         d1d2.land_mode_armed=guidance.approach_selected && !guidance.land.land_active;
         d1d2.land_mode_active=guidance.land.land_active;
         d1d2.land2_capacity=guidance.land.capability==A380X_LAND_CAPABILITY_LAND2;
+        d1d2.land3_single_capacity=guidance.land.capability==A380X_LAND_CAPABILITY_LAND3_SINGLE;
+        d1d2.land3_dual_capacity=guidance.land.capability==A380X_LAND_CAPABILITY_LAND3_DUAL;
         published.fma_d1d2=guidance_inputs.powered ? a380x_compute_d1d2(&d1d2) : A380X_D1D2_NONE;
     }
     pfd_guidance.fma_bc1=guidance.land.bc1;
+    /* FMA D3 minimums (FBW D3Cell): NO DH, RADIO (DH) or BARO (MDA) from the native FMS. */
+    pfd_guidance.fma_minimum_mode=fms_feed.valid ? fms_feed.minimum_mode : 0;
+    pfd_guidance.fma_minimum_ft=fms_feed.valid ? fms_feed.minimum_ft : 0;
 }
 
 static void update_guidance(float dt)
@@ -488,6 +511,9 @@ static int fcu_init(void)
     RAW(override_throttle,"sim/operation/override/override_throttles");
     RAW(override_all,"sim/operation/override/override_joystick");
     RAW(override_heading,"sim/operation/override/override_joystick_heading");
+    RAW(hydraulic_pressure[0],"sim/cockpit2/hydraulics/indicators/hydraulic_pressure_1");
+    RAW(hydraulic_pressure[1],"sim/cockpit2/hydraulics/indicators/hydraulic_pressure_2");
+    RAW(rudder_failure[0],"sim/operation/failures/rel_rud_L"); RAW(rudder_failure[1],"sim/operation/failures/rel_rud_R");
     RAW(pitch,"sim/joystick/yoke_pitch_ratio"); RAW(roll,"sim/joystick/yoke_roll_ratio");
     RAW(engine_throttle,"sim/flightmodel/engine/ENGN_thro_use"); RAW(pilot_rudder,"sim/joystick/yoke_heading_ratio");
     RAW(axis_assignments,"sim/joystick/joystick_axis_assignments"); RAW(axis_values,"sim/joystick/joystick_axis_values");

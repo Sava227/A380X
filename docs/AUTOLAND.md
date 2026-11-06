@@ -25,8 +25,8 @@ tuning before this can be relied on (see the last section).
 
 Not ported: the three-PRIM redundancy and monitoring, the A380 lateral normal
 law (rudder/sideslip loop), BSCU nosewheel steering, FMS go-around phase,
-acceleration altitude and thrust-reduction altitude, the LAND 3 capability
-logic.
+acceleration altitude and thrust-reduction altitude. The LAND capability
+terms are ported but evaluated on the simulator's redundancy (see below).
 
 ## Mode sequence
 
@@ -53,19 +53,67 @@ gear is held down without full forward elevator.
 
 ## FMA and lights
 
-FBW PFD (xp-kit): word 1 bit 23 LAND and bit 27 LAND 2, word 2 bit 28 LAND
+FBW PFD (xp-kit): word 1 bit 23 LAND and bits 27/28/29 for the capability, word 2 bit 28 LAND
 armed (APPR before LAND), word 3 bit 24 FLARE, word 4 bits 25 ALIGN / 26 ROLL
 OUT, the G/S and LOC bits cleared in LAND, word 3 bit 16 PITCH GA (SRS),
 ATS word bit 19 RETARD, A/THR FMA `IDLE`, and `L:A32NX_FCDC_{1,2}_FG_DISCRETE_WORD_1`
-bits 18 LAND / 19 GA / 24 LAND 2 for the D1D2 capability cell. Native PFD:
-`LAND`, `FLARE`, `ROLL OUT` centred over B1/C1 (border hidden), `SRS`,
-`GA TRK`, `THR IDLE`, and `LAND 2` / `APPR 1` in D1/D2.
+bits 18 LAND / 19 GA / 24/25/26 LAND 2 / LAND 3 SINGLE / LAND 3 DUAL for the
+D1D2 capability cell. Only the annunciated capability bit is set: FBW's
+`computeD1D2Message` tests LAND 2 before LAND 3, so setting all available
+levels would always show LAND 2. Native PFD: `LAND`, `FLARE`, `ROLL OUT`
+centred over B1/C1 (border hidden), `SRS`, `GA TRK`, `THR IDLE`, and in
+D1/D2 `APPR 1`, `LAND 2`, or `LAND 3` over `SINGLE` / `DUAL`, boxed for 10 s
+after a change.
 
-Capability: `LAND 2` when APPR or LAND is active, both ILS receivers are valid
-on the same course, the RA is valid, attitude/air data are valid and an AP is
-engaged; otherwise `APPR 1`. `LAND 3 SINGLE/DUAL` are never annunciated: this is
-one guidance computer with one radio-altimeter source, without the PRIM
-monitoring that makes LAND 3 fail-passive or fail-operational.
+D3 (minimums, FBW `D3Cell`): `NO DH`, `RADIO` + DH, or `BARO` + MDA from the
+native FMS PERF APPR entry. The FBW PFD gets `L:A32NX_FM{1,2}_EIS_DISCRETE_WORD_2`
+(bit 29 NO DH), `_DECISION_HEIGHT` and `_MINIMUM_DESCENT_ALTITUDE`. The MDA
+also drives the FBW altitude-tape minimum.
+
+### Landing capability: how LAND 3 is decided in this port
+
+The FBW A380 PRIM FG (`land_2_capability`, `land_3_fail_passive_capability`,
+`land_3_fail_op_capability`) defines:
+
+- LAND 2: AP1 or AP2 available, both ILS valid, not all RA failed, rudder,
+  normal law, no double ADR/IR failure.
+- LAND 3 SINGLE (fail-passive): LAND 2, A/THR available, not two of the three
+  RAs failed.
+- LAND 3 DUAL (fail-operational): AP1 and AP2 available, A/THR, rudder, normal
+  law, green and yellow hydraulics, not two RAs failed, both ILS valid, no
+  ADR/IR rejected.
+
+The port evaluates these terms on what the simulator actually provides:
+
+| Term | Port input |
+| --- | --- |
+| AP available | AP engaged (an Airbus FMA shows the capability of the engaged AP/A/THR): one AP gives at most SINGLE, AP1+AP2 can give DUAL |
+| Both ILS valid | Both NAV receivers (pilot/copilot) valid on LOC and G/S, same frequency, course within 1 deg, LOC within 0.25 dot and G/S within 0.5 dot of each other |
+| RA | LAND 2: at least one radio altimeter valid. LAND 3: captain and F/O radio altimeters both valid and within 15 ft (or 5 %) |
+| A/THR | A/THR engaged and active |
+| ADR/IR | LAND 2: the AP's ADIRS side valid. DUAL: both captain and F/O sides valid (attitude, heading, navigation, air data) |
+| Hydraulics | DUAL: X-Plane hydraulic systems 1 and 2 (green / yellow) at or above 900 Plane Maker units (nominal 3000) |
+| Rudder | No X-Plane `rel_rud_L` / `rel_rud_R` failure (all levels) |
+| Roll-out | LAND 3: the rudder override (`override_joystick_heading`) is free or held by this plugin |
+| Normal law | Not a term: the port has no flight-control law |
+
+What LAND 3 means here: the capability annunciated from the redundancy of the
+simulated sensors and channels. AP1 and AP2 drive the same native actuator
+servos. There is one guidance computer and no command/monitor lanes, no
+triple-redundant monitoring and no failure isolation. A DUAL annunciation does
+not make the autoland fail-operational. X-Plane failures of a receiver,
+radio altimeter, ADIRS side, hydraulic system or rudder do downgrade it.
+
+Annunciation rules (port, Airbus-style): an upgrade shows at once. A lower
+capability must persist for 1 s before it shows; then, in the air, the
+downgrade level is held 3 s. The aurals module plays the triple click on its
+rising edge (`AurInputs.capability_downgrade`, with the mode-reversion click;
+one click if both rise together). In LAND below the 200 ft alert height the
+annunciated capability freezes: no downgrade or upgrade is shown and no triple
+click sounds through flare, touchdown and roll-out. Failures below 200 ft are
+covered by the AUTOLAND light. Cancelling APPR, a go-around or the LAND ground
+reset clear the capability without a downgrade alert. `a380x/xp12/fcu/land_capability`
+reads 0 none, 1 APPR 1, 2 LAND 2, 3 LAND 3 SINGLE, 4 LAND 3 DUAL.
 
 AUTOLAND light (`a380x/xp12/glareshield/land_mode`, now read-only): LAND with an
 AP engaged in it, airborne, until ROLL OUT. The existing causes apply below
@@ -151,25 +199,43 @@ pedals (ACF: nose gear 90 deg low speed / 7 deg high speed); FBW's separate
   FCU inhibits, no reversion on LOC loss, 100 ft rule retained without LAND,
   RETARD at 50 ft only with AP, FLARE latch, ROLL OUT at 0.36 s, ground A/THR
   idle hold and disconnect by IDLE or reverse, ground reset, GA engagement /
-  inhibits / thrust modes / exits, LAND 2 gating, yaw release on pause.
+  inhibits / thrust modes / exits, yaw release on pause; the LAND capability
+  truth table (17 rows, one condition removed at a time from LAND 3 DUAL),
+  downgrade confirmation and level, silent upgrades and cancellation, the 200 ft
+  freeze through touchdown, GA clearing it, and the exclusive FMA mapping.
+- `test_aurals.c`: the capability-downgrade triple click (each rising edge once,
+  held level silent, coincident reversion one click, unpowered consumed).
+- `test_pfd_render.c`: `LAND 3` / `DUAL` / `SINGLE`, `NO DH`, `RADIO` / `BARO`.
 - `test_fcu_adapter.c` `test_yaw_lease`: yaw override lease, pause/replay,
-  AP disconnect, lease theft, foreign owner, physical pedal override, unload.
+  AP disconnect, lease theft, foreign owner, physical pedal override, unload;
+  `test_land_capability_inputs`: hydraulic, rudder, yaw, RA, ADIRS and frequency
+  inputs and the published D1/D2 message.
 - `test_autoland_sim.c` (report `autoland-bench.txt` in the build output):
   the real guidance and FBW laws fly LFBO 14R (X-Plane 12 default navdata: LOC
   4091 m beyond the threshold, GS antenna 325 m past and 122 m left, TCH 55.8 ft,
   DME at the glide antenna) from 11.9 nm, 2000 ft, 900 m left of the
-  centreline, with AP1+AP2 and A/THR, crew IDLE at the 10 ft RETARD call,
+  centreline, with AP1+AP2, A/THR and full simulated redundancy (both
+  receivers, both RAs, both ADIRS sides, hydraulics), crew IDLE at the 10 ft RETARD call,
   reverse at touchdown + 2.5 s, autobrake 2 m/s2, AP off at 30 kt. The airframe is a
   bench model (386 t, CL0 0.95, CLalpha 5/rad, ground effect, oleo/tyre model,
   log wind profile, first-order turbulence), not X-Plane's.
 
+Integrated build (autoland + FMGC managed guidance + ND terrain + aurals). Every
+landing case annunciates LAND 3 DUAL at LAND, frozen at the alert height and at
+touchdown, with no downgrade:
+
 | Case | LAND / FLARE / RETARD | Touchdown | Sink | Crab / bank | Roll-out max |
 | --- | --- | --- | --- | --- | --- |
-| Calm, 386 t | 386 / 50 / 50 ft, flare 5.4 s | 372 m, 0.8 m off | 270 fpm | 0.0 / 0.0 deg | 0.8 m |
-| 15 kt from left, 5 kt head, light turbulence | 387 / 49 / 50 ft, 5.7 s | 408 m, 1.0 m | 209 fpm | -1.8 / -0.6 deg | 1.8 m |
-| 25 kt from right, 10 kt head, moderate turbulence | 387 / 56 / 50 ft, 8.3 s | 449 m, 0.8 m | 337 fpm | 1.3 / 1.5 deg | 6.0 m |
-| 300 t, 10 kt tailwind, IDLE 1 s after touchdown | 384 / 54 / 50 ft, 6.8 s | 473 m, 0.4 m | 92 fpm | 0.1 / 0.2 deg | 1.7 m |
-| TOGA at 150 ft | SRS + GA TRK at 150 ft | min RA 123 ft (27 ft loss) | - | - | ALT* at 1850 ft, peak 3206 ft for FCU 3000 ft |
+| Calm, 386 t | 385 / 50 / 50 ft, flare 5.4 s | 336 m, 0.8 m off | 281 fpm | 0.0 / 0.0 deg | 0.8 m |
+| 15 kt from left, 5 kt head, light turbulence | 387 / 59 / 50 ft, 5.9 s | 334 m, 1.2 m | 431 fpm | -2.9 / -0.3 deg | 2.4 m |
+| 25 kt from right, 10 kt head, moderate turbulence | 387 / 42 / 50 ft, 7.3 s | 460 m, 2.8 m | 300 fpm | 1.9 / 2.3 deg | 5.4 m |
+| 300 t, 10 kt tailwind, IDLE 1 s after touchdown | 386 / 48 / 50 ft, 6.0 s | 449 m, 0.1 m | 88 fpm | 0.1 / 0.0 deg | 2.3 m |
+| TOGA at 150 ft | SRS + GA TRK at 150 ft | min RA 125 ft (25 ft loss) | - | - | ALT*, peak 3105 ft for FCU 3000 ft, 3003 ft after 120 s |
+
+These differ from the first autoland-branch run (for example 209 fpm in the
+15 kt case then) because the merged FMGC A/THR changes alter the approach speed
+control. The LAND 3 work itself does not change the control path; the numbers
+are identical with and without it.
 
 Crosswind at 20 ft; the wind is 1.8 times stronger at 1000 ft. In the 300 t
 case RETARD holds idle on the ground with the levers at CL until the crew sets
@@ -188,7 +254,11 @@ the existing ALT* capture and A/THR speed regulation, not this module.
   (FLARE and ROLL OUT use RA), the sign of `position/beta`, localizer/glide
   dots per degree (the bridge assumes 1 deg/dot LOC, 0.28 deg/dot G/S), pedal
   steering blend with ground speed.
-- Not implemented: LAND 3 capability, FMS go-around phase and acceleration
-  altitude, SRS takeoff, capability-downgrade triple click (the aurals module
-  can use `land_capability`), BSCU nosewheel command, GA from the ground roll
-  after more than 30 s.
+- LAND capability in the simulator: insert X-Plane failures (NAV 1/2, pilot /
+  copilot radio altimeter, ADIRS side, hydraulic system 1/2, rudder) above
+  and below 200 ft and check the FMA downgrades, the freeze and the triple
+  click. Check that the ACF's hydraulic systems 1/2 actually read at or above 900
+  in flight; otherwise DUAL is never shown.
+- Not implemented: real command/monitor redundancy behind LAND 3, FMS
+  go-around phase and acceleration altitude, SRS takeoff, BSCU nosewheel
+  command, GA from the ground roll after more than 30 s.

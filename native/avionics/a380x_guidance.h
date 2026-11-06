@@ -20,6 +20,7 @@ typedef struct {
      * ROLL OUT law converts the angular deviation to metres with it; zero/invalid = use DME. */
     int localizer_distance_valid;
     double localizer_distance_nm;
+    double frequency_mhz;   /* tuned frequency, 0 = unknown (LAND capability: both receivers on one ILS) */
 } A380XIlsInputs;
 
 typedef struct {
@@ -76,6 +77,13 @@ typedef struct {
      * when invalid, so LAND requires radio_height_valid; GA requires a flap handle index >= 1. */
     int radio_height_valid, flap_handle_index;
     double rudder_ratio; /* pilot rudder pedal position [-1,1], +right; FBW ROLL OUT entry value */
+    /* LAND capability redundancy as the simulator provides it (a380x_autoland.inc landing_capability):
+     * captain/F-O radio altimeters and ADIRS sides, both hydraulic systems pressurized, no rudder
+     * failure, the rudder (yaw) override available to the AP. Zero = not available. */
+    int side_radio_height_valid[2];
+    double side_radio_height_ft[2];
+    int side_attitude_valid[2], side_airdata_valid[2];
+    int hydraulics_valid, rudder_valid, yaw_channel_available;
 } A380XGuidanceInputs;
 
 typedef enum {

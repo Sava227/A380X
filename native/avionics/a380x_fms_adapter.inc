@@ -921,6 +921,9 @@ static void fmsa_update(float dt, int powered)
         fms_feed.f_speed_knots = o->f_speed_knots;
         fms_feed.s_speed_knots = o->s_speed_knots;
         fmsa_fmgc_feed(&fms_feed, o);
+        /* FMA D3 (FBW D3Cell priority NO DH, RADIO, BARO; a380x_pfd_render.inc / xp-kit FM words). */
+        fms_feed.minimum_mode = (o->no_dh || o->dh_ft == 0.0) ? 3 : o->dh_ft > 0.0 ? 1 : o->mda_ft >= 0.0 ? 2 : 0;
+        fms_feed.minimum_ft = fms_feed.minimum_mode == 1 ? o->dh_ft : fms_feed.minimum_mode == 2 ? o->mda_ft : 0.0;
         /* DH from the FMS (spec 07 section 10.2): radio minimum in range replaces the stock RA bug;
          * NO DH or a BARO (MDA) minimum hides it. Without FMS minimums the RA bug stays in use. */
         if (o->dh_ft > 0.0 || o->dh_ft == 0.0 || o->mda_ft >= 0.0) {

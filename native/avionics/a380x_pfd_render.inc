@@ -1053,7 +1053,23 @@ static void draw_fma(const PfdCanvas *p, const Side *side)
         pfd_text_center(p,67.85f,7.05f,shared_text[shared_mode],GREEN);
         fma_change_box(p,side_index,6,shared_mode,34.0f,1.0f,101.7f,8.7f,WHITE);
     } else fma_change_box(p,side_index,6,0,34.0f,1.0f,101.7f,8.7f,WHITE);
-    pfd_text_center(p,118.459f,7.126f,d1,WHITE);
+    /* D1/D2 landing capability (FBW D1D2Cell): LAND 3 on two lines (SINGLE / DUAL), change box. */
+    if (published.fma_d1d2 == A380X_D1D2_LAND_3_SINGLE || published.fma_d1d2 == A380X_D1D2_LAND_3_DUAL) {
+        pfd_text_center(p,118.459f,7.126f,"LAND 3",WHITE);
+        pfd_text_center(p,118.398f,14.29f,published.fma_d1d2 == A380X_D1D2_LAND_3_DUAL ? "DUAL" : "SINGLE",WHITE);
+        fma_change_box(p,side_index,7,published.fma_d1d2,107.1f,1.814f,130.09f,15.32f,WHITE);
+    } else {
+        pfd_text_center(p,118.459f,7.126f,d1,WHITE);
+        fma_change_box(p,side_index,7,published.fma_d1d2,107.1f,1.814f,130.09f,7.862f,WHITE);
+    }
+    /* D3 minimums (FBW D3Cell): NO DH, or RADIO / BARO with the value in cyan. */
+    if (pfd_guidance.fma_minimum_mode == 3) pfd_text_center(p,118.384f,21.104f,"NO DH",WHITE);
+    else if (pfd_guidance.fma_minimum_mode == 1 || pfd_guidance.fma_minimum_mode == 2) {
+        char minimum[16];
+        snprintf(minimum,sizeof(minimum),"%.0f",pfd_guidance.fma_minimum_ft);
+        pfd_text_sized(p,103.47f,21.104f,pfd_guidance.fma_minimum_mode == 1 ? "RADIO" : "BARO",WHITE,4.5f,0);
+        pfd_text_sized(p,133.425f,21.104f,minimum,CYAN,6.0f,2);
+    }
     fma_change_box(p,side_index,1,active_vertical,34.0f,1.0f,65.4f,8.7f,WHITE);
     fma_change_box(p,side_index,2,active_lateral,67.1f,1.0f,101.7f,8.7f,WHITE);
     pfd_text_center(p,145.62f,6.956f,ap_status,WHITE);

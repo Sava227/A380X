@@ -203,6 +203,7 @@ void aurals_update(Aurals *a, const AurInputs *in, AurOutputs *out)
         a->prev_v1 = (unsigned char)(in->v1 != 0);
         a->prev_cchord_once = (unsigned char)(in->cchord_once != 0);
         a->prev_reversion = (unsigned char)(in->mode_reversion != 0);
+        a->prev_downgrade = (unsigned char)(in->capability_downgrade != 0);
         a->prev_seatbelt = -1;
         a->last_ra = ra;
         a->last_baro = in->baro_valid && isfinite(in->baro_ft) ? in->baro_ft : AUR_FAR;
@@ -247,7 +248,10 @@ void aurals_update(Aurals *a, const AurInputs *in, AurOutputs *out)
     if (in->cavalry && a->seconds[AUR_CAVALRY] > 0.0) out->loop[AUR_CAVALRY] = 1;
     if (in->cchord_cont && a->seconds[AUR_CCHORD] > 0.0) out->loop[AUR_CCHORD] = 1;
     else if (in->cchord_once && !a->prev_cchord_once && a->seconds[AUR_CCHORD] > 0.0) out->start[AUR_CCHORD] = 1;
-    if (in->mode_reversion && !a->prev_reversion && a->seconds[AUR_TRIPLE_CLICK] > 0.0)
+    /* Triple click: FMA mode reversion, or a landing capability downgrade (rising edges; both in
+     * one frame give one click). */
+    if (((in->mode_reversion && !a->prev_reversion) || (in->capability_downgrade && !a->prev_downgrade)) &&
+        a->seconds[AUR_TRIPLE_CLICK] > 0.0)
         out->start[AUR_TRIPLE_CLICK] = 1;
     if (in->seatbelt_valid) {
         seatbelt = in->seatbelt_sign > 0;
@@ -260,6 +264,7 @@ void aurals_update(Aurals *a, const AurInputs *in, AurOutputs *out)
     a->prev_v1 = (unsigned char)(in->v1 != 0);
     a->prev_cchord_once = (unsigned char)(in->cchord_once != 0);
     a->prev_reversion = (unsigned char)(in->mode_reversion != 0);
+    a->prev_downgrade = (unsigned char)(in->capability_downgrade != 0);
     a->last_ra = ra;
     a->last_baro = in->baro_valid && isfinite(in->baro_ft) ? in->baro_ft : AUR_FAR;
 }

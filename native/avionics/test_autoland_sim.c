@@ -76,6 +76,7 @@ typedef struct {
     double td_t, td_x, td_y, td_sink_fpm, td_ias, td_pitch, td_crab_deg, td_bank, td_tail_margin_m;
     double max_y_rollout, stop_x, stop_y, min_ra_ga, ga_final_alt_ft, ga_max_alt_ft, max_pitch;
     int touched, stopped, ap_lost, sequence_ok, ga_modes_ok;
+    int cap_land, cap_alert, cap_touchdown, cap_downgrades, cap_downgrade_prev;   /* A380XLandCapability */
     char sequence[512];
 } Result;
 
@@ -127,7 +128,11 @@ static Result fly(const Case *c, int verbose) {
     in.mct_detent_ratio = 35.0 / 45.0; in.toga_detent_ratio = 1; in.detent_tolerance_ratio = .02;
     in.vls_knots = c->vls_kt; in.vmax_knots = 182; in.weight_kg = c->mass_kg;
     in.radio_height_valid = 1; in.flap_handle_index = 4;
-    for (n = 0; n < 2; ++n) { in.ils[n].gs_angle_deg = 3.0; in.ils[n].course_deg = rw.course_true - rw.magvar; }
+    for (n = 0; n < 2; ++n) {
+        in.ils[n].gs_angle_deg = 3.0; in.ils[n].course_deg = rw.course_true - rw.magvar; in.ils[n].frequency_mhz = 110.70;
+        in.side_radio_height_valid[n] = in.side_attitude_valid[n] = in.side_airdata_valid[n] = 1;
+    }
+    in.hydraulics_valid = in.rudder_valid = in.yaw_channel_available = 1;   /* full LAND 3 DUAL redundancy */
     for (int step = 0; step < 50 * 600; ++step) {
         const double dt = .02;
         double heading_true, track_true, gs_ms, u_air, v_air, w_air, vair, rho = 1.208, qbar, alpha, beta_std, ra_ft;
@@ -150,7 +155,8 @@ static Result fly(const Case *c, int verbose) {
         in.heading_deg = fmod(heading_true - rw.magvar + 720, 360); in.true_heading_deg = fmod(heading_true + 720, 360);
         in.track_deg = fmod(track_true - rw.magvar + 720, 360); in.true_track_deg = fmod(track_true + 720, 360);
         in.altitude_ft = in.pressure_altitude_ft = rw.elevation_ft + (a.H + GEAR_Z) / FT;
-        in.radio_height_ft = ra_ft; in.vertical_speed_fpm = a.vz / FT * 60;
+        in.radio_height_ft = in.side_radio_height_ft[0] = in.side_radio_height_ft[1] = ra_ft;
+        in.vertical_speed_fpm = a.vz / FT * 60;
         in.pitch_deg = a.theta * R2D; in.roll_deg = a.phi * R2D;
         in.pitch_rate_deg_s = a.q * R2D; in.roll_rate_deg_s = a.p * R2D; in.yaw_rate_deg_s = a.r * R2D;
         in.alpha_deg = alpha * R2D; in.beta_deg = -beta_std * R2D;   /* X-Plane: heading minus flown path */
@@ -217,7 +223,12 @@ static Result fly(const Case *c, int verbose) {
             if (s.vertical_mode == A380X_B1_ALT && toga) log_event(&res, t, "ALT", ra_ft);
             prev_vert = s.vertical_mode;
         }
-        if (s.land.land_active && !prev_land) { res.t_land = t; res.ra_land = ra_ft; log_event(&res, t, "LAND", ra_ft); }
+        if (s.land.land_active && !prev_land) {
+            res.t_land = t; res.ra_land = ra_ft; res.cap_land = s.land.capability; log_event(&res, t, "LAND", ra_ft);
+        }
+        if (s.land.capability_frozen && !res.cap_alert) res.cap_alert = s.land.capability;
+        if (s.land.capability_downgrade && !res.cap_downgrade_prev) ++res.cap_downgrades;
+        res.cap_downgrade_prev = s.land.capability_downgrade;
         if (s.land.flare_active && !prev_flare) { res.t_flare = t; res.ra_flare = ra_ft; log_event(&res, t, "FLARE", ra_ft); }
         if (s.land.retard_active && !prev_retard) { res.t_retard = t; res.ra_retard = ra_ft; log_event(&res, t, "IDLE(RETARD)", ra_ft); }
         if (s.land.rollout_active && !prev_ro) { res.t_rollout = t; log_event(&res, t, "ROLL OUT", ra_ft); }
@@ -262,7 +273,7 @@ static Result fly(const Case *c, int verbose) {
             if (hm < 0) nm = fmax(0, -hm * 1.3e7 - point_rate(&a, MAIN_X, GEAR_Z) * 2.7e6);
             if (hn < 0) nn = fmax(0, -hn * 2.3e6 - point_rate(&a, NOSE_X, GEAR_Z) * 5.0e5);
             if (hm < 0 && !res.touched) {
-                res.touched = 1; res.td_t = t; res.td_x = a.X; res.td_y = a.Y;
+                res.touched = 1; res.td_t = t; res.td_x = a.X; res.td_y = a.Y; res.cap_touchdown = s.land.capability;
                 res.td_sink_fpm = -last_vz_main / FT * 60; res.td_ias = in.ias_knots;
                 res.td_pitch = a.theta * R2D; res.td_crab_deg = a.psi * R2D; res.td_bank = a.phi * R2D;
                 res.td_tail_margin_m = point_height(&a, TAIL_X, TAIL_Z) - hm;
@@ -363,6 +374,11 @@ int main(int argc, char **argv) {
                 !strstr(r.sequence, "ALT*")) { puts("  FAIL go-around"); ++failures; }
             continue;
         }
+        {
+            static const char *const cap[] = {"none", "APPR 1", "LAND 2", "LAND 3 SINGLE", "LAND 3 DUAL"};
+            printf("  capability: %s at LAND, %s frozen at the 200 ft alert height, %s at touchdown, %d downgrade(s)\n",
+                   cap[r.cap_land], cap[r.cap_alert], cap[r.cap_touchdown], r.cap_downgrades);
+        }
         printf("  LAND %.0f ft, FLARE %.0f ft (%.1f s before touchdown), RETARD %.0f ft, ROLL OUT +%.2f s, A/THR off +%.1f s\n",
                r.ra_land, r.ra_flare, r.td_t - r.t_flare, r.ra_retard, r.t_rollout - r.td_t, r.t_athr_off - r.td_t);
         printf("  touchdown: %.0f m past threshold, %.2f m from centreline, sink %.0f fpm, IAS %.1f kt, pitch %.2f deg, "
@@ -374,6 +390,8 @@ int main(int argc, char **argv) {
             r.ra_land < 360 || r.ra_land > 400 || r.ra_flare < 30 || r.ra_flare > 80 ||
             r.td_sink_fpm < 30 || r.td_sink_fpm > 480 || r.td_x < 150 || r.td_x > 1000 ||
             fabs(r.td_y) > 6 || r.max_y_rollout > 10 || r.td_tail_margin_m < .5 || r.stop_x > rw.length ||
+            r.cap_land != A380X_LAND_CAPABILITY_LAND3_DUAL || r.cap_alert != A380X_LAND_CAPABILITY_LAND3_DUAL ||
+            r.cap_touchdown != A380X_LAND_CAPABILITY_LAND3_DUAL || r.cap_downgrades ||
             (c->retard_late ? 0 : r.t_retard <= 0)) {
             puts("  FAIL: outside the bench acceptance window"); ++failures;
         }

@@ -425,6 +425,28 @@ static void land_rollout_state(void) {
     guidance.land.land_active=guidance.land.flare_active=guidance.land.rollout_active=1;
     guidance.land.rollout_confirm_s=guidance.land.flare_confirm_s=1;
 }
+/* LAND capability redundancy inputs and the annunciated D1/D2 message (a380x_autoland.inc). */
+static void test_land_capability_inputs(void) {
+    setup();assert(fcu_init());
+    r(fcu.hydraulic_pressure[0])->value=3000;r(fcu.hydraulic_pressure[1])->value=3000;read_guidance_inputs(.1f);
+    assert(guidance_inputs.hydraulics_valid&&guidance_inputs.rudder_valid&&guidance_inputs.yaw_channel_available);
+    assert(guidance_inputs.side_attitude_valid[0]&&guidance_inputs.side_attitude_valid[1]);
+    assert(guidance_inputs.side_airdata_valid[0]&&guidance_inputs.side_airdata_valid[1]);
+    assert(fabs(guidance_inputs.ils[0].frequency_mhz-110.30)<.001&&fabs(guidance_inputs.ils[1].frequency_mhz-110.30)<.001);
+    r(fcu.hydraulic_pressure[1])->value=500;read_guidance_inputs(.1f);assert(!guidance_inputs.hydraulics_valid);
+    r(fcu.rudder_failure[1])->value=6;read_guidance_inputs(.1f);assert(!guidance_inputs.rudder_valid);
+    r(fcu.rudder_failure[1])->value=0;r(fcu.override_heading)->value=1;read_guidance_inputs(.1f);
+    assert(guidance_inputs.rudder_valid&&!guidance_inputs.yaw_channel_available);
+    r(fcu.override_heading)->value=0;refs.side[1].radio_altitude_valid=0;read_guidance_inputs(.1f);
+    assert(guidance_inputs.side_radio_height_valid[0]&&!guidance_inputs.side_radio_height_valid[1]);
+    refs.side[1].radio_altitude_valid=1;
+    guidance.land.capability=A380X_LAND_CAPABILITY_LAND3_DUAL;publish_guidance();assert(published.fma_d1d2==A380X_D1D2_LAND_3_DUAL);
+    guidance.land.capability=A380X_LAND_CAPABILITY_LAND3_SINGLE;publish_guidance();assert(published.fma_d1d2==A380X_D1D2_LAND_3_SINGLE);
+    guidance.land.capability=A380X_LAND_CAPABILITY_LAND2;publish_guidance();assert(published.fma_d1d2==A380X_D1D2_LAND_2);
+    guidance.land.capability=A380X_LAND_CAPABILITY_NONE;guidance.approach_selected=1;publish_guidance();
+    assert(published.fma_d1d2==A380X_D1D2_APPR_1);
+    fcu_shutdown();
+}
 static void test_yaw_lease(void) {
     setup();assert(fcu_init());engage();assert(!fcu.own_yaw);
     land_rollout_state();tick(1);
@@ -560,7 +582,7 @@ int main(int argc,char **argv) {
         lighting_shutdown();fcu_shutdown();return 0;
     }
     test_registry_and_partial_init();test_raw_sensor_and_radio_contracts();test_override_lifecycles();test_hardware_and_disconnect();
-    test_yaw_lease();
+    test_yaw_lease();test_land_capability_inputs();
     test_glareshield_lighting();
     test_display_unit_controls();
     test_pfd_aircraft_inputs();

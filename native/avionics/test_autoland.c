@@ -24,11 +24,17 @@ static A380XGuidanceInputs approach(void) {
     for (int n = 0; n < 2; ++n) {
         i.ils[n].valid = i.ils[n].loc_valid = i.ils[n].gs_valid = 1;
         i.ils[n].course_deg = 142; i.ils[n].gs_angle_deg = 3; i.ils[n].distance_nm = 3;
+        i.ils[n].frequency_mhz = 110.70;
+        i.side_radio_height_valid[n] = i.side_attitude_valid[n] = i.side_airdata_valid[n] = 1;
     }
+    i.hydraulics_valid = i.rudder_valid = i.yaw_channel_available = 1;
     return i;
 }
+/* Both radio altimeters follow the selected one; ra2_offset splits the F/O altimeter. */
+static double ra2_offset;
 static void run(A380XGuidanceState *s, A380XGuidanceInputs *i, double seconds) {
     for (int n = 0; n < (int)round(seconds / .02); ++n) {
+        i->side_radio_height_ft[0] = i->radio_height_ft; i->side_radio_height_ft[1] = i->radio_height_ft + ra2_offset;
         a380x_guidance_update(s, i, .02);
         assert(isfinite(s->pitch_servo) && isfinite(s->roll_servo) && isfinite(s->land.yaw_servo));
         assert(fabs(s->land.yaw_servo) <= 1 && s->throttle_command >= 0 && s->throttle_command <= 1);
@@ -66,7 +72,7 @@ static void test_land_engagement_and_inhibits(void) {
     A380XGuidanceState s; A380XGuidanceInputs i;
     established(&s, &i);
     i.radio_height_ft = 450; run(&s, &i, 2); assert(!s.land.land_active);
-    assert(s.land.capability == A380X_LAND_CAPABILITY_LAND2);
+    assert(s.land.capability == A380X_LAND_CAPABILITY_LAND3_DUAL);
     i.radio_height_ft = 395; run(&s, &i, 1.0); assert(!s.land.land_active);       /* 1.2 s confirm */
     run(&s, &i, .3); assert(s.land.land_active && s.land.bc1 == A380X_BC1_LAND && s.land.autoland);
     assert(s.ap1 && s.ap2 && s.approach_selected && !s.loc_armed && !s.gs_armed);
@@ -107,11 +113,116 @@ static void test_land_gating(void) {
     i.radio_height_ft = 40; run(&s, &i, .5);
     assert(!s.land.retard_active && s.thrust_mode == A380X_A1A2_SPEED && !s.land.yaw_active && s.land.yaw_servo == 0);
     a380x_guidance_destroy(&s);
-    /* LAND 2 needs both receivers on the same course and an AP. */
+}
+
+/* Capability truth table: one condition removed at a time from the full LAND 3 DUAL set. */
+static int capability_with(void (*change)(A380XGuidanceState *, A380XGuidanceInputs *)) {
+    A380XGuidanceState s; A380XGuidanceInputs i; int capability;
     established(&s, &i);
-    i.ils[1].course_deg = 150; run(&s, &i, .1); assert(s.land.capability == A380X_LAND_CAPABILITY_APPR1);
-    i.ils[1].course_deg = 142; i.ils[1].gs_valid = 0; run(&s, &i, .1); assert(s.land.capability == A380X_LAND_CAPABILITY_APPR1);
-    i.ils[1].gs_valid = 1; run(&s, &i, .1); assert(s.land.capability == A380X_LAND_CAPABILITY_LAND2);
+    i.radio_height_ft = 1500; run(&s, &i, .1);
+    assert(s.land.capability == A380X_LAND_CAPABILITY_LAND3_DUAL);
+    if (change) change(&s, &i);
+    run(&s, &i, 1.2);   /* > the 1 s downgrade confirmation */
+    capability = s.land.capability;
+    assert(capability == s.land.capability_raw);
+    a380x_guidance_destroy(&s);
+    return capability;
+}
+static void c_ap2_off(A380XGuidanceState *s, A380XGuidanceInputs *i) { cmd(s, i, A380X_FCU_AP2); }
+static void c_aps_off(A380XGuidanceState *s, A380XGuidanceInputs *i) { cmd(s, i, A380X_FCU_AP_DISCONNECT); }
+static void c_athr_off(A380XGuidanceState *s, A380XGuidanceInputs *i) { cmd(s, i, A380X_FCU_ATHR_DISCONNECT); }
+static void c_ra2_failed(A380XGuidanceState *s, A380XGuidanceInputs *i) { (void)s; i->side_radio_height_valid[1] = 0; }
+static void c_ra_disagree(A380XGuidanceState *s, A380XGuidanceInputs *i) { (void)s; (void)i; ra2_offset = 90; }
+static void c_ras_failed(A380XGuidanceState *s, A380XGuidanceInputs *i) {
+    (void)s; i->side_radio_height_valid[0] = i->side_radio_height_valid[1] = i->radio_height_valid = 0;
+}
+static void c_ils2_failed(A380XGuidanceState *s, A380XGuidanceInputs *i) { (void)s; i->ils[1].gs_valid = 0; }
+static void c_ils_freq(A380XGuidanceState *s, A380XGuidanceInputs *i) { (void)s; i->ils[1].frequency_mhz = 109.50; }
+static void c_ils_course(A380XGuidanceState *s, A380XGuidanceInputs *i) { (void)s; i->ils[1].course_deg = 150; }
+static void c_ils_disagree(A380XGuidanceState *s, A380XGuidanceInputs *i) { (void)s; i->ils[1].loc_deviation_dots = .4; }
+static void c_adirs2(A380XGuidanceState *s, A380XGuidanceInputs *i) { (void)s; i->side_airdata_valid[1] = 0; }
+static void c_attitude2(A380XGuidanceState *s, A380XGuidanceInputs *i) { (void)s; i->side_attitude_valid[1] = 0; }
+static void c_hydraulics(A380XGuidanceState *s, A380XGuidanceInputs *i) { (void)s; i->hydraulics_valid = 0; }
+static void c_rudder(A380XGuidanceState *s, A380XGuidanceInputs *i) { (void)s; i->rudder_valid = 0; }
+static void c_yaw(A380XGuidanceState *s, A380XGuidanceInputs *i) { (void)s; i->yaw_channel_available = 0; }
+static void c_ap2_athr_off(A380XGuidanceState *s, A380XGuidanceInputs *i) { c_ap2_off(s, i); c_athr_off(s, i); }
+static void test_capability_truth_table(void) {
+    static const struct { const char *name; void (*change)(A380XGuidanceState *, A380XGuidanceInputs *); int expected; } rows[] = {
+        {"all", NULL, A380X_LAND_CAPABILITY_LAND3_DUAL},
+        {"AP2 off (one AP)", c_ap2_off, A380X_LAND_CAPABILITY_LAND3_SINGLE},
+        {"F/O ADIRS air data", c_adirs2, A380X_LAND_CAPABILITY_LAND3_SINGLE},
+        {"F/O ADIRS attitude", c_attitude2, A380X_LAND_CAPABILITY_LAND3_SINGLE},
+        {"hydraulic system 1/2", c_hydraulics, A380X_LAND_CAPABILITY_LAND3_SINGLE},
+        {"A/THR off", c_athr_off, A380X_LAND_CAPABILITY_LAND2},
+        {"F/O radio altimeter failed", c_ra2_failed, A380X_LAND_CAPABILITY_LAND2},
+        {"radio altimeters disagree", c_ra_disagree, A380X_LAND_CAPABILITY_LAND2},
+        {"yaw override unavailable", c_yaw, A380X_LAND_CAPABILITY_LAND2},
+        {"AP2 and A/THR off", c_ap2_athr_off, A380X_LAND_CAPABILITY_LAND2},
+        {"no AP", c_aps_off, A380X_LAND_CAPABILITY_APPR1},
+        {"both radio altimeters failed", c_ras_failed, A380X_LAND_CAPABILITY_APPR1},
+        {"ILS 2 glide failed", c_ils2_failed, A380X_LAND_CAPABILITY_APPR1},
+        {"ILS 2 other frequency", c_ils_freq, A380X_LAND_CAPABILITY_APPR1},
+        {"ILS 2 other course", c_ils_course, A380X_LAND_CAPABILITY_APPR1},
+        {"ILS deviations disagree", c_ils_disagree, A380X_LAND_CAPABILITY_APPR1},
+        {"rudder failed", c_rudder, A380X_LAND_CAPABILITY_APPR1},
+    };
+    static const char *const names[] = {"none", "APPR 1", "LAND 2", "LAND 3 SINGLE", "LAND 3 DUAL"};
+    for (unsigned r = 0; r < sizeof(rows) / sizeof(rows[0]); ++r) {
+        int got;
+        ra2_offset = 0;
+        got = capability_with(rows[r].change);
+        printf("  capability %-28s %s\n", rows[r].name, names[got]);
+        assert(got == rows[r].expected);
+    }
+    ra2_offset = 0;
+    /* FMA mapping: exactly one capability word bit, D1/D2 message. */
+    assert(a380x_land_capability_bit(A380X_LAND_CAPABILITY_LAND2) == 0 && a380x_land_capability_bit(A380X_LAND_CAPABILITY_LAND3_SINGLE) == 1 &&
+           a380x_land_capability_bit(A380X_LAND_CAPABILITY_LAND3_DUAL) == 2 && a380x_land_capability_bit(A380X_LAND_CAPABILITY_APPR1) < 0);
+    assert(a380x_land_capability_d1d2(A380X_LAND_CAPABILITY_LAND3_DUAL) == A380X_D1D2_LAND_3_DUAL &&
+           a380x_land_capability_d1d2(A380X_LAND_CAPABILITY_LAND3_SINGLE) == A380X_D1D2_LAND_3_SINGLE &&
+           a380x_land_capability_d1d2(A380X_LAND_CAPABILITY_LAND2) == A380X_D1D2_LAND_2 &&
+           a380x_land_capability_d1d2(A380X_LAND_CAPABILITY_APPR1) == A380X_D1D2_APPR_1 &&
+           a380x_land_capability_d1d2(A380X_LAND_CAPABILITY_NONE) == A380X_D1D2_NONE);
+}
+
+/* Downgrade confirmation and triple-click level, upgrades, cancellation, freezing below 200 ft. */
+static void test_capability_downgrade_and_freeze(void) {
+    A380XGuidanceState s; A380XGuidanceInputs i;
+    established(&s, &i);
+    i.radio_height_ft = 1500; run(&s, &i, .1);
+    assert(s.land.capability == A380X_LAND_CAPABILITY_LAND3_DUAL && !s.land.capability_downgrade);
+    /* AP2 off: shown 1 s later (confirmation), then the downgrade level holds 3 s. */
+    cmd(&s, &i, A380X_FCU_AP2); run(&s, &i, .9);
+    assert(s.land.capability == A380X_LAND_CAPABILITY_LAND3_DUAL && s.land.capability_raw == A380X_LAND_CAPABILITY_LAND3_SINGLE);
+    run(&s, &i, .2); assert(s.land.capability == A380X_LAND_CAPABILITY_LAND3_SINGLE && s.land.capability_downgrade);
+    run(&s, &i, 3); assert(!s.land.capability_downgrade);
+    /* A brief loss (< 1 s) is not annunciated; an upgrade is immediate and silent. */
+    i.ils[1].gs_valid = 0; run(&s, &i, .5); i.ils[1].gs_valid = 1; run(&s, &i, .5);
+    assert(s.land.capability == A380X_LAND_CAPABILITY_LAND3_SINGLE && !s.land.capability_downgrade);
+    cmd(&s, &i, A380X_FCU_AP2); run(&s, &i, .02);
+    assert(s.land.capability == A380X_LAND_CAPABILITY_LAND3_DUAL && !s.land.capability_downgrade);
+    /* LAND below 400 ft, then the 200 ft alert height freezes the annunciation. */
+    i.radio_height_ft = 390; run(&s, &i, 1.4); assert(s.land.land_active && !s.land.capability_frozen);
+    i.radio_height_ft = 190; run(&s, &i, .1); assert(s.land.capability_frozen);
+    cmd(&s, &i, A380X_FCU_AP2); i.side_radio_height_valid[1] = 0; run(&s, &i, 2);
+    assert(s.land.capability == A380X_LAND_CAPABILITY_LAND3_DUAL && s.land.capability_raw == A380X_LAND_CAPABILITY_LAND2);
+    assert(!s.land.capability_downgrade);
+    /* Through touchdown and roll-out it stays frozen; the go-around/ground reset clear it. */
+    i.radio_height_ft = 0; i.on_ground = 1; run(&s, &i, 1);
+    assert(s.land.rollout_active && s.land.capability == A380X_LAND_CAPABILITY_LAND3_DUAL);
+    a380x_guidance_destroy(&s);
+    /* Cancelling APPR above LAND removes the capability without a downgrade alert. */
+    established(&s, &i);
+    i.radio_height_ft = 1500; run(&s, &i, .1); cmd(&s, &i, A380X_FCU_APPR); run(&s, &i, 1.5);
+    assert(s.land.capability == A380X_LAND_CAPABILITY_NONE && !s.land.capability_downgrade && !s.land.capability_frozen);
+    a380x_guidance_destroy(&s);
+    /* A go-around below 200 ft ends LAND, the freeze and the capability. */
+    established(&s, &i);
+    i.radio_height_ft = 390; run(&s, &i, 1.4); i.radio_height_ft = 150; run(&s, &i, .2);
+    assert(s.land.capability_frozen);
+    levers(&i, 1); run(&s, &i, .1);
+    assert(s.land.go_around_active && !s.land.capability_frozen && s.land.capability == A380X_LAND_CAPABILITY_NONE &&
+           !s.land.capability_downgrade);
     a380x_guidance_destroy(&s);
 }
 
@@ -207,8 +318,10 @@ static void test_go_around(void) {
 int main(void) {
     test_land_engagement_and_inhibits();
     test_land_gating();
+    test_capability_truth_table();
+    test_capability_downgrade_and_freeze();
     test_flare_retard_rollout_and_athr();
     test_go_around();
-    puts("A380 autoland mode logic: LAND/FLARE/ROLL OUT, RETARD, ground A/THR, SRS GA/GA TRK, capability and yaw lease passed");
+    puts("A380 autoland mode logic: LAND/FLARE/ROLL OUT, RETARD, ground A/THR, SRS GA/GA TRK, LAND 2/3 capability truth table, downgrade/freeze and yaw lease passed");
     return 0;
 }

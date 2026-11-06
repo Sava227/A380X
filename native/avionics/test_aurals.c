@@ -169,6 +169,19 @@ int main(void)
            "attention getters", loops[AUR_CRC], starts[AUR_CCHORD], loops[AUR_CCHORD], starts[AUR_TRIPLE_CLICK],
            loops[AUR_CAVALRY]);
 
+    /* Landing capability downgrade (a380x_autoland.inc level): a rising edge clicks once, the held
+     * level does not repeat, a new downgrade clicks again; with a reversion in the same frame: one. */
+    reset(); in = base(); in.ra_ft = 1500.0;
+    in.capability_downgrade = 1; for (int i = 0; i < 90; ++i) step(&in); in.capability_downgrade = 0; step(&in);
+    assert(starts[AUR_TRIPLE_CLICK] == 1);
+    in.capability_downgrade = 1; step(&in); in.capability_downgrade = 0; step(&in);
+    assert(starts[AUR_TRIPLE_CLICK] == 2);
+    in.capability_downgrade = 1; in.mode_reversion = 1; step(&in);
+    assert(starts[AUR_TRIPLE_CLICK] == 3);
+    in.capability_downgrade = 0; in.mode_reversion = 0; step(&in);
+    printf("%-34s triple click on each capability downgrade edge (%d), one for a coincident reversion\n",
+           "capability downgrade", starts[AUR_TRIPLE_CLICK]);
+
     /* Seat belts: no chime in the first 5 s after power-up (state settles), then on each change. */
     reset(); in = base(); in.ra_ft = 0.0; in.on_ground = 1; in.seatbelt_sign = 0;
     step(&in); in.seatbelt_sign = 2; step(&in);                       /* during settle: silent */
@@ -179,7 +192,7 @@ int main(void)
 
     /* Unpowered FWS: nothing at all. At power-up the pulses/edges that were already high do not fire;
      * a CRC request (a level) sounds as soon as the FWS is powered. */
-    reset(); in = base(); in.powered = 0; in.crc = 1; in.v1 = 1; in.mode_reversion = 1;
+    reset(); in = base(); in.powered = 0; in.crc = 1; in.v1 = 1; in.mode_reversion = 1; in.capability_downgrade = 1;
     approach(&in, 1200.0, 12.0, -1.0);
     assert(!loops[AUR_CRC] && !starts[AUR_V1] && !starts[AUR_TRIPLE_CLICK]);
     in.powered = 1; step(&in);

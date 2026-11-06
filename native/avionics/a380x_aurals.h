@@ -9,7 +9,7 @@
  *   alert), the V1 callout pulse and the stall warning. The radio-altitude callouts, the minimums
  *   callouts and RETARD are decided here from the captain's radio altimeter, the FMS minimums
  *   (PERF APPR BARO / RADIO), A/P engagement and the thrust lever angles. The triple click follows
- *   the FMA mode reversion; the chime follows the FASTEN SEAT BELTS sign. The A/P disconnect cavalry
+ *   the FMA mode reversion and a landing capability downgrade; the chime follows the FASTEN SEAT BELTS sign. The A/P disconnect cavalry
  *   charge follows the FWS request (one 1.2 s cycle for a voluntary disconnect, repeated until
  *   acknowledged for an involuntary one). GPWS modes 1 (excessive descent rate) and 2 (excessive terrain
  *   closure rate), ported from FBW A380 LegacyGpws.ts, loop the TERRAIN / PULL UP voice (the EFB
@@ -58,6 +58,7 @@ typedef struct {
     double vs_fpm;
     int landing_flaps, gear_down;
     int mode_reversion;
+    int capability_downgrade;        /* landing capability downgraded (guidance level, a380x_autoland.inc) */
     int seatbelt_valid, seatbelt_sign;              /* sign 0 off, > 0 on */
 } AurInputs;
 
@@ -79,7 +80,7 @@ typedef struct {
     unsigned char retard_armed, retard_called; int retard_count; double retard_next; int retard_active;
     int voice; double voice_until;   /* sample playing, -1 none */
     int pending; double pending_since;
-    unsigned char prev_v1, prev_cchord_once, prev_reversion;
+    unsigned char prev_v1, prev_cchord_once, prev_reversion, prev_downgrade;
     int prev_seatbelt;
     int port_stall;
     double gpws_ra_rate, gpws_last_ra, gpws_mode2_time; int gpws_last_ra_valid, gpws_pull_up;

@@ -91,7 +91,7 @@ Use a repeatable saved airborne test state. Retain mode traces, actual control o
 - [ ] Confirm cursor motion does not rebuild airport geometry or display textures unnecessarily; panning/zoom and page changes remain responsive. Recheck ND 0.05/0.1 NM close maps, stand/taxiway labels and original map-panel buttons.
 - [ ] Confirm PFD/FMA, MFD FCU backup, ND, ECAM, ADIRS buttons and current aircraft flight model still work. Attach errors, missing assets/datarefs, unresolved tests and restoration details instead of marking an incomplete run passed.
 
-Final acceptance requires real installation and cockpit verification in addition to passing bench checks. Unsupported SRS takeoff, the FMS go-around phase, LAND 3, full LNAV/VNAV, complete FE/FADEC and full redundant computer behavior remain listed in the functional specification.
+Final acceptance requires real installation and cockpit verification in addition to passing bench checks. Unsupported SRS takeoff, the FMS go-around phase, real LAND 3 monitoring redundancy, full LNAV/VNAV, complete FE/FADEC and full redundant computer behavior remain listed in the functional specification.
 
 ## Autoland, RETARD and go-around (AUTOLAND.md)
 
@@ -104,6 +104,7 @@ Watch `a380x/xp12/fcu/{land_active,flare_active,rollout_active,retard_active,go_
 - [ ] Pause, replay, AP disconnect and physical rudder-pedal input during ROLL OUT each release `override_joystick_heading`.
 - [ ] TOGA at 100-200 ft: SRS / GA TRK, MAN TOGA, AP stays engaged, height loss; levers to CL: THR CLB; ALT* at the FCU altitude.
 - [ ] FD-only approach: LAND/FLARE FD guidance, no RETARD, no yaw lease; manual RETARD reminder at 20 ft.
+- [ ] Landing capability: APPR armed with AP1 only and A/THR shows LAND 3 SINGLE, AP1+AP2 LAND 3 DUAL. Above 200 ft, disconnect AP2, fail NAV 2, the copilot radio altimeter or hydraulic system 1/2: downgrade after about 1 s with a triple click. Below 200 ft in LAND: no change and no click. Check that `sim/cockpit2/hydraulics/indicators/hydraulic_pressure_1/2` read at least 900 in flight. Check `NO DH` / `RADIO` / `BARO` in D3 for each PERF APPR minimum.
 
 
 ## Shared LCD follow-up

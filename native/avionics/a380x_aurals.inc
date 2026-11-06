@@ -224,6 +224,7 @@ static void aurals_update_frame(float dt)
     in.vs_fpm = guidance_inputs.vertical_speed_fpm;
     in.landing_flaps = pfd_guidance.flap_handle_index >= 3; in.gear_down = pfd_guidance.gear_down;
     in.mode_reversion = guidance.mode_reversion;
+    in.capability_downgrade = guidance.land.capability_downgrade;
     in.seatbelt_valid = aur.seatbelt != NULL;
     in.seatbelt_sign = aur.seatbelt ? XPLMGetDatai(aur.seatbelt) : 0;
     aurals_update(&aur.core, &in, &out);

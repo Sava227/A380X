@@ -350,14 +350,15 @@ static void xpkit_guidance_words(XpKitJson *j) {
         default:break;
     }
     {
-        /* PrimFgPublisher.ts bit map: word 1 bit 23 LAND, 27 LAND 2 capability; word 2 bit 28 LAND armed;
-         * word 3 bit 24 FLARE; word 4 bits 25 ALIGN / 26 ROLL OUT. LAND replaces the G/S and LOC words
-         * (FMA.tsx BC1Cell). LAND 3 fail-passive/fail-op bits 28/29 are never set by this port. */
+        /* PrimFgPublisher.ts bit map: word 1 bit 23 LAND, 27/28/29 LAND 2 / LAND 3 fail-passive (SINGLE) /
+         * fail-op (DUAL) capability, only the annunciated one; word 2 bit 28 LAND armed; word 3 bit 24
+         * FLARE; word 4 bits 25 ALIGN / 26 ROLL OUT. LAND replaces the G/S and LOC words (BC1Cell). */
         const A380XLandingState *l=&g->land;
+        int cap_bit=a380x_land_capability_bit(l->capability);
         if(l->land_active) {
             d3&=~(XPKIT_BIT(21,1)|XPKIT_BIT(22,1)); d4&=~(XPKIT_BIT(13,1)|XPKIT_BIT(14,1));
         }
-        d1|=XPKIT_BIT(23,l->land_active)|XPKIT_BIT(27,l->capability==A380X_LAND_CAPABILITY_LAND2);
+        d1|=XPKIT_BIT(23,l->land_active)|(cap_bit>=0?XPKIT_BIT(27+cap_bit,1):0);
         d2|=XPKIT_BIT(28,g->approach_selected && !l->land_active);
         d3|=XPKIT_BIT(24,l->land_active && l->flare_active);
         d4|=XPKIT_BIT(25,l->align_active)|XPKIT_BIT(26,l->rollout_active);
@@ -421,12 +422,24 @@ static void xpkit_guidance_words(XpKitJson *j) {
         XPW("V_4",pfd_guidance.s_speed_knots,pfd_guidance.s_speed_knots>0);
 #undef XPW
     }
-    /* FcdcPublisher.ts FG word 1 (FMA D1D2 capability): bit 18 LAND, 19 GA, 24 LAND 2. */
+    /* FcdcPublisher.ts FG word 1 (FMA D1D2 capability): bit 18 LAND, 19 GA, 24/25/26 LAND 2 / LAND 3
+     * SINGLE / LAND 3 DUAL (exactly one: computeD1D2Message tests LAND 2 first). */
     for(int unit=1;unit<=2;++unit) {
-        char prefix[64]; snprintf(prefix,sizeof(prefix),"L:A32NX_FCDC_%d_",unit);
+        char prefix[64]; int cap_bit=a380x_land_capability_bit(g->land.capability);
+        snprintf(prefix,sizeof(prefix),"L:A32NX_FCDC_%d_",unit);
         xpkit_word(j,prefix,"FG_DISCRETE_WORD_1",XPKIT_BIT(18,g->land.land_active)|
-            XPKIT_BIT(19,g->land.go_around_active)|XPKIT_BIT(24,g->land.capability==A380X_LAND_CAPABILITY_LAND2),
+            XPKIT_BIT(19,g->land.go_around_active)|(cap_bit>=0?XPKIT_BIT(24+cap_bit,1):0),
             g->initialized);
+    }
+    /* FMA D3 minimums (FMA.tsx D3Cell, PFDSimvarPublisher.tsx fm1/fm2 words): EIS discrete word 2
+     * bit 29 NO DH, DECISION_HEIGHT (RADIO) and MINIMUM_DESCENT_ALTITUDE (BARO, also the altitude
+     * tape minimum) from the native FMS PERF APPR entry (fms_feed.minimum_mode). */
+    for(int unit=1;unit<=2;++unit) {
+        char prefix[64]; int mode=fms_feed.valid?fms_feed.minimum_mode:0;
+        snprintf(prefix,sizeof(prefix),"L:A32NX_FM%d_",unit);
+        xpkit_word(j,prefix,"EIS_DISCRETE_WORD_2",XPKIT_BIT(29,mode==3),fms_feed.valid);
+        xpkit_word(j,prefix,"DECISION_HEIGHT",mode==1?fms_feed.minimum_ft:0,mode==1);
+        xpkit_word(j,prefix,"MINIMUM_DESCENT_ALTITUDE",mode==2?fms_feed.minimum_ft:0,mode==2);
     }
     for(int side=0;side<2;++side) {
         const EfisSide *e=&efis[side]; char prefix[64];

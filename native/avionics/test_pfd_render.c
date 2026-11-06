@@ -982,6 +982,17 @@ int main(int argc,char **argv) {
     assert(has_label("ROLL OUT") && !has_label("LAND"));
     pfd_guidance.fma_bc1=A380X_BC1_NONE;clear_capture();draw_fma(&canvas,&refs.side[0]);
     assert(has_label("G/S") && has_label("LOC") && !has_label("ROLL OUT"));
+    /* LAND 3 capability on two lines (FBW D1D2Cell), D3 minimums (D3Cell). */
+    published.fma_d1d2=A380X_D1D2_LAND_3_DUAL;pfd_guidance.fma_minimum_mode=3;clear_capture();draw_fma(&canvas,&refs.side[0]);
+    assert(has_label("LAND 3") && has_label("DUAL") && !has_label("SINGLE") && !has_label("LAND 2") && has_label("NO DH"));
+    published.fma_d1d2=A380X_D1D2_LAND_3_SINGLE;pfd_guidance.fma_minimum_mode=1;pfd_guidance.fma_minimum_ft=50;
+    clear_capture();draw_fma(&canvas,&refs.side[0]);
+    assert(has_label("LAND 3") && has_label("SINGLE") && has_label("RADIO") && has_label("50") && !has_label("NO DH"));
+    assert(find_label("50")->color.b == CYAN.b);
+    published.fma_d1d2=A380X_D1D2_APPR_1;pfd_guidance.fma_minimum_mode=2;pfd_guidance.fma_minimum_ft=720;
+    clear_capture();draw_fma(&canvas,&refs.side[0]);
+    assert(has_label("APPR 1") && !has_label("LAND 3") && has_label("BARO") && has_label("720"));
+    pfd_guidance.fma_minimum_mode=0;pfd_guidance.fma_minimum_ft=0;
     published.fma_b1=A380X_B1_ALT;published.fma_c1=A380X_C1_HDG;published.fma_d1d2=0;
     pfd_guidance.guidance_valid=0;pfd_guidance.athr_active=0;clear_capture();draw_fma(&canvas,&refs.side[0]);
     assert(!has_label("OP CLB") && !has_label("HDG") && !has_label("THR CLB") && !has_label("ALT"));
