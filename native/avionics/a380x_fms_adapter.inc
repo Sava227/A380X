@@ -17,6 +17,7 @@
  * FMSR(...): build.py scans both for its DataRefs.txt and provider contracts.
  */
 #include "a380x_elec_power.h"
+#include "a380x_fmgc_guidance.h"
 
 /* ---- Raw simulator inputs (spec 07 section 9.4, spec 06 section 12) ------------------------ */
 
@@ -63,6 +64,12 @@ static unsigned fmsa_nav_seq;
 static double fmsa_fpln_timer;
 static int fmsa_cold_and_dark = 1;
 static char fmsa_xplane_root[512];
+/* FMGC managed guidance (LNAV/VNAV/managed speed, a380x_fmgc_guidance.c) and its MFD predictions. */
+static A380XFmgc fmsa_fmgc;
+static A380XFmgcInputs fmsa_fmgc_in;
+static A380XFplnPredFeed fmsa_pred_feed;
+static A380XFplnWptPred fmsa_leg_pred[A380X_FPLN_MAX_ELEMENTS];
+static int fmsa_pred_valid;
 
 /* Writable controls (spec 07 section 10.3). */
 typedef struct {
@@ -239,105 +246,21 @@ static double fmsa_hk_distance_to_destination(struct A380XFlightPlans *p, int pl
     return isfinite(d) ? (double)d : fmsa_nan();
 }
 
-/* Upper altitude of a CLB constraint ('@', '-', 'B' alt1), NAN if none. */
-static double fmsa_climb_cstr_alt(const A380XFplnLeg *l)
-{
-    A380XFplnAltCstr a = a380x_fpln_eff_alt(l);
-    if (l->cstr_type != A380X_CSTR_CLB) return fmsa_nan();
-    if ((a.desc == '@' || a.desc == '-' || a.desc == 'B') && isfinite(a.alt1_ft)) return a.alt1_ft;
-    return fmsa_nan();
-}
-
-/* Lower altitude of a DES constraint ('@', '+' alt1, 'B' alt2), NAN if none. */
-static double fmsa_descent_cstr_alt(const A380XFplnLeg *l)
-{
-    A380XFplnAltCstr a = a380x_fpln_eff_alt(l);
-    if (l->cstr_type != A380X_CSTR_DES) return fmsa_nan();
-    if ((a.desc == '@' || a.desc == '+') && isfinite(a.alt1_ft)) return a.alt1_ft;
-    if (a.desc == 'B' && isfinite(a.alt2_ft)) return a.alt2_ft;
-    return fmsa_nan();
-}
-
-static double fmsa_cstr_speed(const A380XFplnLeg *l, A380XFplnCstrType type)
-{
-    A380XFplnSpdCstr s = a380x_fpln_eff_spd(l);
-    if (l->cstr_type != type || !s.desc || !isfinite(s.speed) || s.speed < 2.0f) return fmsa_nan();
-    return s.speed;
-}
-
+/* Managed profile queries (spec 07 sections 5.7 / 6.3): shared with the FMGC guidance and its
+ * offline tests in a380x_fmgc_guidance.c (moved there unchanged from this adapter). */
 static double fmsa_hk_lowest_climb_constraint(struct A380XFlightPlans *p, int plan)
 {
-    const A380XFplnPlan *pl = fmsa_plan(p, plan);
-    double lowest = fmsa_nan();
-    int i, end;
-    if (!pl) return lowest;
-    end = pl->pri.first_missed_appr_index < pl->pri.count ? pl->pri.first_missed_appr_index : pl->pri.count;
-    for (i = 0; i < end; ++i) {
-        double a = fmsa_climb_cstr_alt(&pl->pri.el[i]);
-        if (isfinite(a) && (!isfinite(lowest) || a < lowest)) lowest = a;
-    }
-    return lowest;
-}
-
-/* managedProfile of the active leg (spec 07 section 5.7, FAI.ts:1506-1603). */
-typedef struct { double climb_speed, climb_alt, descent_speed, prev_descent_speed, descent_alt; } FmsaProfile;
-
-static int fmsa_profile(struct A380XFlightPlans *p, FmsaProfile *out)
-{
-    const A380XFplnPlan *pl = fmsa_plan(p, A380X_PLAN_ACTIVE);
-    int i, end, active;
-    double run;
-    out->climb_speed = out->climb_alt = out->descent_speed = out->prev_descent_speed = out->descent_alt = fmsa_nan();
-    if (!pl) return 0;
-    active = pl->active_leg_index;
-    end = pl->pri.first_missed_appr_index < pl->pri.count ? pl->pri.first_missed_appr_index : pl->pri.count;
-    if (active < 0 || active >= end) return 0;
-    /* Backward pass: running minimum of CLB speed / altitude constraints from the end down to the
-     * active leg; running maximum of DES altitude constraints. */
-    for (i = end - 1; i >= active; --i) {
-        const A380XFplnLeg *l = &pl->pri.el[i];
-        double s = fmsa_cstr_speed(l, A380X_CSTR_CLB), a = fmsa_climb_cstr_alt(l), d = fmsa_descent_cstr_alt(l);
-        if (isfinite(s) && (!isfinite(out->climb_speed) || s < out->climb_speed)) out->climb_speed = s;
-        if (isfinite(a) && (!isfinite(out->climb_alt) || a < out->climb_alt)) out->climb_alt = a;
-        if (isfinite(d) && (!isfinite(out->descent_alt) || d > out->descent_alt)) out->descent_alt = d;
-    }
-    if (isfinite(out->descent_alt) && isfinite(pl->pri.dest_elev_ft) && out->descent_alt < pl->pri.dest_elev_ft)
-        out->descent_alt = pl->pri.dest_elev_ft;
-    /* Forward pass: running minimum of DES speed constraints up to the active leg. */
-    run = fmsa_nan();
-    for (i = 0; i <= active; ++i) {
-        double s = fmsa_cstr_speed(&pl->pri.el[i], A380X_CSTR_DES);
-        if (i == active) out->prev_descent_speed = run;
-        if (isfinite(s) && (!isfinite(run) || s < run)) run = s;
-    }
-    out->descent_speed = run;
-    return 1;
+    return a380x_fmgc_lowest_climb_constraint(p, plan);
 }
 
 static double fmsa_hk_speed_constraint(struct A380XFlightPlans *p, int phase)
 {
-    FmsaProfile pr;
-    if (!fmsa_profile(p, &pr)) return fmsa_nan();
-    if (phase == A380X_FMS_PHASE_CLIMB || phase == A380X_FMS_PHASE_GOAROUND) return pr.climb_speed;
-    if (phase == A380X_FMS_PHASE_DESCENT) {
-        float dtg = a380x_fpln_dist_to_active(p, A380X_PLAN_ACTIVE, &fmsa_aircraft);
-        double prev = pr.prev_descent_speed, decel;
-        if (!isfinite(pr.descent_speed)) return fmsa_nan();
-        if (!isfinite(prev)) return pr.descent_speed;
-        decel = (prev - pr.descent_speed) * 0.15;
-        decel = decel < 3.0 ? 3.0 : decel > 20.0 ? 20.0 : decel;
-        return isfinite(dtg) && dtg < decel ? pr.descent_speed : prev;
-    }
-    return fmsa_nan();
+    return a380x_fmgc_speed_constraint(p, &fmsa_aircraft, phase);
 }
 
 static int fmsa_hk_constraint_altitudes(struct A380XFlightPlans *p, double *climb_alt_ft, double *descent_alt_ft)
 {
-    FmsaProfile pr;
-    if (!fmsa_profile(p, &pr)) return 0;
-    *climb_alt_ft = pr.climb_alt;
-    *descent_alt_ft = pr.descent_alt;
-    return 1;
+    return a380x_fmgc_constraint_altitudes(p, climb_alt_ft, descent_alt_ft);
 }
 
 static int fmsa_hk_active_legs_compatible(struct A380XFlightPlans *p, int sec_plan)
@@ -673,7 +596,7 @@ static void fmsa_read_inputs(int powered)
     in->lateral_mode = fmsa_lateral_mode();
     in->fcu_vs_fpm = guidance.selected_vs_fpm;
     in->fcu_fpa_deg = guidance.selected_fpa_deg;
-    in->vnav_decel_reached = 0; /* VNAV not ported */
+    in->vnav_decel_reached = fmsa_fmgc.out.decel_reached; /* FMGC DECEL point (previous frame) */
     in->cold_and_dark_spawn = fmsa_cold_and_dark;
     in->mfd_on_active_init_fuel_perf = fmsa_mfd_on_init_fuel_perf();
     in->efis_baro_inhg[0] = efis[0].baro_inhg;
@@ -843,6 +766,8 @@ static int fmsa_init(void)
     memset(&fms_feed, 0, sizeof(fms_feed));
     fmsa_nav_seq = 0;
     fmsa_fpln_timer = 0.0;
+    a380x_fmgc_init(&fmsa_fmgc);
+    fmsa_pred_valid = 0;
     fcu_command_observer = fmsa_on_fcu_command;
     fmsa_initialized = 1;
     return 1;
@@ -878,9 +803,86 @@ static void fmsa_plane_loaded(void)
     fmsa_cold_and_dark = a380x_power.available ? a380x_power.spawn_mode == A380X_ELN_SPAWN_COLD_DARK
                                                : !fmsa_engines_running();
     a380x_fms_reset(&fmsa_fms);
+    a380x_fmgc_init(&fmsa_fmgc);
+    fmsa_pred_valid = 0;
     fmsa_nav_seq = fmsa_fms.out.nav_request_seq;
     sys_fms_reset();
     survh_defaults(fmsa_cold_and_dark);
+}
+
+/* ---- FMGC managed guidance (a380x_fmgc_guidance.c) ------------------------------------------ */
+
+static double fmsa_perf(int field)
+{
+    A380XFmsValue v = a380x_fms_get(&fmsa_fms, A380X_FMS_PLAN_ACTIVE, (A380XFmsField)field);
+    return v.has && isfinite(v.v) ? v.v : 0.0;
+}
+
+static void fmsa_fmgc_inputs(A380XFmgcInputs *g, const A380XFmsOutputs *o)
+{
+    const A380XFmsInputs *in = &fmsa_in;
+    double psi = fmsa_getf(FMSA_IN_TRUE_PSI);
+    memset(g, 0, sizeof(*g));
+    g->position_valid = in->position_valid && isfinite(in->true_track_deg);
+    g->lat_deg = in->lat_deg; g->lon_deg = in->lon_deg;
+    g->alt_ft = in->baro_alt_ft; g->vs_fpm = in->vertical_speed_fpm;
+    g->gs_kt = in->ground_speed_kt; g->tas_kt = in->tas_kt; g->cas_kt = in->cas_kt; g->mach = in->mach;
+    g->true_track_deg = in->true_track_deg;
+    g->true_heading_deg = isfinite(psi) ? psi : in->true_track_deg;
+    g->magvar_deg = isfinite(in->magnetic_variation_deg) ? in->magnetic_variation_deg : 0.0;
+    g->on_ground = in->on_ground;
+    g->radio_alt_ft = in->radio_alt_valid ? in->radio_alt_ft : 0.0;
+    g->fms_valid = o->valid;
+    g->phase = a380x_fms_phase(&fmsa_fms);
+    g->cruise_alt_ft = o->cruise_altitude_ft;
+    g->fcu_alt_ft = guidance.selected_altitude_ft;
+    g->managed_speed_kt = o->managed_speed_valid ? o->managed_speed_knots : 0.0;
+    g->managed_is_mach = o->managed_speed_is_mach;
+    g->managed_mach = o->managed_mach;
+    g->descent_speed_kt = fmsa_perf(A380X_FMS_F_DES_MANAGED_SPD);
+    g->descent_mach = fmsa_perf(A380X_FMS_F_DES_MANAGED_MACH);
+    g->des_limit_kt = fmsa_perf(A380X_FMS_F_DES_SPD_LIM);
+    g->des_limit_alt_ft = fmsa_perf(A380X_FMS_F_DES_SPD_LIM_ALT);
+    g->green_dot_kt = o->green_dot_knots; g->s_speed_kt = o->s_speed_knots; g->f_speed_kt = o->f_speed_knots;
+    g->vapp_kt = o->approach_vapp_knots; g->vls_kt = o->vls_knots;
+    g->flap_lever = in->flap_lever;
+    g->landing_conf3 = o->landing_conf3;
+    g->static_pressure_hpa = in->static_pressure_valid ? in->static_pressure_hpa : 0.0;
+    g->nav_engaged = guidance.lateral_mode == A380X_C1_NAV;
+    g->nav_armed = guidance.nav_armed;
+    g->vertical_managed = guidance.altitude_managed;
+}
+
+/* FMGC outputs into the guidance feed; the managed speed of DESCENT / APPROACH replaces the FMS one. */
+static void fmsa_fmgc_feed(A380XFmsFeed *f, const A380XFmsOutputs *o)
+{
+    const A380XFmgcOutputs *g = a380x_fmgc_outputs(&fmsa_fmgc);
+    f->phase_valid = 1;
+    f->phase = a380x_fms_phase(&fmsa_fms);
+    f->cruise_altitude_ft = o->cruise_altitude_ft > 0 ? o->cruise_altitude_ft : 0.0;
+    if (g->lnav_valid && fmsa_fmgc_in.position_valid) {
+        f->route_valid = 1;
+        f->nav_capture = g->nav_capture;
+        f->route_xtk_nm = g->fbw_xtk_nm;
+        f->route_track_error_deg = g->fbw_tae_deg;
+        f->route_bank_deg = g->bank_ff_deg;
+        f->managed_heading_deg = g->managed_heading_mag_deg;
+        f->vertical_valid = isfinite(g->managed_altitude_ft);
+        f->managed_altitude_ft = g->managed_altitude_ft;
+        f->altitude_is_constraint = g->managed_altitude_is_constraint;
+        f->path_valid = g->vnav_valid && isfinite(g->path_alt_ft);
+        f->path_altitude_ft = g->path_alt_ft;
+        f->path_vs_fpm = g->path_vs_fpm;
+        f->vdev_ft = g->vdev_ft;
+        f->path_idle = g->path_segment == 0 || g->path_segment == 3;
+        f->before_tod = g->before_tod;
+    }
+    if (g->speed_valid && isfinite(g->speed_kt) && g->speed_kt > 80.0) {
+        f->managed_speed_valid = 1;
+        f->managed_speed_knots = g->speed_kt;
+        f->managed_speed_is_mach = g->speed_is_mach;
+        f->managed_mach = g->speed_is_mach ? g->speed_mach : NAN;
+    }
 }
 
 /* Flight loop, after adirs_update and before update_guidance (spec 07 section 1.4). */
@@ -890,13 +892,17 @@ static void fmsa_update(float dt, int powered)
     int s;
     if (!fmsa_initialized) return;
     fmsa_read_inputs(powered);
-    fmsa_fpln_timer += dt;
-    if (fmsa_fpln && fmsa_fpln_timer >= 0.25) { /* sequencing at the FMS cycle rate */
-        fmsa_fpln_timer = 0.0;
-        a380x_fpln_update(fmsa_fpln, &fmsa_aircraft);
-    }
     a380x_fms_update(&fmsa_fms, &fmsa_in, dt);
     o = a380x_fms_outputs(&fmsa_fms);
+    /* FMGC every frame: LNAV path + leg sequencing (replaces a380x_fpln_update), VNAV, speeds. */
+    fmsa_fmgc_inputs(&fmsa_fmgc_in, o);
+    a380x_fmgc_update(&fmsa_fmgc, o->valid ? fmsa_fpln : NULL, &fmsa_fmgc_in, dt);
+    fmsa_fpln_timer += dt;
+    if (fmsa_fpln_timer >= 0.5) {   /* MFD F-PLN predictions at 2 Hz */
+        fmsa_fpln_timer = 0.0;
+        a380x_fmgc_predictions(&fmsa_fmgc, fmsa_fpln, &fmsa_fmgc_in, &fmsa_pred_feed, fmsa_leg_pred);
+        fmsa_pred_valid = o->valid && fmsa_fmgc.out.lnav_valid;
+    }
 
     /* PFD / guidance feed (fms_feed is declared in a380x_avionics.c before the FCU adapter). */
     memset(&fms_feed, 0, sizeof(fms_feed));
@@ -911,6 +917,7 @@ static void fmsa_update(float dt, int powered)
         fms_feed.managed_mach = o->managed_mach;
         fms_feed.f_speed_knots = o->f_speed_knots;
         fms_feed.s_speed_knots = o->s_speed_knots;
+        fmsa_fmgc_feed(&fms_feed, o);
         /* DH from the FMS (spec 07 section 10.2): radio minimum in range replaces the stock RA bug;
          * NO DH or a BARO (MDA) minimum hides it. Without FMS minimums the RA bug stays in use. */
         if (o->dh_ft > 0.0 || o->dh_ft == 0.0 || o->mda_ft >= 0.0) {

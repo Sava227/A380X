@@ -317,7 +317,9 @@ static void xpkit_word(XpKitJson *j,const char *prefix,const char *suffix,double
 static void xpkit_guidance_words(XpKitJson *j) {
     const A380XGuidanceState *g=&guidance;
     uint32_t d1=XPKIT_BIT(11,g->ap1)|XPKIT_BIT(12,g->ap2)|XPKIT_BIT(13,g->fd1)|XPKIT_BIT(14,g->fd2);
-    uint32_t d2=XPKIT_BIT(11,g->altitude_armed)|XPKIT_BIT(13,g->gs_armed)|XPKIT_BIT(23,g->loc_armed);
+    /* Armed modes: ALT 11, G/S 13, CLB 15, DES 16, NAV 22, LOC 23 (FBW A380 PFD B2/C2 cells). */
+    uint32_t d2=XPKIT_BIT(11,g->altitude_armed)|XPKIT_BIT(13,g->gs_armed)|XPKIT_BIT(23,g->loc_armed)|
+        XPKIT_BIT(15,g->clb_armed)|XPKIT_BIT(16,g->des_armed)|XPKIT_BIT(22,g->nav_armed);
     uint32_t d3=0,d4=0,ats=0;
     switch(g->vertical_mode) {
         case A380X_B1_CLB:d3=XPKIT_BIT(11,1);break;
@@ -330,8 +332,11 @@ static void xpkit_guidance_words(XpKitJson *j) {
         case A380X_B1_ALT:d3=XPKIT_BIT(20,1);break;
         case A380X_B1_GS_STAR:d3=XPKIT_BIT(21,1);break;
         case A380X_B1_GS:d3=XPKIT_BIT(22,1);break;
+        case A380X_B1_SRS:d3=XPKIT_BIT(15,1);break;
         default:break; /* Unsupported modes are not invented. */
     }
+    /* ALT CST(*) / ALT CRZ(*) qualifiers of ALT / ALT* (bit 28 also makes an armed ALT magenta). */
+    d3|=XPKIT_BIT(28,g->alt_constraint)|XPKIT_BIT(29,g->alt_cruise&&!g->alt_constraint);
     switch(g->lateral_mode) {
         case A380X_C1_RWY:d4=XPKIT_BIT(11,1);break;
         case A380X_C1_NAV:d4=XPKIT_BIT(12,1);break;
@@ -378,6 +383,9 @@ static void xpkit_guidance_words(XpKitJson *j) {
         XPW("FG_DISCRETE_WORD_6",0,g->initialized);
         XPW("FG_ATS_DISCRETE_WORD",XPKIT_BIT(11,g->athr_armed)|XPKIT_BIT(12,g->athr_active),g->initialized);
         XPW("FG_ATS_FMA_DISCRETE_WORD",ats,g->initialized);
+        /* FM altitude constraint (magenta target) while it limits the managed CLB/DES target. */
+        XPW("FM_ALTITUDE_CONSTRAINT",guidance_inputs.managed_altitude_ft,
+            g->initialized && g->alt_constraint && guidance_inputs.managed_altitude_is_constraint);
         XPW("ROLL_FD_COMMAND_1",g->fd_roll_error_deg,g->guidance_valid);
         XPW("ROLL_FD_COMMAND_2",g->fd_roll_error_deg,g->guidance_valid);
         XPW("PITCH_FD_COMMAND_1",-g->fd_pitch_error_deg,g->guidance_valid && g->vertical_guidance_selected);
@@ -709,6 +717,21 @@ static void xpkit_publish_state(double now) {
         xpkit_number(&j,"L:A32NX_SPOILERS_ARMED",speedbrake_feed.armed);
         xpkit_number(&j,"L:A32NX_SPOILERS_HANDLE_POSITION",speedbrake_feed.handle);
         xpkit_number(&j,"L:A32NX_LEFT_SPOILER_1_COMMANDED_POSITION",speedbrake_feed.panel_deg[0]);
+    }
+    {   /* FMGC VNAV indications (FBW PFD L:vars): linear deviation, DES speed margins, T/D REACHED. */
+        const A380XFmgcOutputs *v=a380x_fmgc_outputs(&fmsa_fmgc);
+        int des=guidance.vertical_mode==A380X_B1_DES, path=des&&guidance_inputs.managed_path_valid;
+        int margins=path&&guidance.des_submode==0&&guidance.speed_managed;
+        xpkit_number(&j,"L:A32NX_PFD_LINEAR_DEVIATION_ACTIVE",path);
+        xpkit_number(&j,"L:A32NX_PFD_TARGET_ALTITUDE",path?guidance_inputs.managed_path_altitude_ft:0);
+        xpkit_number(&j,"L:A32NX_PFD_VERTICAL_PROFILE_LATCHED",0);
+        xpkit_number(&j,"L:A32NX_PFD_SHOW_SPEED_MARGINS",margins);
+        xpkit_number(&j,"L:A32NX_PFD_UPPER_SPEED_MARGIN",margins?guidance.speed_target_knots+10:0);
+        xpkit_number(&j,"L:A32NX_PFD_LOWER_SPEED_MARGIN",margins?guidance.speed_target_knots-10:0);
+        xpkit_number(&j,"L:A32NX_PFD_MSG_TD_REACHED",a380x_fms_phase(&fmsa_fms)==A380X_FMS_PHASE_CRUISE&&v->vnav_valid
+            &&isfinite(v->tod_dist_nm)&&!v->before_tod&&!des&&guidance.vertical_mode!=A380X_B1_OP_DES);
+        /* FBW sign (PFD/ND show "R" for a negative value): positive = aircraft left of the path. */
+        xpkit_number(&j,"L:A32NX_FG_CROSS_TRACK_ERROR",v->lnav_valid?v->fbw_xtk_nm:0);
     }
     xpkit_append(&j,"\"_end\":0},\"nav\":");
     xpkit_nd_json(&j);

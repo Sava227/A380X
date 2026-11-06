@@ -178,7 +178,7 @@ static void read_guidance_inputs(float dt)
     float variation=XPLMGetDataf(fcu.magvar);
     memset(&guidance_inputs,0,sizeof(guidance_inputs));
     /* Managed speed target from the native FMS only (spec 07 section 10.2); the stock X-Plane
-     * FMS/autopilot state is never consumed. Route and vertical stay invalid until LNAV/VNAV. */
+     * FMS/autopilot state is never consumed. */
     if(fms_feed.valid&&fms_feed.managed_speed_valid&&isfinite(fms_feed.managed_speed_knots)
        &&fms_feed.managed_speed_knots>0){
         guidance_inputs.managed_speed_valid=1;
@@ -186,6 +186,30 @@ static void read_guidance_inputs(float dt)
         guidance_inputs.managed_speed_is_mach=fms_feed.managed_speed_is_mach;
         guidance_inputs.managed_mach=fms_feed.managed_mach;
     }
+    /* Managed lateral/vertical guidance from the native FMGC (a380x_fmgc_guidance.c). */
+    if(fms_feed.valid&&fms_feed.route_valid){
+        guidance_inputs.managed_route_valid=1;
+        guidance_inputs.managed_nav_capture=fms_feed.nav_capture;
+        guidance_inputs.route_xtk_nm=fms_feed.route_xtk_nm;
+        guidance_inputs.route_track_error_deg=fms_feed.route_track_error_deg;
+        guidance_inputs.route_bank_deg=fms_feed.route_bank_deg;
+        guidance_inputs.managed_heading_deg=fms_feed.managed_heading_deg;
+    }
+    if(fms_feed.valid&&fms_feed.route_valid&&fms_feed.vertical_valid){
+        guidance_inputs.managed_vertical_valid=1;
+        guidance_inputs.managed_altitude_ft=fms_feed.managed_altitude_ft;
+        guidance_inputs.managed_altitude_is_constraint=fms_feed.altitude_is_constraint;
+        guidance_inputs.managed_cruise_altitude_ft=fms_feed.cruise_altitude_ft;
+        guidance_inputs.managed_path_valid=fms_feed.path_valid;
+        guidance_inputs.managed_path_altitude_ft=fms_feed.path_altitude_ft;
+        guidance_inputs.managed_path_vs_fpm=fms_feed.path_vs_fpm;
+        guidance_inputs.managed_vdev_ft=fms_feed.vdev_ft;
+        guidance_inputs.managed_path_idle=fms_feed.path_idle;
+        guidance_inputs.managed_before_tod=fms_feed.before_tod;
+    }
+    guidance_inputs.fms_phase_valid=fms_feed.valid&&fms_feed.phase_valid;
+    guidance_inputs.fms_phase=fms_feed.phase;
+    guidance_inputs.fms_v2_knots=fms_feed.valid?fms_feed.v2_knots:0;
     ground_track_degrees=normalized_heading(XPLMGetDataf(refs.ground_track)-variation);
     /* FCU channel 1 on 108PH, channel 2 on DC 2 (FBWI:2372); stock avionics master without the network. */
     guidance_inputs.powered=a380x_power_fcu(XPLMGetDatai(refs.avionics_power)!=0);
@@ -305,6 +329,7 @@ static void publish_guidance(void)
     COPY(speed_managed); COPY(heading_managed); COPY(altitude_managed); COPY(mach_mode); COPY(trk_fpa_mode);
     COPY(ap1); COPY(ap2); COPY(fd1); COPY(fd2); COPY(athr_armed); COPY(athr_active);
     COPY(loc_armed); COPY(gs_armed); COPY(altitude_armed); COPY(guidance_valid);
+    COPY(nav_armed); COPY(clb_armed); COPY(des_armed);
     COPY(fd_pitch_error_deg); COPY(fd_roll_error_deg);
     COPY(true_heading); COPY(managed_unavailable); COPY(mode_reversion); COPY(disconnect_warning);
 #undef COPY
@@ -316,7 +341,7 @@ static void publish_guidance(void)
     pfd_guidance.metric_altitude=guidance.metric_alt;
     pfd_guidance.vmax_knots=guidance_inputs.vmax_knots;
     publish_pfd_aircraft();
-    published.fma_a1a2=guidance.thrust_mode; published.fma_b1=guidance.vertical_mode;
+    published.fma_a1a2=guidance.thrust_mode; published.fma_b1=a380x_guidance_fma_vertical(&guidance);
     published.fma_c1=guidance.lateral_mode; published.fma_a3=0; published.fma_d1d2=0;
 }
 

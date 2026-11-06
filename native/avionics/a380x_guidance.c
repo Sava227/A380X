@@ -116,6 +116,8 @@ static void cancel_approach(A380XGuidanceState *s,const A380XGuidanceInputs *i) 
     if (gs_mode(s)) revert_vertical(s,i);
     if (s->ap1 && s->ap2) s->ap2=0;
 }
+/* Managed (FMS-coupled) NAV / SRS / CLB / DES / ALT CST logic. */
+#include "a380x_guidance_managed.inc"
 
 void a380x_guidance_init(A380XGuidanceState *s,const A380XGuidanceInputs *i) {
     memset(s,0,sizeof(*s));
@@ -166,28 +168,18 @@ void a380x_guidance_command(A380XGuidanceState *s,const A380XGuidanceInputs *i,A
     case A380X_FCU_HDG_ROTATE:
         if(s->heading_dashes) s->selected_heading_deg=round(current_heading(s,i));
         s->selected_heading_deg=norm(s->selected_heading_deg+a); s->heading_preselect_seconds=45; s->heading_dashes=0; break;
-    case A380X_FCU_HDG_PUSH:
-        if(i->managed_route_valid) {
-            cancel_approach(s,i); s->heading_managed=1; s->lateral_mode=A380X_C1_NAV;
-            s->heading_preselect_seconds=0; s->heading_dashes=1;
-        } else reject_managed(s);
-        break;
+    case A380X_FCU_HDG_PUSH: managed_hdg_push(s,i); break;
     case A380X_FCU_HDG_PULL:
+        if(nav_mode(s)) managed_vertical_without_nav(s,i);
         cancel_approach(s,i); s->heading_managed=0; s->heading_dashes=0;
         s->lateral_mode=s->trk_fpa_mode?A380X_C1_TRACK:A380X_C1_HDG; break;
     case A380X_FCU_ALT_ROTATE:
         s->selected_altitude_ft=clamp(s->selected_altitude_ft+a*(s->altitude_increment_1000?1000:100),100,49000);
-        if(s->vertical_mode==A380X_B1_ALT_STAR) {
+        if(s->vertical_mode==A380X_B1_ALT_STAR && !s->alt_constraint) {
             revert_vertical(s,i);
         }
         break;
-    case A380X_FCU_ALT_PUSH:
-        if(i->managed_route_valid && i->managed_vertical_valid) {
-            s->altitude_managed=1; s->vertical_guidance_selected=1;
-            s->vertical_mode=s->selected_altitude_ft>=i->altitude_ft?A380X_B1_CLB:A380X_B1_DES;
-            s->gs_armed=0;
-        } else reject_managed(s);
-        break;
+    case A380X_FCU_ALT_PUSH: managed_alt_push(s,i); break;
     case A380X_FCU_ALT_PULL:
         s->vertical_guidance_selected=1;
         s->altitude_managed=0; s->gs_armed=0; s->capture_seconds=0;
@@ -266,12 +258,14 @@ void a380x_guidance_command(A380XGuidanceState *s,const A380XGuidanceInputs *i,A
         s->true_heading=!s->true_heading; break;
     default: break;
     }
+    managed_after_command(s,c);
     if (s->vertical_mode!=previous_vertical) s->pitch_integral=0;
 }
 
 void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,double dt) {
     double alt_error, target_vs, capture_distance;
-    int valid;
+    int valid, was_managed;
+    A380XB1Message before_capture;
     const A380XIlsInputs *ils;
     if(!s || !i || !s->initialized) return;
     if(!isfinite(dt) || dt>1) {
@@ -311,6 +305,8 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         disconnect(s,1);
     }
     if(!i->powered) { s->athr_armed=0; s->loc_armed=s->gs_armed=s->approach_selected=0; }
+    if(valid && nav_mode(s) && !i->managed_route_valid) managed_nav_lost(s,i);
+    managed_update(s,i,valid);
     if(s->speed_managed && !i->managed_speed_valid) { s->speed_managed=0; reject_managed(s); }
     if(s->heading_managed && !i->managed_route_valid) {
         s->heading_managed=0; s->selected_heading_deg=norm(current_heading(s,i));
@@ -322,6 +318,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
     s->speed_target_knots=s->speed_managed?i->managed_speed_knots:
         (s->mach_mode?s->selected_mach*speed_ratio(i):s->selected_speed_knots);
     s->speed_target_knots=clamp(s->speed_target_knots,100,399);
+    managed_speed_adjust(s,i);
     /* The window remains the crew's selection; effective guidance observes
      * the FE limits shown on the PFD. Invalid/missing limits are not invented. */
     {
@@ -330,10 +327,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         if(lower<=upper) s->speed_target_knots=clamp(s->speed_target_knots,lower,upper);
     }
     s->altitude_target_ft=s->vertical_mode==A380X_B1_ALT?s->held_altitude_ft:s->selected_altitude_ft;
-    if(s->altitude_managed) {
-        s->altitude_target_ft=s->vertical_mode==A380X_B1_CLB?fmin(i->managed_altitude_ft,s->selected_altitude_ft):
-            fmax(i->managed_altitude_ft,s->selected_altitude_ft);
-    }
+    if(s->altitude_managed) s->altitude_target_ft=managed_altitude_target(s,i);
     if(valid && loc_mode(s) && !ils_loc_valid(ils)) {
         cancel_approach(s,i); s->reversion_seconds=5;
     }
@@ -366,10 +360,11 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
     s->previous_loc_dots=ils->loc_deviation_dots; s->previous_gs_dots=ils->gs_deviation_dots;
     s->have_previous_ils=ils->valid;
     target_vs=s->trk_fpa_mode?tan(s->selected_fpa_deg*RAD)*fmax(i->ground_speed_knots,30)*101.2686:s->selected_vs_fpm;
-    if(s->altitude_managed) target_vs=i->managed_vs_fpm;
+    if(s->altitude_managed || s->vertical_mode==A380X_B1_SRS) target_vs=managed_vs_target(s,i);
     if(s->vertical_mode==A380X_B1_OP_CLB) target_vs=2000;
     if(s->vertical_mode==A380X_B1_OP_DES) target_vs=-1500;
     alt_error=s->altitude_target_ft-i->altitude_ft;
+    before_capture=s->vertical_mode; was_managed=s->altitude_managed;
     s->altitude_armed=!gs_mode(s) && s->vertical_mode!=A380X_B1_ALT && s->vertical_mode!=A380X_B1_ALT_STAR &&
         alt_error*target_vs>0;
     capture_distance=fmax(150,fabs(i->vertical_speed_fpm)/60*20);
@@ -384,6 +379,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         }
     }
     if(s->vertical_mode==A380X_B1_ALT) target_vs=0;
+    managed_after_capture(s,i,before_capture,was_managed);
     if(gs_mode(s)) target_vs=-tan((ils->gs_angle_deg>0?ils->gs_angle_deg:3)*RAD)*fmax(i->ground_speed_knots,30)*101.2686;
     s->vs_target_fpm=clamp(target_vs,-6000,6000);
     s->guidance_valid=valid && s->vertical_guidance_selected && (s->fd1 || s->fd2 || s->ap1 || s->ap2) &&
@@ -449,16 +445,16 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
                     ceiling=clamp(i->athr_ceiling,0,1);
                     lever_below_cl=lever<i->cl_detent_ratio-i->detent_tolerance_ratio;
                 }
-                if(s->guidance_valid && (s->vertical_mode==A380X_B1_OP_CLB || s->vertical_mode==A380X_B1_CLB)) {
+                if(s->guidance_valid && managed_thrust_kind(s)==1) {
                     throttle=ceiling; s->thrust_mode=lever_below_cl?A380X_A1A2_THR_LVR:A380X_A1A2_THR_CLB;
-                } else if(s->guidance_valid && s->vertical_mode==A380X_B1_OP_DES) {
+                } else if(s->guidance_valid && managed_thrust_kind(s)==2) {
                     throttle=.04; s->thrust_mode=A380X_A1A2_THR_IDLE;
                 } else {
                     double demand=.5+s->athr_integral+speed_error*.008;
                     if((demand<ceiling || speed_error<0) && (demand>0 || speed_error>0))
                         s->athr_integral=clamp(s->athr_integral+speed_error*.0005*dt,-.48,.48);
                     throttle=.5+s->athr_integral+speed_error*.008;
-                    s->thrust_mode=s->mach_mode?A380X_A1A2_MACH:A380X_A1A2_SPEED;
+                    s->thrust_mode=speed_is_mach(s,i)?A380X_A1A2_MACH:A380X_A1A2_SPEED;
                 }
                 s->throttle_command=fmin(ceiling,s->throttle_command+
                     clamp(clamp(throttle,0,ceiling)-s->throttle_command,-.12*dt,.12*dt));

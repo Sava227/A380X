@@ -122,8 +122,8 @@ CXX_SOURCES = [*EWD_FADEC_SOURCES, HERE / "a380x_fbw_laws.cpp", *[
 # X-Plane boundary is a380x_mfd_adapter.inc + a380x_fms_adapter.inc (+ a380x_mfd_systems_host.inc).
 MFD_CORE_SOURCES = [HERE / name for name in (
     "a380x_mfd_draw.c", "a380x_mfd_ui.c", "a380x_mfd.c", "a380x_mfd_formats.c", "a380x_fms_messages.c",
-    "a380x_fms_speeds.c", "a380x_fms.c", "a380x_navdata.c", "a380x_fms_fpln.c", "a380x_mfd_pages.c",
-    "a380x_sd.c")]
+    "a380x_fms_speeds.c", "a380x_fms.c", "a380x_navdata.c", "a380x_fms_fpln.c", "a380x_fmgc_guidance.c",
+    "a380x_mfd_pages.c", "a380x_sd.c")]
 MFD_PAGE_MODULES = ("data", "init", "fuel", "sec", "perf", "fpln", "fpln_rev", "position", "surv",
                     "atccom", "fcubkup")
 MFD_ADAPTER_TEST = HERE / "test_mfd_adapter.c"

@@ -54,6 +54,18 @@ typedef struct {
      * N1 to the lever's N1), replacing the 0.88-at-CL approximation when valid. */
     int athr_inhibited, athr_ceiling_valid;
     double athr_ceiling;
+    /* FMGC managed guidance (a380x_fmgc_guidance.c through the FMS adapter, docs/AUTOPILOT_DEVELOPMENT.md);
+     * all zero = absent. route_xtk_nm / route_track_error_deg / route_bank_deg above follow the FBW
+     * HPATH law convention: xtk > 0 = path to the RIGHT of the aircraft, track error > 0 = desired
+     * track to the RIGHT, bank > 0 = right-wing-down feed-forward. */
+    int managed_nav_capture;            /* NAV may engage now (capture zone reached / course leg) */
+    int managed_altitude_is_constraint; /* managed_altitude_ft is an FMS constraint, not the FCU altitude */
+    double managed_cruise_altitude_ft;  /* FMS CRZ altitude (ALT CRZ), 0 = none */
+    int managed_path_valid;             /* descent path computed */
+    double managed_path_altitude_ft, managed_path_vs_fpm, managed_vdev_ft; /* vdev > 0: above the path */
+    int managed_path_idle, managed_before_tod;
+    int fms_phase_valid, fms_phase;     /* FMGC flight phase (A380XFmsPhase numbering) */
+    double fms_v2_knots;                /* takeoff V2 for SRS, 0 = none */
 } A380XGuidanceInputs;
 
 typedef enum {
@@ -97,7 +109,20 @@ typedef struct {
     double held_altitude_ft, last_selected_altitude_ft;
     int have_previous_ils, previous_powered, takeoff_detent_active, all_levers_idle;
     int alpha_floor_latched, alpha_floor_inhibited, initialized;
+    /* FMGC managed modes (a380x_guidance_managed.inc). Public: armed modes and the ALT CST / ALT CRZ
+     * qualifiers of ALT / ALT* (FG discrete words 2 and 3, bits 28/29). */
+    int nav_armed, clb_armed, des_armed, alt_constraint, alt_cruise;
+    int des_submode;                    /* DES: 0 on path, 1 above path / no path (idle, speed on pitch), 2 below (V/S) */
+    int des_thrust_idle;                /* DES A/THR THR IDLE (else SPEED/MACH) */
+    int vertical_law_override;          /* FBW vertical law selector for the bridge, 0 = mode default */
+    int vpath_valid;                    /* bridge: fms_H_c_profile / fms_H_dot_c_profile below */
+    double vpath_altitude_ft, vpath_vs_fpm;
+    /* private */
+    int managed_climb, nav_auto_armed, clb_disarmed;
 } A380XGuidanceState;
+
+/* FMA vertical message including the ALT CST / ALT CRZ qualifiers (for the native PFD and FMS). */
+A380XB1Message a380x_guidance_fma_vertical(const A380XGuidanceState *state);
 
 void a380x_guidance_init(A380XGuidanceState *state, const A380XGuidanceInputs *inputs);
 void a380x_guidance_destroy(A380XGuidanceState *state);

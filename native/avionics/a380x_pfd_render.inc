@@ -1033,12 +1033,14 @@ static void draw_fma(const PfdCanvas *p, const Side *side)
     if (!pfd_guidance.mode_reversion || ((int)(XPLMGetElapsedTime()*2.0f))%2==0)
         pfd_text_center(p,49.922f,7.104f,b1,GREEN);
     if (pfd_guidance.guidance_valid && pfd_guidance.mode_reversion) pfd_box(p,34.0f,1.0f,65.4f,8.7f,WHITE);
+    /* Armed vertical: managed CLB / DES first (FBW B2Cell priority), then ALT, G/S. */
     snprintf(armed_vertical,sizeof(armed_vertical),"%s%s%s",
-             pfd_guidance.altitude_armed ? "ALT" : "",
-             pfd_guidance.altitude_armed && pfd_guidance.gs_armed ? " " : "",
+             pfd_guidance.clb_armed ? "CLB" : pfd_guidance.des_armed ? "DES" : pfd_guidance.altitude_armed ? "ALT" : "",
+             (pfd_guidance.clb_armed || pfd_guidance.des_armed || pfd_guidance.altitude_armed) && pfd_guidance.gs_armed ? " " : "",
              pfd_guidance.gs_armed ? "G/S" : "");
     if (pfd_guidance.guidance_valid) pfd_text_center(p,49.922f,14.36f,armed_vertical,CYAN);
     if (pfd_guidance.guidance_valid && pfd_guidance.loc_armed) pfd_text_center(p,84.857f,14.36f,"LOC",CYAN);
+    else if (pfd_guidance.nav_armed) pfd_text_center(p,84.857f,14.36f,"NAV",CYAN);
     pfd_text_center(p,84.857f,6.987f,c1,GREEN);
     pfd_text_center(p,118.459f,7.126f,d1,WHITE);
     fma_change_box(p,side_index,1,active_vertical,34.0f,1.0f,65.4f,8.7f,WHITE);

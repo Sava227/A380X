@@ -433,6 +433,10 @@ enum {                               /* a380x_fpln_update() result bits */
  * ground. Fly-by anticipation uses a 25 deg bank turn at ground speed; overfly legs sequence when
  * passed abeam. Altitude legs (CA/FA/VA/HA) sequence at the altitude; DME/radial legs on crossing. */
 uint32_t a380x_fpln_update(A380XFlightPlans *fp, const A380XFplnAircraft *ac);
+/* Advances the ACTIVE plan's TO leg to idx (current < idx < count, not a discontinuity), TMPY in
+ * lockstep as a380x_fpln_update does. Used by the FMGC LNAV sequencer (a380x_fmgc_guidance.c),
+ * which owns the leg termination logic consistent with the path it flies. Returns 1 if sequenced. */
+int a380x_fpln_sequence_to(A380XFlightPlans *fp, int idx);
 /* Recomputes leg geometry/naming/indices of a plan (operations do this themselves). */
 void a380x_fpln_recompute(A380XFlightPlans *fp, int plan);
 /* Along-track distance from the aircraft to the destination leg of a plan's primary route, NAN

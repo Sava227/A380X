@@ -54,7 +54,8 @@ extern "C" int a380x_fbw_laws_step(void *p, const A380XGuidanceInputs *i, A380XG
     d.nav_gs_error_deg=gs_valid?-ils.gs_deviation_dots*0.28:0;
     d.fms_xtk_nmi=i->route_xtk_nm; d.fms_tae_deg=i->route_track_error_deg;
     d.fms_phi_deg=i->route_bank_deg; d.fms_phi_limit_deg=25;
-    d.fms_H_c_profile_ft=s->altitude_target_ft; d.fms_H_dot_c_profile_ft_min=s->vs_target_fpm;
+    d.fms_H_c_profile_ft=s->vpath_valid?s->vpath_altitude_ft:s->altitude_target_ft;
+    d.fms_H_dot_c_profile_ft_min=s->vpath_valid?s->vpath_vs_fpm:s->vs_target_fpm;
     /* Missing envelope data disables those protections: zero VLS and a generous
      * VMAX are numerical placeholders, never displayed as aircraft speeds. */
     d.VLS_kn=i->vls_knots>0?i->vls_knots:0;
@@ -77,7 +78,11 @@ extern "C" int a380x_fbw_laws_step(void *p, const A380XGuidanceInputs *i, A380XG
         case A380X_B1_VS: u.vertical_law=4; break;
         case A380X_B1_FPA: u.vertical_law=5; break;
         case A380X_B1_GS: case A380X_B1_GS_STAR: u.vertical_law=6; break;
-        case A380X_B1_CLB: case A380X_B1_DES: u.vertical_law=9; break;
+        /* Managed modes (a380x_guidance_managed.inc): CLB is speed on pitch like OP CLB (law 3);
+         * DES flies VPATH (law 9) on the path, else the submode's law; takeoff SRS is law 8. */
+        case A380X_B1_CLB: u.vertical_law=3; break;
+        case A380X_B1_DES: u.vertical_law=s->vertical_law_override?s->vertical_law_override:9; break;
+        case A380X_B1_SRS: u.vertical_law=8; break;
         default: u.vertical_law=0;
     }
     /* Heading law uses magnetic heading; TRUE selection is converted at this boundary. */

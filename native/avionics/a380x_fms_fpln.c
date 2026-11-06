@@ -2085,6 +2085,22 @@ uint32_t a380x_fpln_update(A380XFlightPlans *fp, const A380XFplnAircraft *ac)
     return ev;
 }
 
+int a380x_fpln_sequence_to(A380XFlightPlans *fp, int idx)
+{
+    if (!fp) return 0;
+    A380XFplnPlan *p = &fp->plan[A380X_PLAN_ACTIVE];
+    if (!p->exists || idx <= p->active_leg_index || idx >= p->pri.count || !is_leg(&p->pri.el[idx])) return 0;
+    int old = p->active_leg_index;
+    p->active_leg_index = idx;
+    p->version++;
+    A380XFplnPlan *t = &fp->plan[A380X_PLAN_TEMPORARY];
+    if (t->exists && t->active_leg_index == old && idx < t->pri.count) {
+        t->active_leg_index = idx;
+        t->version++;
+    }
+    return 1;
+}
+
 float a380x_fpln_dist_to_active(const A380XFlightPlans *fp, int plan, const A380XFplnAircraft *ac)
 {
     const A380XFplnPlan *p = a380x_fpln_plan(fp, plan);
