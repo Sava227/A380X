@@ -30,6 +30,47 @@ static int fuel_target_kg = -1;
 static int refuel_active, refuel_rate = 2; /* 0 real, 1 fast, 2 instant */
 static int push_steer = 1;                 /* 0 nose left, 1 straight, 2 nose right */
 static int option_engine, option_brake_fans, option_hud = 1;   /* Phase 3: stored, not applied */
+/* GPWS / TAWS voice (a380x_efb.h): 0 new A380, 1 old A380; persisted in the X-Plane preferences folder. */
+static int efb_gpws_voice, efb_gpws_voice_loaded;
+static int efb_gpws_prefs_path(char *path, size_t size)
+{
+    char prefs[1024];
+    char *cut;
+    prefs[0] = 0;
+    XPLMGetPrefsPath(prefs);
+    cut = strrchr(prefs, '/');
+    if (!cut) cut = strrchr(prefs, '\\');
+    if (!cut) return 0;
+    cut[1] = 0;
+    return snprintf(path, size, "%sA380X-XP12_efb.prf", prefs) < (int)size;
+}
+static void efb_gpws_voice_load(void)
+{
+    char path[1200], line[64];
+    FILE *f;
+    efb_gpws_voice_loaded = 1;
+    if (!efb_gpws_prefs_path(path, sizeof(path)) || !(f = fopen(path, "r"))) return;
+    while (fgets(line, sizeof(line), f))
+        if (!strncmp(line, "gpws_voice ", 11)) efb_gpws_voice = !strncmp(line + 11, "old", 3);
+    fclose(f);
+}
+int a380x_efb_gpws_voice(void)
+{
+    if (!efb_gpws_voice_loaded) efb_gpws_voice_load();
+    return efb_gpws_voice;
+}
+void a380x_efb_set_gpws_voice(int old_voice)
+{
+    char path[1200];
+    FILE *f;
+    efb_gpws_voice_loaded = 1;
+    efb_gpws_voice = old_voice != 0;
+    if (efb_gpws_prefs_path(path, sizeof(path)) && (f = fopen(path, "w"))) {
+        fprintf(f, "# A380X-XP12 EFB settings\ngpws_voice %s\n", efb_gpws_voice ? "old" : "new");
+        fclose(f);
+    }
+    efb_changed();
+}
 static int cabin_layout[3][5] = {{0, 0, 56, 338, 0}, {14, 76, 0, 0, 0}, {0, 0, 0, 0, 0}}; /* main, upper, lower: F J W Y fill */
 static int hold_pallets[2];
 static unsigned efb_change_serial = 1, efb_epoch;
@@ -470,6 +511,10 @@ static int efb_execute(EfbTablet *t, const A380XEfbAction *a)
             efb_sounds_bind();
             if (efb_sound_refs[n]) XPLMSetDataf(efb_sound_refs[n], m / 100.0f);
         }
+    } else if (!strcmp(v, "gpws")) {
+        if (a->argc < 2 || strcmp(a->arg[0], "voice") || (strcmp(a->arg[1], "new") && strcmp(a->arg[1], "old"))) return 0;
+        a380x_efb_set_gpws_voice(!strcmp(a->arg[1], "old"));
+        set_status("GPWS voice: %s A380", efb_gpws_voice ? "old" : "new");
     } else if (!strcmp(v, "option")) {
         if (a->argc < 2 || !efb_arg_int(a, 1, 0, 1, &n)) return 0;
         if (!strcmp(a->arg[0], "engine")) option_engine = n;
@@ -758,6 +803,7 @@ static void efb_json_frame(A380XEfbJson *j, int index)
         a380x_efbj_end(j, ']');
     }
     a380x_efbj_end(j, ']');
+    a380x_efbj_string(j, "gpwsVoice", a380x_efb_gpws_voice() ? "old" : "new");
 
     a380x_efbj_object(j, "options");
     a380x_efbj_int(j, "engine", option_engine);

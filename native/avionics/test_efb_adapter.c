@@ -68,6 +68,7 @@ XPLMDataRef XPLMFindDataRef(const char *name)
 static MockData *foreign(const char *name) { MockData *d = data_named(name); d->owned = 0; d->registered = 1; return d; }
 float XPLMGetDataf(XPLMDataRef ref) { return (float)((MockData *)ref)->value; }
 double XPLMGetDatad(XPLMDataRef ref) { return ((MockData *)ref)->value; }
+void XPLMGetPrefsPath(char *out) { out[0] = 0; }   /* no preferences folder: default GPWS voice */
 int XPLMGetDatai(XPLMDataRef ref)
 {
     MockData *d = ref;

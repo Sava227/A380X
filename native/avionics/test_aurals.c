@@ -10,11 +10,11 @@
 
 static const char *const names[AUR_COUNT] = {
     "2500", "2000", "1000", "500", "400", "300", "200", "100", "90", "80", "70", "60", "50", "40", "30",
-    "20", "10", "5", "HUNDRED ABOVE", "MINIMUM", "RETARD", "V1", "STALL", "CRC", "CCHORD", "TRIPLE CLICK",
+    "20", "10", "5", "HUNDRED ABOVE", "MINIMUM", "RETARD", "V1", "STALL", "PULL UP", "CRC", "CCHORD", "TRIPLE CLICK",
     "SEATBELT", "CAVALRY"};
 static const double lengths[AUR_COUNT] = {
     1.35, 0.72, 0.80, 0.75, 0.75, 0.74, 0.70, 0.65, 0.60, 0.53, 0.80, 0.65, 0.55, 0.55, 0.57, 0.49, 0.59, 0.75,
-    0.89, 0.65, 0.77, 0.85, 2.85, 5.00, 1.50, 0.55, 0.99, 1.20};
+    0.89, 0.65, 0.77, 0.85, 2.85, 2.37, 5.00, 1.50, 0.55, 0.99, 1.20};
 
 static Aurals core;
 static char said[2048];
@@ -137,6 +137,25 @@ int main(void)
     in.on_ground = 0; in.aoa_stall_warning = 0; in.cas_kt = 50.0; step(&in); assert(loops[AUR_STALL] == 12);
     printf("%-34s below VSW, hysteresis, AoA warning, ground and 60 kt inhibits\n", "port stall warning");
 
+    /* GPWS mode 1: 3000 fpm sink, PULL UP below 0.4*3000-410 = 790 ft RA (landing flaps: mode 2's
+     * landing envelope only starts at 775 ft, so this isolates mode 1); nothing at 800 fpm; it silences
+     * the altitude callouts. Mode 2: 6000 fpm terrain closure (rising terrain, aircraft level) at
+     * 2000 ft RA, clean: PULL UP after 0.2 s. */
+    reset(); in = base(); in.vs_fpm = -3000.0; in.cas_valid = 1; in.cas_kt = 250.0; in.landing_flaps = 1;
+    for (double ra = 1500.0; ra > 795.0; ra -= 50.0 * in.dt) { in.ra_ft = ra; step(&in); }
+    assert(!loops[AUR_PULL_UP]);
+    for (double ra = 789.0; ra > 600.0; ra -= 50.0 * in.dt) { in.ra_ft = ra; step(&in); }
+    assert(loops[AUR_PULL_UP] > 100 && !strstr(said, "500"));
+    printf("%-34s mode 1 PULL UP from 790 ft at 3000 fpm (%d frames), callouts silenced: '%s'\n", "GPWS", loops[AUR_PULL_UP], said);
+    reset(); in = base(); in.vs_fpm = -800.0; in.cas_valid = 1; in.cas_kt = 160.0;
+    for (double ra = 1500.0; ra > 100.0; ra -= 13.3 * in.dt) { in.ra_ft = ra; step(&in); }
+    assert(!loops[AUR_PULL_UP]);
+    reset(); in = base(); in.vs_fpm = 0.0; in.cas_valid = 1; in.cas_kt = 250.0;
+    for (int i = 0; i < 30; ++i) { in.ra_ft = 2000.0; step(&in); }
+    for (double ra = 2000.0; ra > 900.0; ra -= 100.0 * in.dt) { in.ra_ft = ra; step(&in); }
+    assert(loops[AUR_PULL_UP] > 0);
+    printf("%-34s mode 2 terrain closure 6000 fpm: PULL UP (%d frames); no warning on a normal approach\n", "GPWS", loops[AUR_PULL_UP]);
+
     /* FWS attention getters: CRC loops, C-chord once / continuous, triple click on reversion. */
     reset(); in = base(); in.ra_ft = 5000.0;
     in.crc = 1; for (int i = 0; i < 10; ++i) step(&in); in.crc = 0; step(&in);
@@ -178,7 +197,7 @@ int main(void)
             "callout_2500", "callout_2000", "callout_1000", "callout_500", "callout_400", "callout_300",
             "callout_200", "callout_100", "callout_90", "callout_80", "callout_70", "callout_60", "callout_50",
             "callout_40", "callout_30", "callout_20", "callout_10", "callout_5", "hundred_above", "minimum",
-            "retard", "v1", "stall", "crc_master_warning", "cchord", "triple_click", "seatbelt_chime",
+            "retard", "v1", "stall", "pull_up_new", "crc_master_warning", "cchord", "triple_click", "seatbelt_chime",
             "cavalry_charge"};
         const char *dir = getenv("A380X_AURALS_DIR");
         int ok = 0;

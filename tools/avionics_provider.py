@@ -39,6 +39,8 @@ COCKPIT_AURAL_FILES = (
     "hundred_above.wav",
     "minimum.wav",
     "provenance.json",
+    "pull_up_new.wav",
+    "pull_up_old.wav",
     "retard.wav",
     "seatbelt_chime.wav",
     "stall.wav",
@@ -56,6 +58,9 @@ FILES = (
     *((f"native/avionics/sounds/{name}", f"plugins/A380XAvionics/sounds/{name}") for name in ELEC_SOUND_FILES),
     # Thrust-lever magnetic detent click (synthesized by tools/build_detent_click.py).
     ("native/avionics/sounds/thrust_detent_click.wav", "plugins/A380XAvionics/sounds/thrust_detent_click.wav"),
+    # PTU sound (user-supplied, packaged for the future PTU simulation; nothing plays it yet).
+    ("native/avionics/sounds/systems/ptu.wav", "plugins/A380XAvionics/sounds/systems/ptu.wav"),
+    ("native/avionics/sounds/systems/provenance.json", "plugins/A380XAvionics/sounds/systems/provenance.json"),
     # Cockpit aurals (user-supplied set, docs/COCKPIT_AURALS.md; provenance.json records origin and processing).
     *((f"native/avionics/sounds/cockpit/{name}", f"plugins/A380XAvionics/sounds/cockpit/{name}") for name in COCKPIT_AURAL_FILES),
     ("native/avionics/dist/build-report.json", "plugins/A380XAvionics/build-report.json"),
@@ -329,11 +334,13 @@ SD_DATAREFS = tuple("a380x/xp12/ecam/sd/" + name for name in
                          "a380x/xp12/ecam/buttons/eng/press_ratio",
                          "a380x/xp12/ecam/buttons/eng/selected")
 SD_DEVICES = ("a380x.xp12.ecam.sd",)
+# Cockpit aurals (a380x_aurals.inc): GPWS voice new / old A380 recording (also on the EFB).
+AURAL_COMMANDS = ("a380x/xp12/aurals/gpws_voice_toggle",)
 AVIONICS_COMMANDS = (*EFB_COMMANDS, *FCU_COMMANDS, *EFIS_COMMANDS, *LIGHTING_COMMANDS, *DU_COMMANDS,
                      *GLARESHIELD_COMMANDS, *CLOCK_COMMANDS, *CENTER_RIGHT_COMMANDS,
                      *COCKPIT_DOOR_COMMANDS, *ADIRS_COMMANDS, *KCCU_COMMANDS, *MFD_COMMANDS, *SD_COMMANDS,
                      *ELEC_COMMANDS, *ELEC_NETWORK_COMMANDS, *OVHD_COMMANDS, *GRVTY_COMMANDS, *THRUST_COMMANDS,
-                     *FLAPS_COMMANDS, *SPEEDBRAKE_COMMANDS)
+                     *FLAPS_COMMANDS, *SPEEDBRAKE_COMMANDS, *AURAL_COMMANDS)
 AVIONICS_DATAREFS = (*FCU_DATAREFS, *FCU_MOTION_DATAREFS, *FCU_LIGHT_DATAREFS,
                      *PFD_DATAREFS, *EFIS_DATAREFS, *LIGHTING_DATAREFS, *DU_DATAREFS,
                      *GLARESHIELD_DATAREFS, *CLOCK_DATAREFS, *CENTER_RIGHT_DATAREFS,

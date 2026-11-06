@@ -23,6 +23,10 @@ long a380x_efb_frame_json(int tablet, char *out, size_t cap); /* -1 on overflow;
 void a380x_efb_web_action(int tablet, const char *text);  /* "<id> <verb> [args]" from the page */
 unsigned a380x_efb_change_serial(void);                   /* bumps on every touch, action or state change */
 void a380x_efb_needs_drawing(int tablet);                 /* a new web frame for this tablet arrived */
+/* GPWS / TAWS voice chosen on the EFB (Settings > Sounds): 0 = new A380, 1 = old A380. Saved in
+ * X-Plane's preferences folder (A380X-XP12_efb.prf), so it survives restarts. */
+int a380x_efb_gpws_voice(void);
+void a380x_efb_set_gpws_voice(int old_voice);
 int a380x_efb_atlas_needed(void);                         /* legacy panel-atlas tablet still needed */
 
 #endif

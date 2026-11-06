@@ -23,6 +23,7 @@ while still requested; a one-shot callout that fell outside the cockpit is not r
 | `retard` | 20 ft (manual landing) or 10 ft (A/P engaged) while a thrust lever is above IDLE (TLA > 2°); repeated every ~1.4 s until IDLE (at most six). After RETARD the numeric callouts below that height are not called. |
 | `v1` | FWS V1 callout pulse (takeoff, V1 reached). |
 | `stall` | Looped ("STALL STALL" + cricket); silences the synthetic voice. Sounds for the FWS stall warning and for the port stall warning: airborne above 60 kt and below VSW (the red/black barber pole on the PFD; clears 3 kt above it), or at the flight model's stall-warning angle of attack (15° in the .acf). The FWS warning alone never sounds here because it requires alternate/direct law and this port always reports normal law without implementing alpha protection. |
+| `pull_up_new` / `pull_up_old` | GPWS terrain warning (TERRAIN / PULL UP), looped while active, 10–2450 ft RA airborne. Mode 1 (excessive descent rate): RA ≤ 1.3 × sink − 1940 ft below 1700 fpm sink, else ≤ 0.4 × sink − 410 ft (sink > 1000 fpm). Mode 2 (excessive terrain closure rate): the RA rate (0.5 s low-pass) inside the FBW mode-2 envelope (airspeed-dependent upper limit 1650–2450 ft; 775 ft with landing flaps) for more than 0.2 s. Port of FBW A380 `LegacyGpws.ts`; FBW keeps mode 2 off because of an MSFS terrain artefact, X-Plane's radio altitude is the real terrain so it is on here. Silences the callouts; the stall warning has priority. The recording is chosen on the EFB (Settings > Sounds > GPWS / TAWS voice: New A380 / Old A380, saved in X-Plane's preferences folder as `A380X-XP12_efb.prf`) or with the command `a380x/xp12/aurals/gpws_voice_toggle`; switching while the warning sounds restarts it with the chosen recording. User-supplied recordings (`~/Downloads/airbus-a380-pull-up.mp3`, `old-airbus-a380-pull-up.mp3`). |
 | `crc_master_warning` | FWS CRC (continuous repetitive chime) while requested — it replaces the glareshield's old synthetic 640 Hz master-warning tone for those warnings. |
 | `cchord` | FWS altitude alert: once (C-chord) or looped (continuous C-chord). |
 | `triple_click` | FMA mode reversion (rising edge). |
@@ -39,3 +40,8 @@ are dropped if they cannot start within 1 s.
 ## Not covered by the supplied set
 
 The single chime (master caution) keeps the glareshield's existing tone; there is no sample for it.
+
+## Packaged for later
+
+`plugins/A380XAvionics/sounds/systems/ptu.wav` (user-supplied `airbus-ptu-sound.mp3`, mono 16-bit,
+7.7 s) is installed for the future PTU simulation; nothing plays it yet.

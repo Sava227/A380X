@@ -11,9 +11,11 @@
  *   (PERF APPR BARO / RADIO), A/P engagement and the thrust lever angles. The triple click follows
  *   the FMA mode reversion; the chime follows the FASTEN SEAT BELTS sign. The A/P disconnect cavalry
  *   charge follows the FWS request (one 1.2 s cycle for a voluntary disconnect, repeated until
- *   acknowledged for an involuntary one).
+ *   acknowledged for an involuntary one). GPWS modes 1 (excessive descent rate) and 2 (excessive terrain
+ *   closure rate), ported from FBW A380 LegacyGpws.ts, loop the TERRAIN / PULL UP voice (the EFB
+ *   chooses the new or the old A380 recording; the adapter plays the chosen one).
  *
- * The synthetic voice is one channel: one callout at a time, by priority (STALL > MINIMUM >
+ * The synthetic voice is one channel: one callout at a time, by priority (STALL > PULL UP > MINIMUM >
  * HUNDRED ABOVE > RETARD > altitude callouts > V1). STALL and MINIMUM interrupt a lower callout;
  * the others wait for the current one and are dropped if they cannot start within 0.5 s.
  */
@@ -27,6 +29,7 @@ typedef enum {
     AUR_RA_90, AUR_RA_80, AUR_RA_70, AUR_RA_60, AUR_RA_50, AUR_RA_40, AUR_RA_30, AUR_RA_20, AUR_RA_10, AUR_RA_5,
     AUR_HUNDRED_ABOVE, AUR_MINIMUM, AUR_RETARD, AUR_V1,   /* synthetic voice, one at a time */
     AUR_STALL,                                             /* voice + cricket, looped */
+    AUR_PULL_UP,                                           /* GPWS terrain / PULL UP voice, looped */
     AUR_CRC, AUR_CCHORD, AUR_TRIPLE_CLICK, AUR_SEATBELT,   /* attention getters */
     AUR_CAVALRY,                                           /* A/P disconnect cavalry charge, looped */
     AUR_COUNT
@@ -51,6 +54,9 @@ typedef struct {
      * airborne above 60 kt and below VSW (3 kt hysteresis), or the flight model's stall-warning AoA. */
     int cas_valid; double cas_kt, vsw_kt;
     int aoa_stall_warning;
+    /* GPWS modes 1 and 2 (FBW A380 LegacyGpws.ts): inertial vertical speed, landing flaps, gear. */
+    double vs_fpm;
+    int landing_flaps, gear_down;
     int mode_reversion;
     int seatbelt_valid, seatbelt_sign;              /* sign 0 off, > 0 on */
 } AurInputs;
@@ -76,6 +82,7 @@ typedef struct {
     unsigned char prev_v1, prev_cchord_once, prev_reversion;
     int prev_seatbelt;
     int port_stall;
+    double gpws_ra_rate, gpws_last_ra, gpws_mode2_time; int gpws_last_ra_valid, gpws_pull_up;
 } Aurals;
 
 void aurals_init(Aurals *a);
