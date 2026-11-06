@@ -23,6 +23,7 @@ static const struct { const char *file; float volume; } aural_files[AUR_COUNT] =
     {"callout_50.wav", 0.9f}, {"callout_40.wav", 0.9f}, {"callout_30.wav", 0.9f},
     {"callout_20.wav", 0.9f}, {"callout_10.wav", 0.9f}, {"callout_5.wav", 0.9f},
     {"hundred_above.wav", 0.9f}, {"minimum.wav", 0.9f}, {"retard.wav", 0.9f}, {"v1.wav", 0.9f},
+    {"terrain_ahead.wav", 0.9f},   /* optional, user-supplied: TAWS caution is silent without it */
     {"stall.wav", 1.0f}, {"pull_up_new.wav", 1.0f}, {"crc_master_warning.wav", 0.8f}, {"cchord.wav", 0.45f},
     {"triple_click.wav", 0.6f}, {"seatbelt_chime.wav", 0.5f}, {"cavalry_charge.wav", 0.8f},
 };
@@ -171,8 +172,9 @@ static void aurals_start(void)
     if (!aur.loaded) {
         for (i = 0; i < AUR_COUNT; ++i) aur.loaded += aural_load(&aur.sample[i], aural_files[i].file);
         aural_load(&aur.pull_up_old, "pull_up_old.wav");
-        snprintf(line, sizeof(line), "A380X cockpit aurals: %d/%d samples loaded (interior bus, cockpit view only)\n",
-                 aur.loaded, AUR_COUNT);
+        snprintf(line, sizeof(line), "A380X cockpit aurals: %d/%d samples loaded (interior bus, cockpit view only)%s\n",
+                 aur.loaded, AUR_COUNT,
+                 aur.sample[AUR_TERRAIN_AHEAD].data ? "" : "; optional terrain_ahead.wav not installed (TAWS caution silent)");
         XPLMDebugString(line);
     }
     aurals_reset();
@@ -226,7 +228,13 @@ static void aurals_update_frame(float dt)
     in.mode_reversion = guidance.mode_reversion;
     in.seatbelt_valid = aur.seatbelt != NULL;
     in.seatbelt_sign = aur.seatbelt ? XPLMGetDatai(aur.seatbelt) : 0;
+    /* TAWS look-ahead (a380x_terrain_adapter.inc, previous frame): warning = PULL UP loop, caution =
+     * optional TERRAIN AHEAD; GPWS SYS OFF inhibits the GPWS modes 1/2. */
+    in.taws_warning = nd_data.taws_warning;
+    in.taws_caution = nd_data.taws_caution && !nd_data.taws_warning;
+    in.gpws_inhibit = survh_state[SURV_GPWS_OFF] != 0;
     aurals_update(&aur.core, &in, &out);
+    nd_data.gpws_pull_up = aur.core.gpws_mode_pull_up;
 
     audible = aural_cockpit_view();
     if (!audible) {

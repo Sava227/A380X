@@ -90,6 +90,14 @@ for (var f = 3; f < files.length; ++f) {
   var next = JSON.parse(JSON.stringify(input.terrain)); next.nd[0].rev += 1;
   trial.apply(state(next));
   check(terrainApi.revision === before + 2 && nd.needsSnapshot() === true, 'new revision captured');
+  if (input.taws && input.taws.warning) {   // TAWS look-ahead warning state: solid caution (9) and warning (10) cells, the PFD's EGPWS word
+    check(cells[9] > 0 && cells[10] > 0 && area[9] > 0 && area[10] > 0, 'TAWS threat cells drawn solid');
+    var probe = {ok: true, mode: 'native', values: {}, words: input.words, numbers: {}, nav: state(next).nav, terrain: next};
+    var f32 = new Float32Array([2048]), u32 = new Uint32Array(f32.buffer)[0];
+    trial.apply(probe);
+    check(v('L:A32NX_EGPWS_ALERT_1_DISCRETE_WORD_1') === u32 + 3 * Math.pow(2, 32), 'EGPWS word 1: PULL UP bit 12, normal operation');
+    summary.push('TAWS ' + cells[9] + ' caution + ' + cells[10] + ' warning cells');
+  }
   summary.push(files[f].replace(/^.*\//, '') + ' ' + runs.length + ' runs');
   clockMs += 1000;
 }

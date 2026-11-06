@@ -919,6 +919,18 @@ static void test_pfd_boundaries(void) {
     clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(has_label("STALL"));
     pfd_guidance.on_ground=1;
     clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(!has_label("STALL"));
+    /* TAWS / GPWS (FBW AttitudeIndicatorWarningsA380): PULL UP for the TAWS warning or GPWS modes 1/2,
+     * TERRAIN for the TAWS caution, both below the stall warning. */
+    normal_state();nd_data.taws_caution=1;
+    clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(has_label("TERRAIN")&&!has_label("PULL UP"));
+    nd_data.taws_warning=1;
+    clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(has_label("PULL UP")&&!has_label("TERRAIN"));
+    nd_data.taws_warning=nd_data.taws_caution=0;nd_data.gpws_pull_up=1;
+    clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(has_label("PULL UP"));
+    pfd_guidance.stall_warning=1;pfd_guidance.on_ground=0;
+    clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(has_label("STALL")&&!has_label("PULL UP"));
+    nd_data.gpws_pull_up=0;pfd_guidance.stall_warning=0;
+    clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(!has_label("PULL UP")&&!has_label("TERRAIN"));
 }
 static void test_fms_flap_speeds(void) {
     /* FBW PRIM rule: S in CONF 1 and 1+F, F in CONF 2 and 3, neither clean or FULL. */

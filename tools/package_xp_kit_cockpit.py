@@ -9,6 +9,7 @@ import shutil
 
 from patch_xp_kit_sd import patch_file as patch_sd_html
 from patch_xp_kit_nd import patch_file as patch_nd_html
+from patch_xp_kit_pfd import patch_file as patch_pfd_html
 
 ROOT = Path(__file__).resolve().parents[1]
 EFB_SOURCE = ROOT / 'native/avionics/xp-kit-efb'
@@ -113,6 +114,13 @@ def reuse_verified_assets(source, destination):
         manifest['asset_hashes']=dict(manifest['asset_hashes'])
         manifest['asset_hashes']['nd.html']=manifest['nd_html_sha256']=nd_patch['output_sha256']
         manifest['nd_terrain_patch']=nd_patch
+    # PFD CSS animations (FBW blinking warnings: PULL UP, TERRAIN ...) on the native frame clock
+    # (docs/ND_TERRAIN.md "Terrain alerts"): the repository's clock after the bridge of the verified page.
+    pfd_patch=patch_pfd_html(destination/'pfd.html')
+    if pfd_patch:
+        manifest['asset_hashes']=dict(manifest['asset_hashes'])
+        manifest['asset_hashes']['pfd.html']=manifest['html_sha256']=pfd_patch['output_sha256']
+        manifest['pfd_animation_clock_patch']=pfd_patch
     _with_efb(destination,manifest)
     (destination/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     return manifest
@@ -137,7 +145,7 @@ def package(destination):
         raise ValueError('Native runtime must have exactly one known child-script loader')
     runtime = runtime.replace(loader, 'const RUNTIME_FILES = [];')
     scripts = ['window.__A380_NATIVE=true; window.__a380PfdSource=' + json.dumps(bundle) + ';',
-               (source / 'bridge.js').read_text(), runtime]
+               (source / 'bridge.js').read_text(), (source / 'animation-clock.js').read_text(), runtime]
     scripts.extend((build / 'runtime/msfs' / f).read_text() for f in ('coherent.js', 'simvar.js', 'environment.js', 'instrument.js'))
     html = '<!doctype html><html><head><meta charset="utf-8"><title>A380X cockpit PFD</title><style>' + css + '\nhtml,body{margin:0;width:768px;height:1024px;background:#000}#PFD_CONTENT{width:768px;height:1024px}</style>'
     html += ''.join('<script>' + script.replace('</script', '<\\/script') + '</script>' for script in scripts)

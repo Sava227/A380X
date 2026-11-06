@@ -47,6 +47,9 @@ typedef struct {
     /* FBW ND header inputs: NAN when unavailable. Wind direction is true, "from". */
     float tas_knots, wind_dir_true, wind_speed_kt, zulu_seconds, magnetic_variation;
     EfisVdTerrain vd[2];
+    /* TAWS look-ahead alerts (a380x_taws.h via a380x_terrain_adapter.inc), read by the aurals, the PFD
+     * and the EGPWS discrete words; gpws_pull_up = GPWS modes 1/2 PULL UP from the aurals core. */
+    int taws_caution, taws_warning, gpws_pull_up;
 } EfisNdData;
 
 /* Great-circle distance/bearing avoids longitude wrapping and polar-map errors.

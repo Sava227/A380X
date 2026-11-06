@@ -111,7 +111,14 @@ TERRAIN_LAYER = HERE / "xp-kit-nd/terrain-layer.js"
 TERRAIN_LAYER_CHECK = HERE.parent.parent / "tools/terrain_layer_check.js"
 TERRAIN_PATCH = HERE.parent.parent / "tools/patch_xp_kit_nd.py"
 TERRAIN_PATCH_TEST = HERE.parent.parent / "tools/test_patch_xp_kit_nd.py"
-TERRAIN_SCENARIOS = ("arc", "rose", "peaks", "approach")
+TERRAIN_SCENARIOS = ("arc", "rose", "peaks", "approach", "taws")
+# TAWS look-ahead alerting (docs/ND_TERRAIN.md "Terrain alerts"): XPLM-free a380x_taws.h on synthetic terrain.
+TAWS_TEST = HERE / "test_taws.c"
+# The FBW PFD's blinking warnings (PULL UP / TERRAIN ...) need CSS animations on the native frame clock:
+# xp-kit/animation-clock.js, inserted into the reused pfd.html by tools/patch_xp_kit_pfd.py.
+PFD_ANIMATION_CLOCK = HERE / "xp-kit/animation-clock.js"
+PFD_PATCH = HERE.parent.parent / "tools/patch_xp_kit_pfd.py"
+PFD_PATCH_TEST = HERE.parent.parent / "tools/test_patch_xp_kit_pfd.py"
 EWD_DATA_TEST = HERE / "test_ewd_data.c"
 EWD_RENDER_TEST = HERE / "test_ewd_render.c"
 EWD_FONT = HERE / "fonts/FBW-Display-EIS-A380.ttf"
@@ -157,7 +164,7 @@ MFD_TESTS = (("test_mfd_formats", "core"), ("test_fms_core", "core"), ("test_nav
              ("test_mfd_ui", "core"), ("test_mfd_render", "render"), ("test_sd", "render"))
 MFD_OPTIONAL_TESTS = (("test_mfd_pages_a", "render"), ("test_mfd_page_perf", "render"),
                       ("test_mfd_page_fpln", "render"), ("test_mfd_pages_h", "render"))
-EXTRA_INPUTS = [TERRAIN_TEST, TERRAIN_ADAPTER_TEST, TERRAIN_LAYER, HERE / "xp-kit/bridge.js", HERE / "xp-kit-nd/native-bridge.js",
+EXTRA_INPUTS = [TERRAIN_TEST, TERRAIN_ADAPTER_TEST, TAWS_TEST, PFD_ANIMATION_CLOCK, TERRAIN_LAYER, HERE / "xp-kit/bridge.js", HERE / "xp-kit-nd/native-bridge.js",
     FMGC_FLIGHT_TEST, EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", HERE / "test_xpkit_zero_copy.c", XPKIT_SURFACE, ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, *AUTOLAND_SOURCES, AUTOLAND_TEST, AUTOLAND_SIM_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
     EWD_DATA_TEST, EWD_RENDER_TEST, FCU_MOTION_TEST, FCU_LIGHT_TEST, ISIS_TEST, CONTROL_MOTION_TEST,
     *CXX_SOURCES, *[p for p in HERE.glob("*.h") if not p.name.startswith("._")],
@@ -233,7 +240,7 @@ def main() -> None:
     inputs = [headers / name for name in header_names]
     for path in [*inputs, framework, import_library, PLUGIN, CORE, CORE_HEADER, EFB, EFB_HEADER, TEST,
                  EWD_FONT, EWD_FONT_HEADER, EWD_FONT_GENERATOR, DETENT_CLICK_GENERATOR, ISIS_FONT, ISIS_FONT_HEADER, ISIS_FONT_GENERATOR, *FCU_FONTS, FCU_FONT_HEADER, FCU_FONT_GENERATOR, FCU_RENDER_TEST, MFD_FONT_HEADER, MFD_FONT_GENERATOR, *MFD_SOURCES, *EXTRA_INPUTS,
-                 TERRAIN_LAYER_CHECK, TERRAIN_PATCH, TERRAIN_PATCH_TEST]:
+                 TERRAIN_LAYER_CHECK, TERRAIN_PATCH, TERRAIN_PATCH_TEST, PFD_PATCH, PFD_PATCH_TEST]:
         if not path.is_file():
             parser.error(f"Missing build input: {path}")
     clang = shutil.which(args.clang)
@@ -512,6 +519,10 @@ def main() -> None:
     run([clang, *warnings, str(TERRAIN_TEST), "-lm", "-o", str(terrain_binary)])
     terrain_lines = run([str(terrain_binary)]).strip().splitlines()
     run([mingw, *warnings, "-c", str(TERRAIN_TEST), "-o", str(output / "test_terrain_win_check.o")])
+    taws_binary = output / "test_taws"
+    run([clang, *warnings, str(TAWS_TEST), "-lm", "-o", str(taws_binary)])
+    taws_lines = run([str(taws_binary)]).strip().splitlines()
+    run([mingw, *warnings, "-c", str(TAWS_TEST), "-o", str(output / "test_taws_win_check.o")])
     terrain_adapter_binary = output / "test_terrain_adapter"
     run([clang, *warnings, "-Wno-deprecated-declarations", "-DAPL=1", "-DXPLM200=1", "-DXPLM210=1", "-DXPLM300=1",
          "-DXPLM301=1", "-DXPLM400=1", "-DXPLM410=1", "-I", str(headers), str(TERRAIN_ADAPTER_TEST), "-lm",
@@ -551,6 +562,13 @@ def main() -> None:
     if patch_test.returncode:
         raise RuntimeError("ND page terrain patch tests failed:\n" + patch_test.stdout + patch_test.stderr)
     terrain_patch_result = patch_test.stderr.strip().splitlines()[-1]
+    pfd_patch_test = subprocess.run([_sys.executable, "-m", "unittest", "discover", "-s", str(PFD_PATCH_TEST.parent),
+                                     "-p", PFD_PATCH_TEST.name], text=True, capture_output=True)
+    commands.append({"argv": pfd_patch_test.args, "stdout": pfd_patch_test.stdout, "stderr": pfd_patch_test.stderr,
+                     "returncode": pfd_patch_test.returncode})
+    if pfd_patch_test.returncode:
+        raise RuntimeError("PFD page animation clock patch tests failed:\n" + pfd_patch_test.stdout + pfd_patch_test.stderr)
+    pfd_patch_result = pfd_patch_test.stderr.strip().splitlines()[-1]
     contracts = run([str(adapter_test_binary), "--contracts"]).splitlines()
 
     # ---- MFD / FMS core: objects once (host arch, no XPLM include path = proves XPLM-free) ----
@@ -1127,6 +1145,14 @@ def main() -> None:
                                       "flybywiresim/aircraft@2b2612f9 fbw-a380x/src/wasm/fbw_a380/src/model/A380FcuComputer.cpp (WX/TERR overlay)",
                                       "flybywiresim/aircraft@2b2612f9 fbw-a380x/src/systems/systems-host/Misc/EfisTawsBridge.ts (terrOnNd)"],
                        "colour_reference": "Honeywell MK V/MK VII EGPWS Pilot's Guide 060-4241-000 Rev H, TAD colour table",
+                       "taws_lookahead": {"test_result": taws_lines[-1], "measurements": taws_lines[:-1],
+                                          "references": ["Honeywell MK V/MK VII EGPWS Pilot's Guide 060-4241-000 Rev H, Terrain Look Ahead Alerting",
+                                                         "EASA CS ACNS.E.TAWS.015 Table 1 / FAA TSO-C151 required terrain clearance"],
+                                          "outputs": ["PULL UP loop (taws_warning), optional terrain_ahead.wav (taws_caution)",
+                                                      "L:A32NX_EGPWS_ALERT_1/2_DISCRETE_WORD_1 bits 12 PULL UP / 13 TERRAIN",
+                                                      "solid yellow / red threat cells on both NDs, TERR pop-up"],
+                                          "pfd_animation_clock_patch_test_result": pfd_patch_result,
+                                          "simulator_tested": False},
                        "simulator_tested": False},
         "ewd_data_test_result": ewd_data_result,
         "ewd_render_test_result": ewd_render_result,

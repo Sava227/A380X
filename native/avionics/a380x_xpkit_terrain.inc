@@ -21,3 +21,15 @@ static void xpkit_terrain_json(XpKitJson *j) {
     }
     xpkit_append(j,"]}");
 }
+
+/* TAWS / GPWS alerts for the FBW PFD (TawsPublisher: L:A32NX_EGPWS_ALERT_#index#_DISCRETE_WORD_1; the
+ * A380 warning group reads index 1, both are published): bit 12 PULL UP (red) for the TAWS warning or
+ * GPWS modes 1/2, bit 13 TERRAIN (amber) for the TAWS caution. Word 2 stays 0: its bit 15 is the
+ * windshear display. Words carry the integer value, as the FG words do (bridge.js rawWord). */
+static void xpkit_taws_words(XpKitJson *j) {
+    const int pull_up=nd_data.taws_warning||nd_data.gpws_pull_up;
+    const unsigned w1=(pull_up?1u<<11:0u)|(nd_data.taws_caution&&!pull_up?1u<<12:0u);
+    for(int unit=1;unit<=2;++unit)
+        xpkit_append(j,"\"L:A32NX_EGPWS_ALERT_%d_DISCRETE_WORD_1\":[%u,true],\"L:A32NX_EGPWS_ALERT_%d_DISCRETE_WORD_2\":[0,true],",
+                     unit,w1,unit);
+}

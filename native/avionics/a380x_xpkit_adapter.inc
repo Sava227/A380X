@@ -733,6 +733,7 @@ static void xpkit_publish_state(double now) {
     }
     xpkit_append(&j,"\"_end\":0},\"words\":{");
     xpkit_guidance_words(&j);
+    xpkit_taws_words(&j);   /* a380x_xpkit_terrain.inc: PULL UP / TERRAIN on the FBW PFD */
     xpkit_append(&j,"\"_end\":[0,false]},\"numbers\":{");
     if(flaps_feed.ready) {   /* plain L: vars of the FBW PFD (pitch-trim display, TRUE reference) */
         xpkit_number(&j,"L:A32NX_FLAPS_HANDLE_INDEX",flaps_feed.handle_index);
