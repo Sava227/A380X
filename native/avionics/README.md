@@ -101,12 +101,16 @@ boundary. One shared state drives the physical FCU, PFD bugs, FMA and FD.
 The two continuous purple LCD faces pair SPD/HDG and ALT/V/S at 512×128
 texels each; all four targets retain independent native input and guidance.
 Source hashes and the GPL license are retained with the import. This does not
-import the complete PRIM/FMS/FADEC network or autoland. See
-`../../docs/AUTOPILOT_DEVELOPMENT.md` for the explicit boundary and controls.
+import the complete PRIM/FMS/FADEC network. LAND/FLARE/ROLL OUT, RETARD and
+SRS GA follow the FBW PRIM FG mode logic (`a380x_autoland.inc`,
+`../../docs/AUTOLAND.md`). See `../../docs/AUTOPILOT_DEVELOPMENT.md` for the
+explicit boundary and controls.
 
-The build also runs numerical guidance, actual PFD/FCU rendering, and XPLM
-boundary tests and checks native command/dataref declarations against the
-cockpit package contract. Generated SVG previews are offline render tests.
+The build also runs numerical guidance, autoland mode-logic and closed-loop
+bench (`test_autoland.c`, `test_autoland_sim.c`, report `autoland-bench.txt`),
+actual PFD/FCU rendering, and XPLM boundary tests and checks native
+command/dataref declarations against the cockpit package contract. Generated
+SVG previews are offline render tests.
 
 The three-unit ADIRS now drives the authored overhead controls and selected
 PFD/ND/guidance validity. See [ADIRS operation and model boundary](../../docs/ADIRS.md)

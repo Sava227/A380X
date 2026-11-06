@@ -91,7 +91,19 @@ Use a repeatable saved airborne test state. Retain mode traces, actual control o
 - [ ] Confirm cursor motion does not rebuild airport geometry or display textures unnecessarily; panning/zoom and page changes remain responsive. Recheck ND 0.05/0.1 NM close maps, stand/taxiway labels and original map-panel buttons.
 - [ ] Confirm PFD/FMA, MFD FCU backup, ND, ECAM, ADIRS buttons and current aircraft flight model still work. Attach errors, missing assets/datarefs, unresolved tests and restoration details instead of marking an incomplete run passed.
 
-Final acceptance requires real installation and cockpit verification in addition to passing bench checks. Unsupported SRS, go-around, autoland/rollout, full LNAV/VNAV, complete FE/FADEC and full redundant computer behavior remain listed in the functional specification.
+Final acceptance requires real installation and cockpit verification in addition to passing bench checks. Unsupported SRS takeoff, the FMS go-around phase, LAND 3, full LNAV/VNAV, complete FE/FADEC and full redundant computer behavior remain listed in the functional specification.
+
+## Autoland, RETARD and go-around (AUTOLAND.md)
+
+Watch `a380x/xp12/fcu/{land_active,flare_active,rollout_active,retard_active,go_around_active,land_capability,yaw_servo_active}` with the FMA.
+
+- [ ] On the ground, confirm the radio altimeter reads about 0 ft with the main gear on the runway (FLARE and ROLL OUT are RA-based).
+- [ ] Calm ILS with AP1+AP2 and A/THR: LAND near 400 ft, FLARE about 40-55 ft, FMA IDLE (RETARD) at 50 ft, RETARD aural at 10 ft, touchdown sink and point, ROLL OUT, the AP holds the centreline. Set IDLE: A/THR disconnects. Disconnect the AP at taxi speed: rudder lease released, no AUTOLAND light.
+- [ ] Repeat with a 10-15 kt crosswind: decrab below 30 ft (heading toward the runway course), bank at touchdown, roll-out deviation. Tune ALIGN_KP/KI/KR and the ROLL OUT pedal scale in `a380x_autoland.inc` if needed; check the sign of `sim/flightmodel/position/beta` (nose right of the path should be positive).
+- [ ] Leave the levers at CL after touchdown: A/THR stays at idle (FMA IDLE) until IDLE or reverse is selected.
+- [ ] Pause, replay, AP disconnect and physical rudder-pedal input during ROLL OUT each release `override_joystick_heading`.
+- [ ] TOGA at 100-200 ft: SRS / GA TRK, MAN TOGA, AP stays engaged, height loss; levers to CL: THR CLB; ALT* at the FCU altitude.
+- [ ] FD-only approach: LAND/FLARE FD guidance, no RETARD, no yaw lease; manual RETARD reminder at 20 ft.
 
 
 ## Shared LCD follow-up

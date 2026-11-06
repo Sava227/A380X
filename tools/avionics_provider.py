@@ -89,6 +89,8 @@ FCU_DATAREFS = tuple("a380x/xp12/fcu/" + name for name in (
     "ap1_active", "ap2_active", "fd_active", "athr_active", "loc_active", "approach_active",
     "altitude_step_ft", "servo_active", "ls_captain", "ls_first_officer",
     "athr_armed", "altitude_hold_active",
+    "land_active", "flare_active", "rollout_active", "retard_active",
+    "go_around_active", "land_capability", "yaw_servo_active",
 ))
 FCU_MOTION_DATAREFS = tuple("a380x/xp12/fcu/" + name for name in (
     *(f"{button}_pressed" for button in ("ap1", "ap2", "fd", "athr", "loc", "alt_button",

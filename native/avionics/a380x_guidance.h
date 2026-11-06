@@ -1,10 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * A380 FCU state adapter; actual AP/FD outer-loop laws are vendored FlyByWire.
- * This is not the complete PRIM/FCU/FMS computer network or an autoland system.
+ * This is not the complete PRIM/FCU/FMS computer network. LAND/FLARE/ROLL OUT, RETARD and
+ * SRS GA / GA TRK follow the FBW PRIM FG mode logic (a380x_autoland.h, docs/AUTOLAND.md).
  */
 #ifndef A380X_GUIDANCE_H
 #define A380X_GUIDANCE_H
 #include "a380x_avionics_core.h"
+#include "a380x_autoland.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -14,6 +16,10 @@ typedef struct {
     double loc_deviation_dots; /* positive: localizer needle RIGHT */
     double gs_deviation_dots;  /* positive: glideslope needle UP */
     double course_deg, gs_angle_deg, distance_nm; /* course is MAGNETIC */
+    /* Optional: distance to the LOCALIZER antenna (the DME is often at the glide antenna). The
+     * ROLL OUT law converts the angular deviation to metres with it; zero/invalid = use DME. */
+    int localizer_distance_valid;
+    double localizer_distance_nm;
 } A380XIlsInputs;
 
 typedef struct {
@@ -66,6 +72,10 @@ typedef struct {
     int managed_path_idle, managed_before_tod;
     int fms_phase_valid, fms_phase;     /* FMGC flight phase (A380XFmsPhase numbering) */
     double fms_v2_knots;                /* takeoff V2 for SRS, 0 = none */
+    /* Landing (a380x_autoland.inc). Missing data keeps LAND/GA unavailable: radio_height_ft is 0
+     * when invalid, so LAND requires radio_height_valid; GA requires a flap handle index >= 1. */
+    int radio_height_valid, flap_handle_index;
+    double rudder_ratio; /* pilot rudder pedal position [-1,1], +right; FBW ROLL OUT entry value */
 } A380XGuidanceInputs;
 
 typedef enum {
@@ -121,6 +131,8 @@ typedef struct {
     /* private */
     int managed_climb, nav_auto_armed, clb_disarmed, athr_speed_prev;
     double cst_capture_ft, ias_prev, ias_rate;
+    /* LAND/FLARE/ROLL OUT/RETARD/GA sub-state and the yaw (rudder) actuator output. */
+    A380XLandingState land;
 } A380XGuidanceState;
 
 /* FMA vertical message including the ALT CST / ALT CRZ qualifiers (for the native PFD and FMS). */

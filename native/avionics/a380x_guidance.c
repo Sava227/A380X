@@ -3,8 +3,9 @@
  * Source: pinned A380FcuComputer.cpp / A380PrimComputerFg.cpp; user-facing
  * controls: https://docs.flybywiresim.com/pilots-corner/a380x/a380x-briefing/flight-deck/glareshield/afs/
  * This adapter does not implement the three PRIMs, FMS, FADEC detent network,
- * takeoff/go-around guidance, autoland or the full flight-envelope protections.
- * A/THR and final pitch/roll actuator servos are explicitly port-specific.
+ * SRS takeoff guidance or the full flight-envelope protections. LAND/FLARE/ROLL OUT,
+ * RETARD and SRS GA / GA TRK: a380x_autoland.inc (FBW PRIM FG mode logic).
+ * A/THR and final pitch/roll/yaw actuator servos are explicitly port-specific.
  */
 #include "a380x_guidance.h"
 #include "a380x_fbw_laws.h"
@@ -118,6 +119,7 @@ static void cancel_approach(A380XGuidanceState *s,const A380XGuidanceInputs *i) 
 }
 /* Managed (FMS-coupled) NAV / SRS / CLB / DES / ALT CST logic. */
 #include "a380x_guidance_managed.inc"
+#include "a380x_autoland.inc"
 
 void a380x_guidance_init(A380XGuidanceState *s,const A380XGuidanceInputs *i) {
     memset(s,0,sizeof(*s));
@@ -150,6 +152,7 @@ void a380x_guidance_command(A380XGuidanceState *s,const A380XGuidanceInputs *i,A
     }
     if (c==A380X_FCU_ATHR_DISCONNECT) { disconnect_athr(s,i); return; }
     if (!i->powered) return;
+    if (landing_command_filter(s,c)) return;
     switch(c) {
     case A380X_FCU_SPD_ROTATE:
         if (s->speed_dashes) {
@@ -212,7 +215,7 @@ void a380x_guidance_command(A380XGuidanceState *s,const A380XGuidanceInputs *i,A
         int *ap=c==A380X_FCU_AP1?&s->ap1:&s->ap2;
         if(*ap) { *ap=0; if(!s->ap1 && !s->ap2) s->disconnect_seconds=5; }
         else if(can_engage(s,i)) {
-            if(!s->approach_selected) { s->ap1=0; s->ap2=0; }
+            if(!s->approach_selected && !s->land.land_active && !s->land.go_around_active) { s->ap1=0; s->ap2=0; }
             if(!s->vertical_guidance_selected) {
                 s->vertical_guidance_selected=1; s->held_altitude_ft=i->altitude_ft;
                 s->vertical_mode=A380X_B1_ALT;
@@ -272,7 +275,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         disconnect(s,1); s->athr_active=0; s->guidance_valid=0; return;
     }
     /* Freeze display/mode state on pause; simulator adapter releases controls. */
-    if(dt<=0 || i->paused) { s->pitch_servo=s->roll_servo=0; return; }
+    if(dt<=0 || i->paused) { s->pitch_servo=s->roll_servo=s->land.yaw_servo=0; return; }
     /* Substep slower frames so timers use elapsed simulation time and the
      * imported filters retain their maximum 100ms integration step. */
     if(dt>.1) {
@@ -289,7 +292,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         s->have_previous_ils=0; a380x_fbw_laws_reset(s->fbw_laws);
     }
     s->source_side=s->ap2 && !s->ap1?1:0; ils=&i->ils[s->source_side];
-    valid=airborne_valid(i);
+    valid=airborne_valid(i) || landing_ground_valid(s,i);
     s->ap_engagement_inhibited=!can_engage(s,i);
     s->speed_preselect_seconds=decay(s->speed_preselect_seconds,dt);
     s->heading_preselect_seconds=decay(s->heading_preselect_seconds,dt);
@@ -301,7 +304,12 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
     s->heading_dashes=(s->heading_managed || loc_mode(s)) && s->heading_preselect_seconds<=0;
     s->vs_dashes=!vs_mode(s) && s->vs_preselect_seconds<=0;
     if(!valid || i->pitch_deg < -13 || i->pitch_deg>25 || fabs(i->roll_deg)>45 ||
-        (i->vls_knots>0 && i->ias_knots<i->vls_knots) || (i->vmax_knots>0 && i->ias_knots>i->vmax_knots+15)) {
+        /* Port speed guard. In approach modes it stands in for the alpha-prot + 1 deg disconnect
+         * (roughly VLS - 10 kt in landing configuration) and is not applied in LAND. */
+        (i->vls_knots>0 && !s->land.land_active &&
+         i->ias_knots<i->vls_knots-(s->approach_selected || loc_mode(s) || gs_mode(s) ||
+                                    s->land.go_around_active ? 10 : 0)) ||
+        (i->vmax_knots>0 && i->ias_knots>i->vmax_knots+15)) {
         disconnect(s,1);
     }
     if(!i->powered) { s->athr_armed=0; s->loc_armed=s->gs_armed=s->approach_selected=0; }
@@ -328,10 +336,10 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
     }
     s->altitude_target_ft=s->vertical_mode==A380X_B1_ALT?s->held_altitude_ft:s->selected_altitude_ft;
     if(s->altitude_managed) s->altitude_target_ft=managed_altitude_target(s,i);
-    if(valid && loc_mode(s) && !ils_loc_valid(ils)) {
+    if(valid && loc_mode(s) && !ils_loc_valid(ils) && !s->land.land_active) {
         cancel_approach(s,i); s->reversion_seconds=5;
     }
-    if(valid && gs_mode(s) && !ils_gs_valid(ils)) {
+    if(valid && gs_mode(s) && !ils_gs_valid(ils) && !s->land.land_active) {
         s->gs_armed=0; s->approach_selected=0; revert_vertical(s,i);
         if(s->ap1 && s->ap2) s->ap2=0;
     }
@@ -355,14 +363,16 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         s->capture_seconds=fabs(ils->gs_deviation_dots)<.12?s->capture_seconds+dt:0;
         if(s->capture_seconds>=2) s->vertical_mode=A380X_B1_GS;
     }
-    /* No FLARE/ROLLOUT or LAND capability is imported by this adapter. */
-    if(gs_mode(s) && i->radio_height_ft<100 && (s->ap1 || s->ap2)) disconnect(s,1);
+    landing_modes(s,i,dt,ils,valid);
+    /* Without LAND engaged (e.g. no APPR, no RA, LOC/GS not in track) the AP still disconnects below 100 ft. */
+    if(gs_mode(s) && !s->land.land_active && i->radio_height_ft<100 && (s->ap1 || s->ap2)) disconnect(s,1);
     s->previous_loc_dots=ils->loc_deviation_dots; s->previous_gs_dots=ils->gs_deviation_dots;
     s->have_previous_ils=ils->valid;
     target_vs=s->trk_fpa_mode?tan(s->selected_fpa_deg*RAD)*fmax(i->ground_speed_knots,30)*101.2686:s->selected_vs_fpm;
     if(s->altitude_managed || s->vertical_mode==A380X_B1_SRS) target_vs=managed_vs_target(s,i);
     if(s->vertical_mode==A380X_B1_OP_CLB) target_vs=2000;
     if(s->vertical_mode==A380X_B1_OP_DES) target_vs=-1500;
+    if(s->vertical_mode==A380X_B1_SRS) target_vs=2000; /* GA: arms ALT* toward a higher FCU altitude */
     alt_error=s->altitude_target_ft-i->altitude_ft;
     before_capture=s->vertical_mode; was_managed=s->altitude_managed;
     s->altitude_armed=!gs_mode(s) && s->vertical_mode!=A380X_B1_ALT && s->vertical_mode!=A380X_B1_ALT_STAR &&
@@ -396,6 +406,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         s->pitch_servo=clamp(error*.2-i->pitch_rate_deg_s*.2+s->pitch_integral,-1,1);
         s->roll_servo=clamp((s->roll_command_deg-i->roll_deg)*.035-i->roll_rate_deg_s*.025,-1,1);
     } else { s->pitch_servo=s->roll_servo=0; s->pitch_integral=0; }
+    landing_actuators(s,i,dt);
     {
         int levers_valid=lever_inputs_valid(i), at_takeoff=takeoff_detent(i);
         /* IAS trend for the speed regulator (1 s lag) */
@@ -473,6 +484,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
             s->thrust_mode=manual_thrust_mode(i);
             s->athr_speed_prev=0;
         }
+        landing_athr(s,i,dt);
     }
     s->disconnect_warning=s->disconnect_seconds>0;
 }

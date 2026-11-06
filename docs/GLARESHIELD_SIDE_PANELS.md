@@ -29,15 +29,16 @@ symlink to that package. The implementation is in
 
 ## Adapter inputs
 
-The current port has no dual-sidestick authority computer, DCDU message
-producer, or LAND-mode computer. The plugin exposes the following inputs for
-those systems as they are ported:
+The current port has no dual-sidestick authority computer or DCDU message
+producer. The plugin exposes the following inputs for those systems as they
+are ported. The LAND window is produced by the native guidance
+([AUTOLAND.md](AUTOLAND.md)) and is read-only:
 
 | Input | Type | Meaning |
 | --- | --- | --- |
 | `a380x/xp12/glareshield/stick_left_moving` | writable int | Captain stick outside neutral |
 | `a380x/xp12/glareshield/stick_right_moving` | writable int | First-officer stick outside neutral |
-| `a380x/xp12/glareshield/land_mode` | writable int | LAND mode engaged |
+| `a380x/xp12/glareshield/land_mode` | read-only int | LAND engaged with an AP in it, airborne, before ROLL OUT |
 | `a380x/xp12/glareshield/atc_receive_normal` | command | New normal ATC message |
 | `a380x/xp12/glareshield/atc_receive_urgent` | command | New urgent ATC message |
 | `a380x/xp12/glareshield/atc_ack_left` / `atc_ack_right` | commands | Message read or acknowledged |
@@ -45,8 +46,9 @@ those systems as they are ported:
 The physical buttons, annunciators, audio and both ND/PFD presentations are
 installed. Sidestick priority currently changes the side-panel state and
 AP disconnect but cannot arbitrate independent control inputs until a dual
-sidestick source is added. `land_mode` defaults off; this port has no complete
-autoland guidance. No CPDLC receiver is connected, so ATC reception commands
+sidestick source is added. `land_mode` follows the guidance LAND mode once an
+AP has been engaged in it and ends at ROLL OUT, so an AP disconnect after
+touchdown does not flash the light. No CPDLC receiver is connected, so ATC reception commands
 must be called by an adapter. RADIO PTT requires the xPilot command at runtime.
 The new signals are also published as read-only `a380x/xp12/glareshield/*`
 datarefs for cockpit indications and external hardware.

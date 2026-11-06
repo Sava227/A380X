@@ -38,6 +38,8 @@ typedef struct {
      * FPPU synchro angles, target markers (-1 = none), F RELIEF and A LOCK. */
     int sfcc_valid, flap_relief, alpha_lock, slat_target_index, flap_target_index;
     double flap_fppu, slat_fppu;
+    /* Shared B1/C1 FMA cell (A380XBc1Message): LAND / FLARE / ROLL OUT replace the G/S and LOC words. */
+    int fma_bc1;
 } A380XPfdGuidance;
 
 /* Native FMS outputs consumed by the existing PFD/guidance boundary (spec 07 section 10.2).

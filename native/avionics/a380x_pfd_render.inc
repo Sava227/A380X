@@ -987,6 +987,9 @@ static void draw_fma(const PfdCanvas *p, const Side *side)
 {
     int active_vertical = pfd_guidance.guidance_valid ? published.fma_b1 : A380X_B1_NONE;
     int active_lateral = pfd_guidance.guidance_valid ? published.fma_c1 : A380X_C1_NONE;
+    /* FMA.tsx BC1Cell: LAND / FLARE / ROLL OUT span B1 and C1 and replace G/S and LOC. */
+    int shared_mode = pfd_guidance.guidance_valid ? pfd_guidance.fma_bc1 : A380X_BC1_NONE;
+    static const char *const shared_text[] = {"", "LAND", "FLARE", "ROLL OUT"};
     int active_thrust = published.fma_a1a2;
     if (!pfd_guidance.athr_active && active_thrust >= A380X_A1A2_SPEED && active_thrust <= A380X_A1A2_TOGA_LK)
         active_thrust = A380X_A1A2_NONE;
@@ -999,12 +1002,15 @@ static void draw_fma(const PfdCanvas *p, const Side *side)
     const char *brake_mode = (center_right.autobrake_armed >= 0 && center_right.autobrake_armed < 7)
         ? brake_modes[center_right.autobrake_armed] : "";
     static const float borders[] = {33.117f,66.241f,102.52f,133.72f};
+    if (shared_mode < 0 || shared_mode > A380X_BC1_ROLL_OUT) shared_mode = A380X_BC1_NONE;
+    if (shared_mode) { active_vertical = A380X_B1_NONE; active_lateral = A380X_C1_NONE; b1 = c1 = ""; }
     char vertical_text[24], armed_vertical[20], fd_status[8];
     const char *ap_status = pfd_guidance.ap1 ? (pfd_guidance.ap2 ? "AP1+2" : "AP1") :
                             (pfd_guidance.ap2 ? "AP2" : "");
     int i;
     int side_index = side == &refs.side[1] ? 1 : 0;
-    for (i = 0; i < ARRAY_LEN(borders); ++i) pfd_line(p,borders[i],0.337f,borders[i],21.201f,GREY);
+    for (i = 0; i < ARRAY_LEN(borders); ++i)
+        if (!shared_mode || i != 1) pfd_line(p,borders[i],0.337f,borders[i],21.201f,GREY);
     if (center_right.autobrake_active) {
         pfd_text_center(p,16.782f,7.128f,brake_mode,GREEN);
     } else if (strncmp(a1,"MAN ",4) == 0) {
@@ -1042,6 +1048,10 @@ static void draw_fma(const PfdCanvas *p, const Side *side)
     if (pfd_guidance.guidance_valid && pfd_guidance.loc_armed) pfd_text_center(p,84.857f,14.36f,"LOC",CYAN);
     else if (pfd_guidance.nav_armed) pfd_text_center(p,84.857f,14.36f,"NAV",CYAN);
     pfd_text_center(p,84.857f,6.987f,c1,GREEN);
+    if (shared_mode) {
+        pfd_text_center(p,67.85f,7.05f,shared_text[shared_mode],GREEN);
+        fma_change_box(p,side_index,6,shared_mode,34.0f,1.0f,101.7f,8.7f,WHITE);
+    } else fma_change_box(p,side_index,6,0,34.0f,1.0f,101.7f,8.7f,WHITE);
     pfd_text_center(p,118.459f,7.126f,d1,WHITE);
     fma_change_box(p,side_index,1,active_vertical,34.0f,1.0f,65.4f,8.7f,WHITE);
     fma_change_box(p,side_index,2,active_lateral,67.1f,1.0f,101.7f,8.7f,WHITE);
