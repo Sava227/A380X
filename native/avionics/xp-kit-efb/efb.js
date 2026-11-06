@@ -563,7 +563,11 @@
     }).join('');
     return card('', 'display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 40px;align-content:start', lbl('Volume · X-Plane sound settings', 'grid-column:span 2') + items +
       '<div style="grid-column:span 2;display:flex;gap:10px;align-items:center">' + btn('vol restore', 'Restore values from aircraft load') +
-      '<span class="note">Sliders write X-Plane&#39;s own volume settings; no new sounds are added.</span></div>');
+      '<span class="note">Sliders write X-Plane&#39;s own volume settings.</span></div>') +
+      card('col', 'gap:10px;margin-top:14px', lbl('Cockpit aurals') +
+        '<div class="list-row"><span>GPWS / TAWS voice (PULL UP)</span>' +
+        seg([['new', 'New A380'], ['old', 'Old A380']], F.gpwsVoice === 'old' ? 'old' : 'new', 'gpws voice') + '</div>' +
+        '<span class="note">Plays only in the cockpit view. Saved for the next flights.</span>');
   }
 
   /* ---- Keypad ------------------------------------------------------------------------------------ */

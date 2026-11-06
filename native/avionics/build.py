@@ -469,7 +469,7 @@ def main() -> None:
         if not efb_page_result.startswith("EFB PAGE OK"):
             raise RuntimeError("EFB page check failed: " + efb_page_result)
     adapter_test_binary = output / "test_fcu_adapter"
-    run([clang, *warnings, "-DAPL=1", "-DXPLM200=1", "-DXPLM300=1", "-I", str(headers), str(ADAPTER_TEST), str(GUIDANCE), str(CORE),
+    run([clang, *warnings, "-DAPL=1", "-DXPLM200=1", "-DXPLM300=1", "-I", str(headers), str(ADAPTER_TEST), str(GUIDANCE), str(HERE / "a380x_fms_speeds.c"), str(CORE),
          *mac_laws, "-lc++", "-lm", "-o", str(adapter_test_binary)])
     adapter_result = run([str(adapter_test_binary)]).strip()
     fcu_mechanical_results = {}

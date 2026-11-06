@@ -342,8 +342,9 @@ static void test_clean_performance_boundary(void) {
     assert(pfd_clean_vls(NAN,10000)==0&&pfd_clean_vls(400000,NAN)==0);
     assert(pfd_guidance.clean_performance_valid&&guidance_inputs.vls_knots>0);
     assert(!pfd_guidance.envelope_valid&&!pfd_guidance.alpha_prot_knots&&
-           !pfd_guidance.alpha_limit_knots&&!pfd_guidance.stall_warning_knots&&
-           !pfd_guidance.f_speed_knots&&!pfd_guidance.s_speed_knots);
+           !pfd_guidance.alpha_limit_knots&&!pfd_guidance.f_speed_knots&&!pfd_guidance.s_speed_knots);
+    /* Port VSW without a provider (FBW VS1g tables, max(1.05 VS1g, VS1g + 5 kt) at 1 g): shown, below VLS. */
+    assert(pfd_guidance.stall_warning_knots>100&&pfd_guidance.stall_warning_knots<guidance_inputs.vls_knots);
     r(pfd_input_refs[PI_FLAP_HANDLE])->value=.01;tick(1);
     assert(!pfd_guidance.clean_performance_valid&&!pfd_guidance.vls_knots);
     r(pfd_input_refs[PI_FLAP_HANDLE])->value=0;r(pfd_input_refs[PI_FLAP_ACTUAL])->value=.001;tick(1);

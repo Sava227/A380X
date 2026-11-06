@@ -194,6 +194,29 @@
       "seconds": 0.85,
       "rate": 16000,
       "sha256": "d7d6bee71357819fe307b9c9b8d4493d7d38c25644fde2098a27f288941fcc94"
+    },
+    "cavalry_charge.wav": {
+      "source": "original synthesis (not from the supplied set): bugle-style G5-C6-E6-G6-E6-G6 arpeggio, 7-harmonic brass-like tone, one 1.2 s cycle (the FWS first cavalry-charge period), loopable",
+      "seconds": 1.2,
+      "rate": 44100,
+      "sha256": "03ffaa512dc4156e0d97340d9e6aa421925618f4666319080edd86b19d2210a6"
+    },
+    "pull_up_new.wav": {
+      "source": "airbus-a380-pull-up.mp3 (user-supplied, ~/Downloads)",
+      "seconds": 2.372,
+      "rate": 44100,
+      "sha256": "04d26ba49d4cf929279f03dd73d3b2ba1e0b7a77a317ef430d1fa360f3c4ebb9"
+    },
+    "pull_up_old.wav": {
+      "source": "old-airbus-a380-pull-up.mp3 (user-supplied, ~/Downloads)",
+      "seconds": 2.342,
+      "rate": 44100,
+      "sha256": "f47b71c26005587e897a40a5d8e19f9b04115415aecdd9c486aee89ceb53a9fb"
     }
+  },
+  "additional_source_sha256": {
+    "airbus-a380-pull-up.mp3": "1bf3d8877959150281e6438a9c6cc4fad90040e6855f51c1a2e84ed40a588fb9",
+    "old-airbus-a380-pull-up.mp3": "4fbfaab4b74b65138261aae3c48651848470455e1405149975e63b2a46846959",
+    "airbus-ptu-sound.mp3": "fd023e882c2fd6d0bbb4a2c26991e34543bb5ebf72ec6073e3d08ca7df78e243"
   }
 }

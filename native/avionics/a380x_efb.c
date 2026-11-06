@@ -1091,15 +1091,18 @@ static void draw_settings(void)
     draw_card(238, 688, 860, 925, "flyPad Settings");
     snprintf(text, sizeof(text), "Units                              %s",
              metric_units ? "Metric" : "Imperial");
-    efb_text(260, 870, text, EFB_WHITE);
+    efb_text(260, 880, text, EFB_WHITE);
     snprintf(text, sizeof(text), "Automatic checklists               %s", automatic_checklists ? "On" : "Off");
-    efb_text(260, 834, text, EFB_WHITE);
+    efb_text(260, 848, text, EFB_WHITE);
     snprintf(text, sizeof(text), "Battery simulation                 %s", battery_simulation ? "On" : "Off");
-    efb_text(260, 798, text, EFB_WHITE);
+    efb_text(260, 816, text, EFB_WHITE);
     snprintf(text, sizeof(text), "Brightness                         %d%%", brightness);
-    efb_text(260, 762, text, EFB_HIGHLIGHT);
-    efb_line(260, 740, 838, 740, EFB_ACCENT, 2);
-    efb_text(260, 712, "A380X FBW Avionics + flyPad", EFB_GREEN);
+    efb_text(260, 784, text, EFB_HIGHLIGHT);
+    /* Changed on the web EFB or with a380x/xp12/aurals/gpws_voice_toggle. */
+    snprintf(text, sizeof(text), "GPWS voice                         %s", a380x_efb_gpws_voice() ? "Old A380" : "New A380");
+    efb_text(260, 752, text, EFB_WHITE);
+    efb_line(260, 736, 838, 736, EFB_ACCENT, 2);
+    efb_text(260, 708, "A380X FBW Avionics + flyPad", EFB_GREEN);
 }
 
 void a380x_efb_draw(void)

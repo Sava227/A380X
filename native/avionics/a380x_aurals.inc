@@ -23,8 +23,8 @@ static const struct { const char *file; float volume; } aural_files[AUR_COUNT] =
     {"callout_50.wav", 0.9f}, {"callout_40.wav", 0.9f}, {"callout_30.wav", 0.9f},
     {"callout_20.wav", 0.9f}, {"callout_10.wav", 0.9f}, {"callout_5.wav", 0.9f},
     {"hundred_above.wav", 0.9f}, {"minimum.wav", 0.9f}, {"retard.wav", 0.9f}, {"v1.wav", 0.9f},
-    {"stall.wav", 1.0f}, {"crc_master_warning.wav", 0.8f}, {"cchord.wav", 0.45f},
-    {"triple_click.wav", 0.6f}, {"seatbelt_chime.wav", 0.5f},
+    {"stall.wav", 1.0f}, {"pull_up_new.wav", 1.0f}, {"crc_master_warning.wav", 0.8f}, {"cchord.wav", 0.45f},
+    {"triple_click.wav", 0.6f}, {"seatbelt_chime.wav", 0.5f}, {"cavalry_charge.wav", 0.8f},
 };
 
 /* Channel slots: 0 = the voice, 1 + i = one-shot sample i, 1 + AUR_COUNT + i = loop of sample i. */
@@ -36,10 +36,13 @@ static const struct { const char *file; float volume; } aural_files[AUR_COUNT] =
 static struct {
     Aurals core;
     AuralSample sample[AUR_COUNT];
+    AuralSample pull_up_old;     /* EFB choice "old A380" (a380x_efb_gpws_voice); sample[AUR_PULL_UP] is the new */
+    int pull_up_playing_old;     /* which recording the running PULL UP loop uses */
+    XPLMCommandRef gpws_voice_toggle;
     int loaded;
     FMOD_CHANNEL *channel[AUR_SLOTS];
     unsigned generation[AUR_SLOTS];   /* a completion callback only clears the play it belongs to */
-    XPLMDataRef seatbelt, tla[4];
+    XPLMDataRef seatbelt, tla[4], stall_raw;
     int audible;
 } aur;
 
@@ -105,6 +108,10 @@ static void aural_stop_all(void)
 static void aural_start(int s, int loop, int slot)
 {
     const AuralSample *x = &aur.sample[s];
+    if (s == AUR_PULL_UP) {   /* the EFB chooses the recording */
+        aur.pull_up_playing_old = a380x_efb_gpws_voice() && aur.pull_up_old.data;
+        if (aur.pull_up_playing_old) x = &aur.pull_up_old;
+    }
     aural_stop(slot);
     if (!x->data) return;
     aur.channel[slot] = XPLMPlayPCMOnBus(x->data, x->bytes, FMOD_SOUND_FORMAT_PCM16, x->rate, 1, loop,
@@ -123,10 +130,13 @@ static int aural_cockpit_view(void)
     return cockpit_sound_world(eye, &at);
 }
 
-/* MASTER WARNING: the FWS CRC replaces the glareshield's synthetic tone. */
+/* MASTER WARNING: the FWS CRC, or the cavalry charge of an A/P OFF warning, replaces the
+ * glareshield's synthetic tone. */
 static int aurals_crc_covers(void)
 {
-    return aur.sample[AUR_CRC].data && fwsa_available() && fwsa_fws.powered && fwsa_fws.aural_crc_active;
+    if (!fwsa_available() || !fwsa_fws.powered) return 0;
+    return (aur.sample[AUR_CRC].data && fwsa_fws.aural_crc_active) ||
+           (aur.sample[AUR_CAVALRY].data && fwsa_fws.out.aural_cavalry_charge);
 }
 
 static void aurals_reset(void)
@@ -139,13 +149,28 @@ static void aurals_reset(void)
             aurals_set_length(&aur.core, (AurSample)i, (double)aur.sample[i].bytes / 2.0 / aur.sample[i].rate);
 }
 
+/* a380x/xp12/aurals/gpws_voice_toggle: switch the GPWS voice between the new and old A380 recordings
+ * (same setting as the EFB Settings > Sounds selector). */
+static int aurals_gpws_voice_command(XPLMCommandRef cmd, XPLMCommandPhase phase, void *refcon)
+{
+    (void)cmd; (void)refcon;
+    if (phase == xplm_CommandBegin) a380x_efb_set_gpws_voice(!a380x_efb_gpws_voice());
+    return 1;
+}
+
 static void aurals_start(void)
 {
     char line[160];
     int i;
     cockpit_sound_bind();
+    if (!aur.gpws_voice_toggle) {
+        aur.gpws_voice_toggle = XPLMCreateCommand("a380x/xp12/aurals/gpws_voice_toggle",
+                                                  "A380X GPWS voice: new / old A380 recording");
+        if (aur.gpws_voice_toggle) XPLMRegisterCommandHandler(aur.gpws_voice_toggle, aurals_gpws_voice_command, 1, NULL);
+    }
     if (!aur.loaded) {
         for (i = 0; i < AUR_COUNT; ++i) aur.loaded += aural_load(&aur.sample[i], aural_files[i].file);
+        aural_load(&aur.pull_up_old, "pull_up_old.wav");
         snprintf(line, sizeof(line), "A380X cockpit aurals: %d/%d samples loaded (interior bus, cockpit view only)\n",
                  aur.loaded, AUR_COUNT);
         XPLMDebugString(line);
@@ -158,6 +183,11 @@ static void aurals_stop(void)
     int i;
     aural_stop_all();
     for (i = 0; i < AUR_COUNT; ++i) { free(aur.sample[i].data); memset(&aur.sample[i], 0, sizeof(aur.sample[i])); }
+    free(aur.pull_up_old.data); memset(&aur.pull_up_old, 0, sizeof(aur.pull_up_old));
+    if (aur.gpws_voice_toggle) {
+        XPLMUnregisterCommandHandler(aur.gpws_voice_toggle, aurals_gpws_voice_command, 1, NULL);
+        aur.gpws_voice_toggle = NULL;
+    }
     aur.loaded = 0;
 }
 
@@ -186,6 +216,13 @@ static void aurals_update_frame(float dt)
     in.crc = fwsa_fws.aural_crc_active;
     in.cchord_once = fwsa_fws.out.aural_cchord_once; in.cchord_cont = fwsa_fws.out.aural_cchord_cont;
     in.v1 = fwsa_fws.out.aural_v1; in.stall = fwsa_fws.out.stall_warning;
+    in.cavalry = fwsa_fws.out.aural_cavalry_charge;
+    if (!aur.stall_raw) aur.stall_raw = XPLMFindDataRef("sim/cockpit2/annunciators/stall_warning");
+    in.aoa_stall_warning = aur.stall_raw && XPLMGetDatai(aur.stall_raw) != 0;
+    in.cas_valid = guidance_inputs.airdata_valid; in.cas_kt = guidance_inputs.ias_knots;
+    in.vsw_kt = pfd_guidance.stall_warning_knots;
+    in.vs_fpm = guidance_inputs.vertical_speed_fpm;
+    in.landing_flaps = pfd_guidance.flap_handle_index >= 3; in.gear_down = pfd_guidance.gear_down;
     in.mode_reversion = guidance.mode_reversion;
     in.seatbelt_valid = aur.seatbelt != NULL;
     in.seatbelt_sign = aur.seatbelt ? XPLMGetDatai(aur.seatbelt) : 0;
@@ -203,6 +240,9 @@ static void aurals_update_frame(float dt)
     if (out.stop_voice) aural_stop(AUR_VOICE_SLOT);
     for (i = 0; i < AUR_COUNT; ++i) {
         if (out.start[i]) aural_start(i, 0, aurals_is_voice((AurSample)i) ? AUR_VOICE_SLOT : AUR_SHOT_SLOT(i));
+        if (i == AUR_PULL_UP && out.loop[i] && aur.channel[AUR_LOOP_SLOT(i)] &&
+            aur.pull_up_playing_old != (a380x_efb_gpws_voice() && aur.pull_up_old.data != NULL))
+            aural_stop(AUR_LOOP_SLOT(i));   /* the EFB switched the recording: restart with the new choice */
         if (out.loop[i] && !aur.channel[AUR_LOOP_SLOT(i)]) aural_start(i, 1, AUR_LOOP_SLOT(i));
         else if (!out.loop[i] && aur.channel[AUR_LOOP_SLOT(i)]) aural_stop(AUR_LOOP_SLOT(i));
     }
