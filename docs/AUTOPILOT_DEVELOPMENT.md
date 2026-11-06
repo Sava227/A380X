@@ -68,12 +68,15 @@ accelerations, pressure altitude, mass and independent NAV1/NAV2 signals feed
 the controller. AP2 alone selects the first-officer input channel. A VOR signal
 cannot satisfy localizer capture. Signal loss cancels capture/reverts guidance;
 invalid sensors or excessive attitude disconnect the AP. VMAX uses the lower of the aircraft IAS and Mach limits, with a compressible air-data conversion. Simultaneous AP1+AP2
-is allowed only with approach selected and does not imply autoland capability.
+is allowed with approach selected, in LAND and in go-around. Below 400 ft RA the
+approach continues into LAND, FLARE and ROLL OUT with A/THR RETARD, and TOGA
+engages SRS GA / GA TRK: see [AUTOLAND.md](AUTOLAND.md).
 
 After ground startup, the FD remains in standby through liftoff until an explicit supported vertical selection or AP engagement. Engaging AP from standby captures the current airborne altitude, never the previous runway altitude.
 
 The adapter owns pitch/roll joystick overrides only while AP guidance is
-valid and throttle override only while A/THR is active. It refuses competing
+valid, the yaw (rudder pedal, and through it nosewheel steering) override only
+in LAND ALIGN and ROLL OUT, and throttle override only while A/THR is active. It refuses competing
 owners, and releases its own overrides on pause, replay, disable and unload.
 AP and A/THR disconnects release their respective control channels independently.
 Physical joystick movement and the standard native servo-disconnect command
@@ -83,13 +86,17 @@ flight validation.
 
 ## Boundaries that remain
 
-This is selected-flight guidance plus raw ILS capture, not a complete Airbus
-AFS. FMS predictions/constraints, takeoff/go-around SRS, alpha-floor and full
-flight-envelope protection, FADEC detent logic, LAND/FLARE/ROLLOUT, TCAS guidance
-and redundant PRIM/ARINC bus networks are outside this implementation. The AP
-disconnects below 100 ft radio altitude in captured glideslope modes; perform a
-manual landing. LAND 2/3 and approach certification annunciations are not
-invented. Missing performance values (VLS, V1, VR, green dot) are omitted.
+This is selected-flight guidance plus raw ILS capture and an ILS autoland, not
+a complete Airbus AFS. FMS predictions/constraints, takeoff SRS, the FMS
+go-around phase, alpha-floor and full flight-envelope protection, FADEC detent
+logic, TCAS guidance and redundant PRIM/ARINC bus networks are outside this
+implementation. LAND/FLARE/ROLL OUT, RETARD and SRS GA/GA TRK follow the FBW
+PRIM FG mode logic ([AUTOLAND.md](AUTOLAND.md)); without LAND engaged the AP
+still disconnects below 100 ft radio altitude in captured glideslope modes.
+The highest landing capability annunciated is LAND 2; LAND 3 SINGLE/DUAL is
+never shown because the port has no redundant monitored computers. Missing
+performance values (VLS, V1, VR, green dot) are omitted. The autoland was
+verified offline only and needs in-simulator tuning.
 
 ## Verification
 

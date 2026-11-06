@@ -53,7 +53,7 @@ static double gauss(void) {
     a = ((rng_state >> 11) + .5) / 9007199254740992.0;
     rng_state ^= rng_state << 13; rng_state ^= rng_state >> 7; rng_state ^= rng_state << 17;
     b = ((rng_state >> 11) + .5) / 9007199254740992.0;
-    return sqrt(-2 * log(a)) * cos(2 * M_PI * b);
+    return sqrt(-2 * log(a)) * cos(6.283185307179586 * b);
 }
 
 typedef struct {

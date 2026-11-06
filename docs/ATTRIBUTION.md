@@ -29,6 +29,14 @@ hashes are in `vendor/fbw/manifest.json`; the upstream GPL-3.0 license is
 retained in `vendor/fbw/LICENSE`. The C bridge, FCU mode adapter and X-Plane
 actuator boundary are separate port code. The original files remain unchanged.
 
+The LAND / FLARE / ROLL OUT / RETARD / SRS GA mode transitions in
+`native/avionics/a380x_autoland.inc` are a hand port (GPL-3.0) of the landing
+mode logic of `fbw-a380x/src/wasm/fbw_a380/src/model/A380PrimComputerFg.cpp`
+and its parameters in `A380PrimComputerFg_data.cpp` at the same revision; each
+threshold names its Simulink parameter. The FMA bit layouts follow
+`fbw-a380x/src/systems/shared/src/publishers/PrimFgPublisher.ts` /
+`FcdcPublisher.ts` and the PFD `FMA.tsx`. These files are not vendored.
+
 The PFD/native FCU presentation also follows the pinned A380 instrument sources
 and FlyByWire's public A380 AFS/EFIS documentation. No proprietary Airbus
 manual, FlightFactor implementation or other aircraft vendor's assets were

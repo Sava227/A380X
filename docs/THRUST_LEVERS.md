@@ -166,6 +166,11 @@ the guidance THR CLB ceiling, instead of 0.88 normalised at CL. When A/THR becom
 `override_throttles` from this module's lease (`fcu_thrust_link`), and gives it back when it releases;
 a foreign owner of `override_throttles` is never taken over.
 
+Landing ([AUTOLAND.md](AUTOLAND.md)): in an autoland the A/THR RETARD mode (FMA IDLE) ramps the engine
+command to idle from 50 ft RA and holds it after touchdown even with the levers left at CL; setting
+the levers to IDLE (or both inner reversers) disconnects A/THR as before. TOGA on approach arms A/THR
+(MAN TOGA) for the go-around; back at CL A/THR is active in THR CLB while SRS is engaged.
+
 ## Instinctive disconnect
 
 Clicking a red button animates it (authored glTF translation, 80 ms in / 100 ms out) and holds

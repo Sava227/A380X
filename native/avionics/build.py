@@ -85,6 +85,10 @@ AURALS = HERE / "a380x_aurals.c"
 XPKIT_SURFACE = HERE / "a380x_xpkit_surface.c"   # macOS zero-copy display frames (xp-kit protocol v9)
 AURALS_TEST = HERE / "test_aurals.c"
 GUIDANCE_TEST = HERE / "test_guidance.c"
+# LAND/FLARE/ROLL OUT, RETARD, SRS GA, yaw lease (unity include of a380x_guidance.c) and its tests.
+AUTOLAND_SOURCES = [HERE / "a380x_autoland.h", HERE / "a380x_autoland.inc", HERE / "a380x_autoland_adapter.inc"]
+AUTOLAND_TEST = HERE / "test_autoland.c"
+AUTOLAND_SIM_TEST = HERE / "test_autoland_sim.c"
 PFD_TEST = HERE / "test_pfd_render.c"
 EFB_TEST = HERE / "test_efb_render.c"
 ADAPTER_TEST = HERE / "test_fcu_adapter.c"
@@ -139,7 +143,7 @@ MFD_TESTS = (("test_mfd_formats", "core"), ("test_fms_core", "core"), ("test_nav
              ("test_mfd_ui", "core"), ("test_mfd_render", "render"), ("test_sd", "render"))
 MFD_OPTIONAL_TESTS = (("test_mfd_pages_a", "render"), ("test_mfd_page_perf", "render"),
                       ("test_mfd_page_fpln", "render"), ("test_mfd_pages_h", "render"))
-EXTRA_INPUTS = [EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", HERE / "test_xpkit_zero_copy.c", XPKIT_SURFACE, ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
+EXTRA_INPUTS = [EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", HERE / "test_xpkit_zero_copy.c", XPKIT_SURFACE, ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, *AUTOLAND_SOURCES, AUTOLAND_TEST, AUTOLAND_SIM_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
     EWD_DATA_TEST, EWD_RENDER_TEST, FCU_MOTION_TEST, FCU_LIGHT_TEST, ISIS_TEST, CONTROL_MOTION_TEST,
     *CXX_SOURCES, *[p for p in HERE.glob("*.h") if not p.name.startswith("._")],
     *[p for p in HERE.glob("*.inc") if not p.name.startswith("._")],
@@ -392,6 +396,18 @@ def main() -> None:
     run([clang, *warnings, str(CORE), str(GUIDANCE), str(GUIDANCE_TEST),
          *mac_laws, "-lc++", "-lm", "-o", str(guidance_test_binary)])
     guidance_result = run([str(guidance_test_binary)]).strip()
+    autoland_test_binary = output / "test_autoland"
+    run([clang, *warnings, str(CORE), str(GUIDANCE), str(AUTOLAND_TEST),
+         *mac_laws, "-lc++", "-lm", "-o", str(autoland_test_binary)])
+    autoland_result = run([str(autoland_test_binary)]).strip().splitlines()[-1]
+    # Closed-loop LFBO 14R approach-to-stop bench on a simplified airframe (not X-Plane's flight model).
+    autoland_sim_binary = output / "test_autoland_sim"
+    run([clang, *warnings, str(CORE), str(GUIDANCE), str(AUTOLAND_SIM_TEST),
+         *mac_laws, "-lc++", "-lm", "-o", str(autoland_sim_binary)])
+    autoland_sim_report = run([str(autoland_sim_binary)]).strip()
+    (output / "autoland-bench.txt").write_text(autoland_sim_report + "\n")
+    for source in (AUTOLAND_TEST, AUTOLAND_SIM_TEST):   # gcc-only warnings must not first appear at the Windows link
+        run([mingw, *warnings, "-c", str(source), "-o", str(output / (source.stem + "_win_check.o"))])
     aurals_test_binary = output / "test_aurals"
     run([clang, *warnings, str(AURALS), str(AURALS_TEST), "-lm", "-o", str(aurals_test_binary)])
     aurals_result = run([str(aurals_test_binary)]).strip().splitlines()[-1]
@@ -1006,6 +1022,10 @@ def main() -> None:
         "elec_panel": {"commands": list(ELEC_COMMANDS), "datarefs": list(ELEC_DATAREFS), "sounds": list(ELEC_SOUNDS),
                        "sound_provenance": json.loads((HERE / "sounds/elec_sounds_provenance.json").read_text())},
         "guidance_test_result": guidance_result,
+        "autoland_test_result": autoland_result,
+        "autoland_bench": {"result": autoland_sim_report.splitlines()[-1], "report": "autoland-bench.txt",
+                           "airframe": "simplified bench model, not the X-Plane flight model",
+                           "runway": "LFBO 14R, X-Plane 12 default navdata", "simulator_tested": False},
         "aurals_test_result": aurals_result,
         "pfd_render_test_result": pfd_result,
         "fcu_render_test_result": fcu_render_result,
