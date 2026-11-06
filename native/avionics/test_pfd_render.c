@@ -636,6 +636,30 @@ static void nd_fbw_arc_state(void) {
         }
     }
 }
+/* TERRAIN on ND in the FBW-layout native ND (a380x_nd_fbw.inc): the raster quad placed about the ARC
+ * aircraft reference (384, 620) at 498 px per range, under the map; the FBW TERR box values. */
+static void test_nd_fbw_terrain(void) {
+    TerrDisplay *d = &nd_data.terrain[0];
+    nd_fbw_arc_state();
+    efis[0].terr = 1;
+    clear_capture(); mock_textured_quads = 0; draw_nd_fbw_arc(&refs.side[0], 0);
+    assert(mock_textured_quads == 0 && !has_label("TERR"));
+    terr_display_reset(d);
+    d->on = 1; assert(terr_geometry(3, 40, &d->geo));
+    d->cls[30][40] = TERR_RED_HIGH;
+    d->shown = (TerrThresholds){3000, TERR_LEVEL_YELLOW, 9100, TERR_LEVEL_RED, 0};
+    clear_capture(); mock_textured_quads = 0; draw_nd_fbw_arc(&refs.side[0], 0);
+    assert(mock_textured_quads == 1 && has_label("TERR") && has_label(" 92") && has_label(" 30"));
+    /* 498 px per range on both layouts: the image keeps its pixel size, its top edge 498 px above the
+     * aircraft line minus the FBW offset (626 - 128), clipped by the map box at y 80 */
+    assert(fabsf(mock_quad_x[0] - 6.0f) < .01f && fabsf(mock_quad_y[0] - fminf(NDY(620) + (626 - 128), NDY(80))) < .01f);
+    assert(fabsf(mock_tex_u[0]) < 1e-6f && fabsf(mock_tex_u[1] - 756.0f / 760.0f) < 1e-5f);   /* clipped at x 762 */
+    d->shown = (TerrThresholds){-1, 0, -1, 0, 0};
+    clear_capture(); draw_nd_fbw_arc(&refs.side[0], 0);
+    assert(!has_label("TERR"));   /* no terrain in view: box hidden */
+    terr_display_reset(d); efis[0].terr = 0;
+    fmsa_fpln = NULL;
+}
 static void test_vd_terrain(void) {
     static const Color VD_TERRAIN = {0.48f, 0.24f, 0.09f};
     nd_fbw_arc_state();
@@ -927,6 +951,7 @@ int main(int argc,char **argv) {
     test_nd_fbw_arc();
     test_nd_fbw_rose_plan();
     test_vd_terrain();
+    test_nd_fbw_terrain();
     test_altitude_drums();
     test_rising_ground();
     test_pfd_bank_direction();
