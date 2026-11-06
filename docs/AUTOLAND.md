@@ -41,7 +41,7 @@ logic.
 | AP disengage on ground | Any lever at TLA >= 36.7 deg or a go-around while on the ground (FBW `APEngagedLogic` groundGa); the FD keeps SRS/GA TRK | - |
 
 In LAND the LOC and APPR pushbuttons, HDG/ALT/V/S push/pull and ALT are
-ineffective, as in the FBW PRIM. A lost localizer or glideslope does not revert
+ineffective (in the FBW PRIM `land_active` is only reset by GA or the ground reset). A lost localizer or glideslope does not revert
 the modes (the memorized course is kept, the AUTOLAND light flashes); a lost
 radio altimeter before FLARE disconnects the AP. Without LAND engaged (no APPR,
 no RA, LOC/G/S not in track) the previous rule stays: the AP disconnects below
@@ -79,7 +79,9 @@ FBW `RETARD_Value` is -10 N1 %/s; 0.12/s is the existing slew of the port's
 normalized command). RETARD stays active through touchdown and the roll-out,
 holding idle even if the levers are still at CL, until the crew sets IDLE
 (A/THR disconnects, existing logic) or selects reverse on the inner engines
-(disconnects). The RETARD aural (10 ft with AP) prompts that action.
+(disconnects). The RETARD aural (10 ft with AP) prompts that action. The idle
+hold does not replace it: the ground spoilers (and with them the autobrake) still
+need at least three levers below TLA 20 deg, i.e. out of CL (speed brake module, FBW logic).
 
 Manual landing: the FBW PRIM has no RETARD mode without AP. A/THR keeps SPEED;
 the 20 ft aural reminds the crew to set IDLE, which disconnects A/THR. Reverse
