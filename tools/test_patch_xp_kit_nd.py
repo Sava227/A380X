@@ -1,4 +1,5 @@
-"""ND page TERRAIN layer patch: anchors, idempotence, layer updates, rejection, reuse/install hashes.
+"""ND page layer patch (TERRAIN, FMGC pseudo waypoints): anchors, order, idempotence, layer updates,
+rejection, reuse/install hashes.
 
 The installed aircraft page is only ever read (A380X_ND_HTML overrides its path); without it the tests
 that need the real page are skipped. Fixtures live in a temporary directory.
@@ -30,18 +31,31 @@ def original_page():
     return data
 
 
+PWP_MARKER = patcher.LAYERS[1][1]
+PWP_LAYER = patcher.LAYER_DIR / patcher.LAYERS[1][0]
+
+
 class PatchNdPage(unittest.TestCase):
-    def test_inserts_the_layer_after_the_native_bridge_once(self):
+    def test_inserts_the_layers_after_the_native_bridge_once_in_order(self):
         original = original_page()
         patched = patcher.patch_page(original)
         text = patched.decode()
-        layer = patcher.LAYER.read_text()
+        layer, pwp = patcher.LAYER.read_text(), PWP_LAYER.read_text()
         self.assertEqual(text.count(patcher.MARKER), 1)
+        self.assertEqual(text.count(PWP_MARKER), 1)
         self.assertEqual(text.count('<script>' + layer + '</script>'), 1)
         bridge_end = text.index('</script>', text.index(patcher.BRIDGE_HEAD)) + len('</script>')
-        self.assertTrue(text.startswith('<script>' + layer, bridge_end))
+        self.assertTrue(text.startswith('<script>' + layer + '</script><script>' + pwp + '</script>', bridge_end))
         self.assertEqual(patcher.original_of(patched), original)
-        self.assertEqual(len(patched), len(original) + len(layer) + len('<script></script>'))
+        self.assertEqual(len(patched), len(original) + len(layer) + len(pwp) + 2 * len('<script></script>'))
+
+    def test_a_terrain_only_page_gets_the_pseudo_waypoint_layer(self):
+        original = original_page()
+        text = original.decode()
+        bridge_end = text.index('</script>', text.index(patcher.BRIDGE_HEAD)) + len('</script>')
+        terrain_only = (text[:bridge_end] + patcher.layer_block() + text[bridge_end:]).encode()
+        self.assertEqual(patcher.original_of(terrain_only), original)
+        self.assertEqual(patcher.patch_page(terrain_only), patcher.patch_page(original))
 
     def test_idempotent_and_refreshes_an_older_layer(self):
         original = original_page()
@@ -50,6 +64,10 @@ class PatchNdPage(unittest.TestCase):
         older = patcher.patch_page(original, layer_source=patcher.LAYER.read_text().replace('const CELL = 8;', 'const CELL = 8; // old'))
         self.assertNotEqual(older, patched)
         self.assertEqual(patcher.patch_page(older), patched)
+        older_pwp = patcher.patch_page(original, layer_sources={PWP_MARKER: PWP_LAYER.read_text().replace(
+            'const RESEND_MS = 250;', 'const RESEND_MS = 500;')})
+        self.assertNotEqual(older_pwp, patched)
+        self.assertEqual(patcher.patch_page(older_pwp), patched)
 
     def test_rejects_unknown_pages_and_bad_layers(self):
         original = original_page()
@@ -64,6 +82,16 @@ class PatchNdPage(unittest.TestCase):
         doubled = patcher.patch_page(original).replace(patcher.LAYER_HEAD.encode(), patcher.LAYER_HEAD.encode() * 2, 1)
         with self.assertRaises(ValueError):
             patcher.patch_page(doubled)
+        pwp_head = patcher.layer_head(PWP_MARKER).encode()
+        with self.assertRaises(ValueError):
+            patcher.patch_page(patcher.patch_page(original).replace(pwp_head, pwp_head * 2, 1))
+        with self.assertRaisesRegex(ValueError, 'marker'):
+            patcher.layer_block('// x\n// no marker\n', PWP_MARKER)
+        # a layer away from the native bridge is not the tool's
+        text = original.decode()
+        misplaced = (text.replace('</head>', patcher.layer_block(None, PWP_MARKER) + '</head>', 1)).encode()
+        with self.assertRaisesRegex(ValueError, 'not right after'):
+            patcher.patch_page(misplaced)
 
     def test_reuse_patches_the_page_and_records_its_hashes(self):
         original = original_page()
@@ -92,6 +120,8 @@ class PatchNdPage(unittest.TestCase):
             self.assertEqual(result['asset_hashes']['nd.html'], sha(staged))
             self.assertEqual(result['nd_terrain_patch']['original_sha256'], sha(original))
             self.assertEqual(result['nd_terrain_patch']['layer_sha256'], sha(patcher.LAYER.read_bytes()))
+            self.assertEqual([layer['sha256'] for layer in result['nd_terrain_patch']['layers']],
+                             [sha(patcher.LAYER.read_bytes()), sha(PWP_LAYER.read_bytes())])
             self.assertEqual(json.loads((destination / 'manifest.json').read_text())['nd_html_sha256'], sha(staged))
             self.assertEqual((source / 'nd.html').read_bytes(), original)   # the source is never written
 

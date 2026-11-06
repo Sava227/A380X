@@ -70,6 +70,9 @@ static A380XFmgcInputs fmsa_fmgc_in;
 static A380XFplnPredFeed fmsa_pred_feed;
 static A380XFplnWptPred fmsa_leg_pred[A380X_FPLN_MAX_ELEMENTS];
 static int fmsa_pred_valid;
+/* Pseudo waypoints of the ACTIVE plan for both NDs (native renderer + xp-kit state), nearest first. */
+static A380XFmgcNdPwp fmsa_nd_pwp[A380X_FMGC_MAX_ND_PWP];
+static int fmsa_nd_pwp_count;
 
 /* Writable controls (spec 07 section 10.3). */
 typedef struct {
@@ -854,6 +857,31 @@ static void fmsa_fmgc_inputs(A380XFmgcInputs *g, const A380XFmsOutputs *o)
     g->idle_speed_descent = guidance.thrust_mode == A380X_A1A2_THR_IDLE && guidance.athr_active
         && (guidance.vertical_mode == A380X_B1_OP_DES || (guidance.vertical_mode == A380X_B1_DES && guidance.des_submode == 1))
         && fabs(in->cas_kt - guidance.speed_target_knots) < 5.0;
+    /* FG modes for the pseudo waypoints */
+    switch (guidance.vertical_mode) {
+    case A380X_B1_SRS: g->fg_vertical_mode = A380X_FMGC_VM_SRS; break;
+    case A380X_B1_CLB: g->fg_vertical_mode = A380X_FMGC_VM_CLB; break;
+    case A380X_B1_OP_CLB: g->fg_vertical_mode = A380X_FMGC_VM_OP_CLB; break;
+    case A380X_B1_DES: g->fg_vertical_mode = A380X_FMGC_VM_DES; break;
+    case A380X_B1_OP_DES: g->fg_vertical_mode = A380X_FMGC_VM_OP_DES; break;
+    case A380X_B1_VS: case A380X_B1_FPA: g->fg_vertical_mode = A380X_FMGC_VM_VS_FPA; break;
+    case A380X_B1_ALT: case A380X_B1_ALT_CST: case A380X_B1_ALT_CRZ: g->fg_vertical_mode = A380X_FMGC_VM_ALT; break;
+    case A380X_B1_ALT_STAR: case A380X_B1_ALT_CST_STAR: case A380X_B1_ALT_CRZ_STAR:   /* capturing: the level-off ahead */
+        g->fg_vertical_mode = in->vertical_speed_fpm >= 0 ? (guidance.altitude_managed ? A380X_FMGC_VM_CLB : A380X_FMGC_VM_OP_CLB)
+                                                          : (guidance.altitude_managed ? A380X_FMGC_VM_DES : A380X_FMGC_VM_OP_DES);
+        break;
+    case A380X_B1_GS: case A380X_B1_F_GS: case A380X_B1_GS_STAR: case A380X_B1_F_GS_STAR: case A380X_B1_APP_DES:
+        g->fg_vertical_mode = A380X_FMGC_VM_APPROACH; break;
+    default: g->fg_vertical_mode = A380X_FMGC_VM_OTHER; break;
+    }
+    g->clb_armed = guidance.clb_armed;
+    g->des_armed = guidance.des_armed;
+    g->alt_constraint_mode = guidance.alt_constraint;
+    g->speed_managed = guidance.speed_managed;
+    g->des_submode = guidance.des_submode;
+    g->clb_limit_kt = fmsa_perf(A380X_FMS_F_CLB_SPD_LIM);
+    g->clb_limit_alt_ft = fmsa_perf(A380X_FMS_F_CLB_SPD_LIM_ALT);
+    g->engine_out = a380x_fms_engine_out(&fmsa_fms) != 0;
 }
 
 /* FMGC outputs into the guidance feed; the managed speed of DESCENT / APPROACH replaces the FMS one. */
@@ -900,6 +928,8 @@ static void fmsa_update(float dt, int powered)
     /* FMGC every frame: LNAV path + leg sequencing (replaces a380x_fpln_update), VNAV, speeds. */
     fmsa_fmgc_inputs(&fmsa_fmgc_in, o);
     a380x_fmgc_update(&fmsa_fmgc, o->valid ? fmsa_fpln : NULL, &fmsa_fmgc_in, dt);
+    fmsa_nd_pwp_count = o->valid ? fmsa_fmgc.out.nd_pwp_count : 0;
+    if (fmsa_nd_pwp_count > 0) memcpy(fmsa_nd_pwp, fmsa_fmgc.out.nd_pwp, sizeof(fmsa_nd_pwp[0]) * (size_t)fmsa_nd_pwp_count);
     fmsa_fpln_timer += dt;
     if (fmsa_fpln_timer >= 0.5) {   /* MFD F-PLN predictions at 2 Hz */
         fmsa_fpln_timer = 0.0;

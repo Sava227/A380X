@@ -89,5 +89,11 @@ static void xpkit_nd_json(XpKitJson *j) {
     if(to&&!(to->flags&A380X_LEGF_DISCONTINUITY)&&isfinite(to->term_lat)&&isfinite(to->term_lon)) {
         xpkit_append(j,"{\"ident\":");xpkit_string(j,to->ident);xpkit_append(j,",\"lat\":%.10g,\"lon\":%.10g}",to->term_lat,to->term_lon);
     }else xpkit_append(j,"null");
-    xpkit_append(j,"}");
+    /* FMGC pseudo waypoints for the bundle's PseudoWaypointLayer (xp-kit-nd/fmgc-pwp-layer.js), see
+     * a380x_fmgc_nd_pwp_json: on the path (lat/lon) or along the track (dist only); dist + alt feed the VD. */
+    {
+        char pseudo[2048];
+        if(!a380x_fmgc_nd_pwp_json(fmsa_nd_pwp,fmsa_nd_pwp_count,pseudo,sizeof(pseudo)))snprintf(pseudo,sizeof(pseudo),"[]");
+        xpkit_append(j,",\"pseudo\":%s}",pseudo);
+    }
 }

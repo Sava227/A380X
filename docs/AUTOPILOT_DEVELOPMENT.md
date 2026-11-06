@@ -116,8 +116,8 @@ course line through the fix), DF (pursuit while turning, then a frozen great
 circle), RF/AF (arcs, bank feed-forward atan(GS²/gR)), FA/FC/FD/FM (outbound
 course line from the fix), CA/CD/CI/CR (track), VA/VD/VI/VM/VR (heading, managed
 heading output), HA/HF/HM (racetrack: inbound, 180° turns at the hold radius,
-outbound for the coded time/distance; direct entry only; IMMEDIATE EXIT returns
-direct to the fix). Fly-by transitions: circular arcs of a 20° design-bank
+outbound for the coded time/distance; IMMEDIATE EXIT returns direct to the fix;
+entries below). Fly-by transitions: circular arcs of a 20° design-bank
 radius at ground speed, anticipation R·tan(Δ/2) (Δ ≤ 135°); fly-over fixes and
 hold entries sequence at the fix. Terminations: altitude (CA/FA/VA/HA), DME
 crossing (CD/FD/VD), radial crossing (CR/VR), next-leg intercept (CI/VI), along
@@ -129,6 +129,45 @@ NAV arms on the ground (route valid, FD on, HDG not preselected) and engages at
 30 ft RA; in flight HDG push engages NAV inside its capture zone
 (|XTK| ≤ R(1−cos intercept) converging, or on the path), otherwise arms it. DIR
 TO, F-PLN edits and new plans reset the leg state.
+
+**Holds.** The entry is chosen over the fix from the arrival track relative to
+the inbound course (ICAO PANS-OPS / Airbus sectors, right-hand pattern; mirrored
+for left turns): direct −110°..+70°, teardrop +70°..+140°, parallel otherwise,
+with the ±5° flexibility resolved towards direct at both direct boundaries and
+towards teardrop at +140° (`a380x_fmgc_hold_entry`). Teardrop: outbound from the
+fix offset α towards the holding side, tan(α/2) = R/L (20–60°; the 180°+α turn
+then rolls out on the inbound course), turn, inbound. Parallel: outbound along
+the inbound course line on the non-holding side for the leg length, a 225° turn
+towards the holding side, direct to the fix, then the racetrack. Hold speed is
+FBW `getHoldingSpeed` (spec 07 §5.8): max(FCU, hold-constraint) altitude, green
+dot (+25 kt engine out; GD/S/F/VAPP in the approach phase), the hold speed
+constraint, ICAO caps 230/240/265 kt and M0.83 above FL340, the climb/descent
+speed limit below its altitude, VLS floor; it is the managed target in the hold
+and from decelDist = clamp((CAS − hold) × 0.15, 3, 20) NM before the fix of a
+next-leg hold (`updateHoldingSpeed`), shown on the MFD HOLD line. In a hold the
+profile takes the hold exit at the fix (distance to the fix).
+
+**Pseudo waypoints (ND + MFD).** One list (`A380XFmgcOutputs.nd_pwp`, nearest
+first) feeds the MFD F-PLN lines and both NDs, so they share the distances:
+(T/C) / LEVEL climb level-off (FCU, cruise level or a climb constraint; distance
+from the filtered V/S with the climb rate falling linearly to zero at 43000 ft),
+START of climb at the constraint waypoint (CLB armed in ALT CST), (SPDLIM) speed
+change at the climb speed-limit altitude, (T/D), descent (SPDLIM), (DECEL),
+descent LEVEL (on the profile in DES, from the V/S in OP DES / V/S), START of
+descent after an ALT CST level-off with DES armed, INTCPT where the present V/S
+meets the profile. Symbols are FBW's ND `typePwp` set (level-off, start of
+climb/descent, DECEL, speed-change dot, intercept); colours magenta in the
+managed vertical mode (DECEL and speed changes: managed speed), cyan selected or
+armed, T/D white. With NAV they sit on the flight-plan path; in HDG/TRK only the
+level-off and intercept arrows are drawn, along the track line. MFD idents are
+FBW's A380 labels `(T/C)`, `(T/D)`, `(DECEL)`, `(SPDLIM)`. Web ND: the plugin sends
+`nav.pseudo` (`a380x_fmgc_nd_pwp_json`), and `xp-kit-nd/fmgc-pwp-layer.js` appends
+the symbols to the native bridge's FBW `symbols` bus message (re-sent at most at
+4 Hz when only they move); the bundle's own PseudoWaypointLayer draws them. The
+layer is inserted after the native bridge by `tools/patch_xp_kit_nd.py` (now an
+ordered list: TERRAIN, then pseudo waypoints; known page hash, exact anchor,
+idempotent, manifest hashes per layer) and inlined by a full `package_nd`. Native
+ND (both layouts): `a380x_nd_pwp.inc`, FBW's symbol paths in FBW pixels.
 
 **VNAV.** Managed CLB: speed on pitch (law 3), A/THR THR CLB, target
 min(FCU, next climb constraint); a constraint level-off is ALT CST* / ALT CST
@@ -168,19 +207,40 @@ The port's speed regulator now has bumpless entry and speed-trend anticipation
 (P 0.04/kt, I 0.003/kt/s, trend 0.25/(kt/s), engine-command units); THR IDLE
 remains the existing 0.04 engine-command approximation.
 
-**Verification.** `test_fmgc_guidance.c` (3551 checks: radius/anticipation,
+**Verification.** `test_fmgc_guidance.c` (3682 checks: radius/anticipation,
 90° fly-by sequencing at R·tan45 with ≤ 0.04 NM XTK, discontinuity NAV loss,
 VA/CD/CR/CI terminations, RF arc ≤ 0.01 NM, HM hold circuits and IMM EXIT,
-DIR TO pursuit/freeze/reset, capture zone, descent profile with FPA/constraints/
-deceleration/T/D, managed altitude and approach speeds, MFD predictions) and the
-managed-mode cases in `test_guidance.c`. `test_fmgc_flight.c` flies EGLL 27R
-BPK7F – BPK – LEST1M – ILS 23R EGCC (174 NM, 420 t, wind 250°/35 kt) on the
+29 hold-entry sector cases incl. the ±5° boundaries and left turns, seven flown
+entries (direct straight-in/abeam, teardrop R/L, parallel R/L/reciprocal: entry,
+phases, inbound XTK ≤ 0.026 NM after the entry, excursions, IMM EXIT), holding
+speed table and the hold-speed target/decel/MFD feed, DIR TO pursuit/freeze/reset,
+capture zone, descent profile with FPA/constraints/deceleration/T/D, managed
+altitude and approach speeds, MFD predictions, pseudo waypoints in climb (T/C,
+level-off at the FCU / a constraint, start of climb, speed limit; NAV and HDG),
+cruise/descent (T/D, SPDLIM, DECEL managed/selected, OP DES level-off, intercept)
+and the MFD lines at the same distances) and the managed-mode cases in
+`test_guidance.c`. `test_pfd_render.c` draws the list on the FBW-layout native
+ND (positions, colours, vertex counts; preview `nd-fbw-pwp.svg`);
+`tools/pwp_layer_check.js` runs the web layer after the real bridges on the
+flight's ND states against the bundle's PseudoWaypointLayer/WaypointLayer
+filters. `test_fmgc_flight.c` flies EGLL 27R BPK7F – BPK (HOLD) – LEST1M – ILS 23R
+EGCC (174 NM + the hold, 420 t, wind 250°/35 kt) on the
 installed CIFP with the real FMS, FMGC, guidance state machine, FBW laws and
 actuator servos against a point-mass aircraft (lift/drag polars per
 configuration, four spooling engines, ISA, pitch/roll actuator response as in
 `test_guidance.c`; idle descent ≈ 3°), with a scripted crew (TOGA, CL at THR RED,
-AP1 after 6 s, FCU 3000 ft and ALT push 2 NM before T/D, speed brakes on MORE
-DRAG, flaps on schedule, FCU 1000 ft in the approach phase). Result (build
+AP1 after 6 s, FCU 6000 for the hold at BPK, IMMEDIATE EXIT 20 s into the first
+outbound leg, FCU FL240 + ALT push after the hold, FCU 3000 ft 2 NM before T/D
+and ALT push 1 s later, speed brakes on MORE DRAG, flaps on schedule, FCU 1000 ft
+in the approach phase). Hold BPK (inbound 314°M, right, 1 min, arrival track
+064°): teardrop entry, hold speed 210 kt (green dot) reached before the fix
+(CAS within 0.8 kt), inbound XTK ≤ 0.11 NM after the teardrop, max 0.35 NM in
+the hold (25° bank in the wind at the 20° design radius), 6000 ft held, exit to
+LESTA. Pseudo waypoints against the flight: (SPDLIM) predicted 4.8 NM, flown
+4.3; (T/C) predicted 30.8 NM above FL120, flown 34.6 (+12 %); the T/D symbol
+2.00 NM ahead at the descent clearance (position error 0.00 NM; MFD line
+identical); the DECEL symbol 0.31 NM from where the approach phase activated.
+Result (build
 output `fmgc-flight.txt`): FMA MAN TOGA/SRS/NAV(30 ft RA) → THR CLB/CLB →
 ALT CST* → ALT CST 6000 → CLB → ALT CRZ FL240 → DES (early V/S −1000, on path
 THR IDLE / SPEED, above path) → APPROACH at DECEL → DES on the final path to
@@ -195,11 +255,14 @@ bench results on a model airframe, not X-Plane flight-model results.
 learned factor and speed brakes compensate), A/THR gains and the 0.04 idle
 command, the 20° transition bank, NAV capture zone, DES thresholds, SRS on the
 X-Plane model, and the existing AP servo gains. The existing rule that
-disconnects the AP below VLS stays. Not done: hold entry types other than
-direct, hold speeds, PI procedure turns (flown as TF), RNP/offsets, APP DES /
-FINAL APP, engine-out, step climbs, fuel/wind predictions, ND pseudo-waypoint
-symbols (T/C, T/D, DECEL appear on the MFD F-PLN only), missed-approach
-sequencing outside the FMS GOAROUND phase.
+disconnects the AP below VLS stays. The hold radius (20° bank at the TAS when
+the hold leg activates) and the teardrop angle, the T/C climb-rate model and
+the ND symbol scale/colours need checking in the sim. Not done: PI procedure
+turns (flown as TF), RNP/offsets, APP DES / FINAL APP, engine-out, step climbs,
+fuel/wind predictions, speed-change symbols at descent speed constraints,
+FLAP1/FLAP2 and time markers, holding-pattern predictions (the profile takes
+the hold exit at the fix), missed-approach sequencing outside the FMS GOAROUND
+phase.
 
 ## Boundaries that remain
 
