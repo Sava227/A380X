@@ -368,7 +368,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
     s->altitude_armed=!gs_mode(s) && s->vertical_mode!=A380X_B1_ALT && s->vertical_mode!=A380X_B1_ALT_STAR &&
         alt_error*target_vs>0;
     capture_distance=fmax(150,fabs(i->vertical_speed_fpm)/60*20);
-    if(valid && s->altitude_armed && fabs(alt_error)<=capture_distance) {
+    if(valid && s->altitude_armed && !s->cst_capture_inhibit && fabs(alt_error)<=capture_distance) {
         s->vertical_mode=A380X_B1_ALT_STAR; s->capture_seconds=0; s->altitude_armed=0;
     }
     if(s->vertical_mode==A380X_B1_ALT_STAR) {
@@ -398,6 +398,10 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
     } else { s->pitch_servo=s->roll_servo=0; s->pitch_integral=0; }
     {
         int levers_valid=lever_inputs_valid(i), at_takeoff=takeoff_detent(i);
+        /* IAS trend for the speed regulator (1 s lag) */
+        if(isfinite(i->ias_knots) && isfinite(s->ias_prev) && s->ias_prev>0)
+            s->ias_rate+=(clamp((i->ias_knots-s->ias_prev)/dt,-10,10)-s->ias_rate)*fmin(1,dt);
+        s->ias_prev=isfinite(i->ias_knots)?i->ias_knots:0;
         /* A/THR consumes ADR speed data. An independent IR/heading/navigation
          * failure invalidates AP/FD guidance without invalidating this loop. */
         int athr_valid=i->powered && !i->paused && !i->on_ground && i->athr_speed_valid &&
@@ -450,18 +454,24 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
                 } else if(s->guidance_valid && managed_thrust_kind(s)==2) {
                     throttle=.04; s->thrust_mode=A380X_A1A2_THR_IDLE;
                 } else {
-                    double demand=.5+s->athr_integral+speed_error*.008;
+                    /* Port speed regulator (needs in-sim tuning). Bumpless entry from THR CLB / THR IDLE:
+                     * the integrator starts at the current engine command. */
+                    double demand, trend=-.25*s->ias_rate;   /* speed-trend anticipation, kt/s */
+                    if(!s->athr_speed_prev) s->athr_integral=clamp(s->throttle_command-.5-speed_error*.04-trend,-.48,.48);
+                    demand=.5+s->athr_integral+speed_error*.04+trend;
                     if((demand<ceiling || speed_error<0) && (demand>0 || speed_error>0))
-                        s->athr_integral=clamp(s->athr_integral+speed_error*.0005*dt,-.48,.48);
-                    throttle=.5+s->athr_integral+speed_error*.008;
+                        s->athr_integral=clamp(s->athr_integral+speed_error*.003*dt,-.48,.48);
+                    throttle=demand;
                     s->thrust_mode=speed_is_mach(s,i)?A380X_A1A2_MACH:A380X_A1A2_SPEED;
                 }
+                s->athr_speed_prev=s->thrust_mode==A380X_A1A2_SPEED || s->thrust_mode==A380X_A1A2_MACH;
                 s->throttle_command=fmin(ceiling,s->throttle_command+
                     clamp(clamp(throttle,0,ceiling)-s->throttle_command,-.12*dt,.12*dt));
             }
         } else {
             s->throttle_command=isfinite(i->throttle_ratio)?clamp(i->throttle_ratio,0,1):0;
             s->thrust_mode=manual_thrust_mode(i);
+            s->athr_speed_prev=0;
         }
     }
     s->disconnect_warning=s->disconnect_seconds>0;

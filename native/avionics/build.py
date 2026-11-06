@@ -85,6 +85,9 @@ AURALS = HERE / "a380x_aurals.c"
 XPKIT_SURFACE = HERE / "a380x_xpkit_surface.c"   # macOS zero-copy display frames (xp-kit protocol v9)
 AURALS_TEST = HERE / "test_aurals.c"
 GUIDANCE_TEST = HERE / "test_guidance.c"
+# Closed-loop managed flight (FMS + FMGC + guidance + FBW laws + point-mass aircraft) on the installed
+# simulator's CIFP; the X-Plane root is derived from --datarefs, else the test reports SKIPPED.
+FMGC_FLIGHT_TEST = HERE / "test_fmgc_flight.c"
 PFD_TEST = HERE / "test_pfd_render.c"
 EFB_TEST = HERE / "test_efb_render.c"
 ADAPTER_TEST = HERE / "test_fcu_adapter.c"
@@ -136,10 +139,11 @@ MFD_FONT_GENERATOR = HERE.parent.parent / "tools/build_mfd_font.py"
 # (test source, kind): "core" = pure C unit test, "navdata" = gets the fixture directory,
 # "render" = writes PPM previews into its own directory. Optional page tests run when present.
 MFD_TESTS = (("test_mfd_formats", "core"), ("test_fms_core", "core"), ("test_navdata", "navdata"),
+             ("test_fmgc_guidance", "core"),
              ("test_mfd_ui", "core"), ("test_mfd_render", "render"), ("test_sd", "render"))
 MFD_OPTIONAL_TESTS = (("test_mfd_pages_a", "render"), ("test_mfd_page_perf", "render"),
                       ("test_mfd_page_fpln", "render"), ("test_mfd_pages_h", "render"))
-EXTRA_INPUTS = [EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", HERE / "test_xpkit_zero_copy.c", XPKIT_SURFACE, ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
+EXTRA_INPUTS = [FMGC_FLIGHT_TEST, EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", HERE / "test_xpkit_zero_copy.c", XPKIT_SURFACE, ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
     EWD_DATA_TEST, EWD_RENDER_TEST, FCU_MOTION_TEST, FCU_LIGHT_TEST, ISIS_TEST, CONTROL_MOTION_TEST,
     *CXX_SOURCES, *[p for p in HERE.glob("*.h") if not p.name.startswith("._")],
     *[p for p in HERE.glob("*.inc") if not p.name.startswith("._")],
@@ -505,6 +509,16 @@ def main() -> None:
         if kind == "render":
             mfd_previews.extend({"file": f"{name}/{p.name}", "sha256": digest(p)}
                                 for p in sorted(preview_dir.iterdir()) if p.is_file() and not p.name.startswith("._"))
+    fmgc_flight_binary = output / "test_fmgc_flight"
+    fmgc_core_objects = [obj for obj in mfd_objects if Path(obj).stem in (
+        "a380x_fms", "a380x_fms_speeds", "a380x_fms_messages", "a380x_mfd_formats", "a380x_fms_fpln",
+        "a380x_navdata", "a380x_fmgc_guidance")]
+    run([clang, *warnings, str(FMGC_FLIGHT_TEST), str(CORE), str(GUIDANCE), *fmgc_core_objects, *mac_laws,
+         "-lc++", "-lm", "-o", str(fmgc_flight_binary)])
+    xplane_root = args.datarefs.resolve().parents[2] if args.datarefs else Path("/nonexistent")
+    fmgc_flight_output = run([str(fmgc_flight_binary), str(xplane_root), str(output / "fmgc-flight.csv")])
+    (output / "fmgc-flight.txt").write_text(fmgc_flight_output)
+    fmgc_flight_result = fmgc_flight_output.strip().splitlines()[-1]
     mfd_adapter_binary = output / "test_mfd_adapter"
     run([clang, *warnings, "-Wno-deprecated-declarations", "-DAPL=1", "-DXPLM200=1", "-DXPLM210=1",
          "-DXPLM300=1", "-DXPLM301=1", "-DXPLM400=1", "-DXPLM410=1", *mfd_page_flags, "-I", str(headers),
@@ -1057,6 +1071,8 @@ def main() -> None:
         "mfd_ui_test_result": mfd_test_results["test_mfd_ui"],
         "mfd_formats_test_result": mfd_test_results["test_mfd_formats"],
         "fms_core_test_result": mfd_test_results["test_fms_core"],
+        "fmgc_guidance_test_result": mfd_test_results["test_fmgc_guidance"],
+        "fmgc_closed_loop_flight_result": fmgc_flight_result,
         "navdata_test_result": mfd_test_results["test_navdata"],
         "mfd_render_test_result": mfd_test_results["test_mfd_render"],
         "mfd_page_test_results": {name: mfd_test_results[name] for name, _ in mfd_optional_tests},

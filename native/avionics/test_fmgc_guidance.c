@@ -84,12 +84,11 @@ static void inputs(A380XFmgcInputs *in, const Ac *a, int nav_engaged)
 /* FBW-HPATH-like law: phi = ff + Kv*tae + K*xtk (same structure and gains as A380FgOuterLoops case 3). */
 static void fly(Ac *a, const A380XFmgcOutputs *o, double dt)
 {
-    double k2v = 0.004451 * a->gs, k1k2 = 30.44, phi = 0, rate;
+    double k2v = 0.004451 * a->gs, phi = 0, rate;
     double xt = o->fbw_xtk_nm * 6839.0 / a->gs;
     if (xt > 45) xt = 45;
     if (xt < -45) xt = -45;
     if (o->lnav_valid) phi = o->bank_ff_deg + (o->fbw_tae_deg + xt) * k2v;
-    (void)k1k2;
     if (phi > 25) phi = 25;
     if (phi < -25) phi = -25;
     rate = (phi - a->bank) / 1.5;
@@ -314,11 +313,9 @@ static void test_capture(void)
     plan_end(1);
     a380x_fmgc_init(&g);
     for (t = 0; t < 2000; ++t) {
-        Ac hold = a;
         inputs(&in, &a, 0);
         a380x_fmgc_update(&g, fp, &in, 0.5);
         if (g.out.nav_capture) { cap = t; xtk_at = g.out.xtk_right_nm; break; }
-        hold.bank = 0;
         a380x_geo_destination(a.lat, a.lon, a.trk, a.gs * 0.5 / 3600.0, &a.lat, &a.lon);
     }
     printf("NAV capture on a 30 deg intercept at 250 kt: |xtk| %.2f NM (radius %.2f NM)\n", fabs(xtk_at), g.out.turn_radius_nm);

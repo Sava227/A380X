@@ -114,11 +114,13 @@ typedef struct {
     int nav_armed, clb_armed, des_armed, alt_constraint, alt_cruise;
     int des_submode;                    /* DES: 0 on path, 1 above path / no path (idle, speed on pitch), 2 below (V/S) */
     int des_thrust_idle;                /* DES A/THR THR IDLE (else SPEED/MACH) */
+    int cst_capture_inhibit;            /* DES on a path that descends through the constraint: no ALT CST* */
     int vertical_law_override;          /* FBW vertical law selector for the bridge, 0 = mode default */
     int vpath_valid;                    /* bridge: fms_H_c_profile / fms_H_dot_c_profile below */
     double vpath_altitude_ft, vpath_vs_fpm;
     /* private */
-    int managed_climb, nav_auto_armed, clb_disarmed;
+    int managed_climb, nav_auto_armed, clb_disarmed, athr_speed_prev;
+    double cst_capture_ft, ias_prev, ias_rate;
 } A380XGuidanceState;
 
 /* FMA vertical message including the ALT CST / ALT CRZ qualifiers (for the native PFD and FMS). */

@@ -23,9 +23,11 @@
  *   - DF legs: pursuit of the fix while turning, then a frozen great-circle line;
  *   - course legs (CA/CD/CI/CR, VA/VD/VI/VR/VM): track / heading hold, no XTK;
  *   - holds: racetrack (inbound leg, 180 deg turns of the hold radius), entered directly;
- *   - descent path: built backwards from the destination with a constant idle gradient (3.0 deg
- *     below / 3.1 deg above the speed-limit altitude), coded FPA legs as geometric segments,
- *     altitude constraints as clamps, a decelerating segment at the speed-limit altitude.
+ *   - descent path: built backwards from the destination with an idle gradient (3.0 deg nominal,
+ *     scaled to ground distance with the current TAS/GS ratio and by an idle factor learned while
+ *     descending at idle with the speed on the elevator, 0.7..1.3), coded FPA legs as geometric
+ *     segments, altitude constraints as clamps, decelerating segments (1/3 of the idle gradient) at
+ *     the speed-limit altitude and before descent speed constraints (FBW decelDist).
  *
  * Simulator independent C11, no XPLM, no heap. Not thread safe.
  *
@@ -84,6 +86,7 @@ typedef struct {
     int    nav_engaged;             /* lateral mode NAV */
     int    nav_armed;
     int    vertical_managed;        /* CLB, DES, ALT CST engaged */
+    int    idle_speed_descent;      /* OP DES / DES above path at THR IDLE, speed on target (idle learning) */
 } A380XFmgcInputs;
 
 typedef struct {
@@ -120,6 +123,7 @@ typedef struct {
     int    before_tod;              /* PPOS is before the T/D (cruise part) */
     double decel_dist_nm;           /* distance-to-destination of the DECEL point, NAN */
     int    decel_reached;           /* approach phase activation (L:A32NX_FM_ENABLE_APPROACH_PHASE) */
+    int    more_drag;               /* above the path at idle with the speed on target: speed brakes */
     double speed_limit_dist_nm;     /* distance-to-destination where the speed-limit decel begins */
     double managed_altitude_ft;     /* CLB: min(FCU, next climb constraint); DES: max(FCU, floor) */
     int    managed_altitude_is_constraint;
@@ -148,6 +152,7 @@ typedef struct {
     int      arc_active;
     double   arc_clat, arc_clon, arc_radius_nm, arc_start_brg, arc_sweep_deg;
     int      arc_dir;               /* +1 right / -1 left */
+    double   entry_antic_nm, entry_arc_nm;   /* entry transition of the active leg (flown-path length) */
     /* DF */
     int      df_frozen;
     double   df_lat, df_lon;
@@ -157,8 +162,9 @@ typedef struct {
     int      hold_phase;            /* 0 inbound, 1 turn at fix, 2 outbound, 3 turn back */
     int      hold_entered, hold_circuits;
     double   hold_radius_nm, hold_leg_nm;
-    /* FMS phase / decel latch */
+    /* FMS phase / decel latch, learned idle descent gradient factor */
     int      decel_latched;
+    double   idle_factor;            /* learned idle gradient / nominal (0.7..1.3) */
     double   timer;
     A380XFmgcOutputs out;
 } A380XFmgc;

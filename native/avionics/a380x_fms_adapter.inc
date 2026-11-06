@@ -851,6 +851,9 @@ static void fmsa_fmgc_inputs(A380XFmgcInputs *g, const A380XFmsOutputs *o)
     g->nav_engaged = guidance.lateral_mode == A380X_C1_NAV;
     g->nav_armed = guidance.nav_armed;
     g->vertical_managed = guidance.altitude_managed;
+    g->idle_speed_descent = guidance.thrust_mode == A380X_A1A2_THR_IDLE && guidance.athr_active
+        && (guidance.vertical_mode == A380X_B1_OP_DES || (guidance.vertical_mode == A380X_B1_DES && guidance.des_submode == 1))
+        && fabs(in->cas_kt - guidance.speed_target_knots) < 5.0;
 }
 
 /* FMGC outputs into the guidance feed; the managed speed of DESCENT / APPROACH replaces the FMS one. */

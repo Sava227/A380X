@@ -163,9 +163,9 @@ static void managed_des_submode(A380XGuidanceState *s, const A380XGuidanceInputs
     case 0:
         if (vdev > 500) s->des_submode = 1;
         else if (vdev < -500) s->des_submode = 2;
-        else if (s->des_thrust_idle && serr > 10) s->des_submode = 1;   /* too fast at idle: leave the path */
+        else if (serr > 10 && s->throttle_command < .06) s->des_submode = 1;   /* too fast at idle: leave the path */
         break;
-    case 1: if (vdev < 100) s->des_submode = 0; break;
+    case 1: if (vdev < 100 && serr < 3) s->des_submode = 0; break;   /* back on the path, speed on target */
     default: if (vdev > -100) s->des_submode = 0; break;
     }
     if (s->des_submode == 1) s->des_thrust_idle = 1;
@@ -219,6 +219,12 @@ static void managed_update(A380XGuidanceState *s, const A380XGuidanceInputs *i, 
         double target = managed_altitude_target(s, i);
         if ((s->vertical_mode == A380X_B1_OP_CLB && s->clb_armed) || (s->vertical_mode == A380X_B1_OP_DES && s->des_armed))
             engage_managed_vertical(s, i, s->vertical_mode == A380X_B1_OP_CLB);
+        /* ALT CST*: the constraint being captured was sequenced (or replaced): CLB / DES again */
+        if (s->vertical_mode == A380X_B1_ALT_STAR && s->altitude_managed && s->alt_constraint
+            && fabs(target - s->cst_capture_ft) > 100) {
+            engage_managed_vertical(s, i, s->managed_climb);
+            target = managed_altitude_target(s, i);
+        }
         /* ALT CST: resume once the constraint is sequenced */
         if (alt_hold_mode(s) && s->altitude_managed && s->alt_constraint) {
             double next = s->managed_climb ? fmin(i->managed_altitude_ft, s->selected_altitude_ft)
@@ -232,8 +238,13 @@ static void managed_update(A380XGuidanceState *s, const A380XGuidanceInputs *i, 
     if (alt_hold_mode(s) && s->altitude_managed && s->alt_constraint) {
         s->clb_armed = s->managed_climb; s->des_armed = !s->managed_climb;
     }
+    s->cst_capture_inhibit = 0;
     if (s->vertical_mode == A380X_B1_DES) {
         managed_des_submode(s, i);
+        /* On the path, a constraint the path descends through is flown by VPATH, not captured:
+         * ALT CST* only where the path levels at it or the aircraft is about to go below it. */
+        s->cst_capture_inhibit = s->des_submode == 0 && s->alt_constraint && i->managed_path_valid &&
+            i->managed_path_vs_fpm < -300 && i->altitude_ft - managed_altitude_target(s, i) > 100;
         if (s->des_submode == 0) {
             s->vertical_law_override = 9; s->vpath_valid = 1;
             s->vpath_altitude_ft = i->managed_path_altitude_ft; s->vpath_vs_fpm = i->managed_path_vs_fpm;
@@ -260,6 +271,7 @@ static void managed_after_capture(A380XGuidanceState *s, const A380XGuidanceInpu
     if (before == s->vertical_mode) return;
     if (s->vertical_mode == A380X_B1_ALT_STAR && (before == A380X_B1_CLB || before == A380X_B1_DES)) {
         /* alt_constraint / alt_cruise were computed for the target being captured */
+        s->cst_capture_ft = s->altitude_target_ft;
         return;
     }
     if (s->vertical_mode == A380X_B1_ALT && before == A380X_B1_ALT_STAR) {
