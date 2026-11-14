@@ -67,8 +67,20 @@ Raw pilot/copilot attitude, air data, magnetic variation, body rates and
 accelerations, pressure altitude, mass and independent NAV1/NAV2 signals feed
 the controller. AP2 alone selects the first-officer input channel. A VOR signal
 cannot satisfy localizer capture. Signal loss cancels capture/reverts guidance;
-invalid sensors or excessive attitude disconnect the AP. VMAX uses the lower of the aircraft IAS and Mach limits, with a compressible air-data conversion. Simultaneous AP1+AP2
-is allowed with approach selected, in LAND and in go-around. Below 400 ft RA the
+invalid sensors disconnect the AP. VMAX uses the lower of the aircraft IAS and Mach limits, with a compressible air-data conversion. Simultaneous AP1+AP2
+is allowed with approach selected, in LAND and in go-around.
+
+**No engagement limits (user decision, 2026-11-09).** The A380 manual allows AP engagement only from
+5 s after liftoff, with pitch between −11 and 22.5°, bank below 40° and speed within VLS..VMAX. The AP
+then disconnects beyond −13/25° pitch, 45° bank, below VLS or above VMAX. The port applies none of
+these limits:
+* Pressed in flight, the AP engages whenever it has the flight data it needs (power, ADR air data,
+  IR attitude/heading). Only the loss of that data disconnects it.
+* Pressed on the ground, the press is kept (`AP1 armed: it engages by itself after liftoff`). The
+  AP engages once airborne above 100 ft RA (5 s airborne without a radio altitude), with the stick
+  and rudder released. A second press, or the AP disconnect button, cancels it.
+
+Below 400 ft RA the
 approach continues into LAND, FLARE and ROLL OUT with A/THR RETARD, and TOGA
 engages SRS GA / GA TRK: see [AUTOLAND.md](AUTOLAND.md).
 
@@ -254,8 +266,7 @@ bench results on a model airframe, not X-Plane flight-model results.
 **Needs in-sim tuning / not done.** The X-Plane A380's idle descent angle (the
 learned factor and speed brakes compensate), A/THR gains and the 0.04 idle
 command, the 20° transition bank, NAV capture zone, DES thresholds, SRS on the
-X-Plane model, and the existing AP servo gains. The existing rule that
-disconnects the AP below VLS stays. The hold radius (20° bank at the TAS when
+X-Plane model, and the existing AP servo gains. The hold radius (20° bank at the TAS when
 the hold leg activates) and the teardrop angle, the T/C climb-rate model and
 the ND symbol scale/colours need checking in the sim. Not done: PI procedure
 turns (flown as TF), RNP/offsets, APP DES / FINAL APP, engine-out, step climbs,
@@ -263,6 +274,49 @@ fuel/wind predictions, speed-change symbols at descent speed constraints,
 FLAP1/FLAP2 and time markers, holding-pattern predictions (the profile takes
 the hold exit at the fix), missed-approach sequencing outside the FMS GOAROUND
 phase.
+
+## When AP or A/THR will not engage
+
+The FCU adapter reports every refusal and every automatic disconnect in the simulator window
+(`XPLMSpeakString`; spoken too when X-Plane's text-to-speech is on). It also writes the same text to
+`Log.txt` as `A380X AFS: ...`. The same text repeats at most once every 5 s. The AFS lines, AP/A/THR
+pushbutton results and status lines are also written to `Output/A380X-XP12_AFS.log` (this X-Plane
+session) and `Output/A380X-XP12_AFS.previous.log` (the session before). X-Plane keeps only a few
+`Log.txt` archives, so these files keep the evidence of the last A380 flight.
+
+* **AP1/AP2 not engaged** lists the failing `can_engage` terms in plain language
+  (`a380x_guidance_engage_problems`):
+  * not powered;
+  * air data invalid (ADR) or attitude/heading/navigation invalid (IR);
+  * no valid airspeed.
+
+  A press on the ground is kept for after liftoff instead.
+
+  It also reports when another add-on holds `override_joystick`, `override_joystick_pitch` or
+  `override_joystick_roll`, because the press is then ignored.
+* **AP disconnected** names the cause:
+  * a joystick pitch/roll/yaw axis more than 20 % off centre (axis index and value: centre or
+    recalibrate it);
+  * rudder pedal input;
+  * the flight controls taken by another add-on;
+  * a lost control lease;
+  * a guidance limit (`AP disconnected by the guidance: ...`).
+* **A/THR not armed** is reported when another controller holds `override_throttles`, or when A/THR
+  is disabled after a 15 s instinctive-disconnect hold.
+* **A/THR armed but not active** is reported 2 s after the press when one of these holds:
+  * thrust levers in FLX/MCT or TOGA (manual thrust), or at IDLE;
+  * levers not recognised;
+  * on the ground, speed data invalid, paused or unpowered.
+
+In flight, while FD, AP or A/THR is in use, an `A380X AFS status:` line goes to `Log.txt` every 10 s. It
+contains:
+
+* AP/FD/A-THR flags and the thrust, lateral and vertical modes;
+* IAS, VLS, VMAX, altitude, V/S and heading, plus the selected targets;
+* the four lever ratios and their validity, against CL;
+* the override and ownership flags, the thrust lease, and ADR/IR validity.
+
+One short flight log is enough to see why a mode did not engage or follow.
 
 ## Boundaries that remain
 

@@ -53,6 +53,26 @@ plugins after adding it). X-Plane's `Log.txt` line "A380X cockpit aurals: N/30 s
 "optional terrain_ahead.wav not installed (TAWS caution silent)" while it is missing. Without it the
 caution still shows on the PFD (TERRAIN, amber) and the NDs (solid yellow terrain, TERR pop-up).
 
+## X-Plane's built-in alerts are muted
+
+X-Plane plays its own alert samples (`Resources/sounds/alert`) for every aircraft, on top of the
+aircraft's sounds. For the A380 these were old, non-Airbus duplicates of the FWS aurals above:
+* stall horn, gear horn, fire bell;
+* AP disconnect / AP fail, altitude alert;
+* GPWS "pull up", "sink rate", "glideslope", "minimums";
+* the radio-altitude callouts, TCAS, windshear and the seat-belt chime.
+
+An aircraft replaces one by shipping a file with the same name in `<aircraft>/sounds/alert/`. Like
+other X-Plane 12 airliners, the A380 ships a 10 ms silent WAV for each of these 32 alerts, so only
+the A380's own aurals play. Run `tools/silence_xplane_alerts.py <aircraft folder>` with X-Plane
+closed; `--check` reports the state and `--remove` deletes only its own files.
+
+Not muted:
+* Marker beacon and Morse ident tones (`dash_*` / `dot_*`): radio audio, not alerts.
+* X-Plane's engine, airframe and system sounds.
+
+X-Plane's warning logic (annunciator datarefs) is unchanged.
+
 ## Not covered by the supplied set
 
 The single chime (master caution) keeps the glareshield's existing tone; there is no sample for it.

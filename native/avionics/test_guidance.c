@@ -43,7 +43,7 @@ static void test_controls_and_gating(void) {
     A380XGuidanceInputs i=fixture(); A380XGuidanceState s;
     a380x_guidance_init(&s,&i);
     assert(s.fbw_laws);
-    cmd(&s,&i,A380X_FCU_AP1,0); assert(!s.ap1);
+    { A380XGuidanceInputs g=i; g.on_ground=1; cmd(&s,&g,A380X_FCU_AP1,0); assert(!s.ap1); }   /* not on the ground */
     cmd(&s,&i,A380X_FCU_SPD_ROTATE,1000); assert(s.selected_speed_knots==399);
     cmd(&s,&i,A380X_FCU_SPD_ROTATE,-1000); assert(s.selected_speed_knots==100);
     cmd(&s,&i,A380X_FCU_HDG_ROTATE,-1); assert(s.selected_heading_deg==359);
@@ -93,9 +93,22 @@ static void test_manual_ap_timing_and_fd_powerup(void) {
     i.on_ground=1; i.radio_height_ft=0;
     a380x_guidance_init(&s,&i);
     run(&s,&i,10); cmd(&s,&i,A380X_FCU_AP1,0); assert(!s.ap1 && s.airborne_seconds==0);
-    i.on_ground=0; i.radio_height_ft=1000;
-    run(&s,&i,4.98); cmd(&s,&i,A380X_FCU_AP1,0); assert(!s.ap1);
-    run(&s,&i,.02); cmd(&s,&i,A380X_FCU_AP1,0); assert(s.ap1);
+    { /* The cockpit diagnostics name the refusal (docs/AUTOPILOT_DEVELOPMENT.md). */
+        char why[220]; A380XGuidanceInputs bad=i;
+        assert(a380x_guidance_engage_problems(&s,&i,why,sizeof(why))==1 && strstr(why,"on the ground"));
+        bad.attitude_valid=0;
+        assert(a380x_guidance_engage_problems(&s,&bad,why,sizeof(why))==2 && strstr(why,"IR: check ADIRS"));
+        assert(a380x_guidance_engage_problems(&s,&bad,why,8)==2 && strlen(why)==7);
+    }
+    /* No engagement limits (user decision 2026-11-09): right after liftoff, below VLS, above VMAX,
+     * steep bank or pitch, the AP engages and stays engaged. */
+    i.on_ground=0; i.radio_height_ft=20;
+    run(&s,&i,.1); i.vls_knots=i.ias_knots+30; i.roll_deg=50; i.pitch_deg=24;
+    cmd(&s,&i,A380X_FCU_AP1,0); assert(s.ap1);
+    { char why[64]; assert(a380x_guidance_engage_problems(&s,&i,why,sizeof(why))==0 && !why[0]); }
+    run(&s,&i,.5); assert(s.ap1);
+    i.vls_knots=140; i.vmax_knots=i.ias_knots-30; run(&s,&i,.5); assert(s.ap1);
+    i.vmax_knots=340; i.roll_deg=0; i.pitch_deg=3; i.radio_height_ft=1000;
     cmd(&s,&i,A380X_FCU_AP2,0); assert(!s.ap1 && s.ap2);
     cmd(&s,&i,A380X_FCU_AP1,0); assert(s.ap1 && !s.ap2);
     cmd(&s,&i,A380X_FCU_APPR,0); cmd(&s,&i,A380X_FCU_AP2,0); assert(s.ap1 && s.ap2);
@@ -125,6 +138,10 @@ static void test_manual_athr_detents_and_disconnects(void) {
     pilot_levers(&i,i.cl_detent_ratio); run(&s,&i,.1); assert(!s.athr_armed);
     pilot_levers(&i,i.toga_detent_ratio); run(&s,&i,.1); assert(s.athr_armed);
     i.on_ground=0; run(&s,&i,.1); assert(s.athr_armed && !s.athr_active);
+    /* FLX/MCT detent: manual; between CL and FLX/MCT: A/THR active (port range, user decision). */
+    pilot_levers(&i,i.mct_detent_ratio); run(&s,&i,.1); assert(s.athr_armed && !s.athr_active);
+    pilot_levers(&i,(i.cl_detent_ratio+i.mct_detent_ratio)/2); run(&s,&i,.1);
+    assert(s.athr_armed && s.athr_active && s.thrust_mode==A380X_A1A2_SPEED);
     pilot_levers(&i,i.cl_detent_ratio); run(&s,&i,.1);
     assert(s.athr_armed && s.athr_active && s.thrust_mode==A380X_A1A2_SPEED);
     pilot_levers(&i,0); run(&s,&i,.1); assert(!s.athr_armed && !s.athr_active);
@@ -240,8 +257,8 @@ static void test_capture_and_failures(void) {
     assert(s.vertical_mode==A380X_B1_ALT && s.held_altitude_ft==12000);
     cmd(&s,&i,A380X_FCU_ALT_ROTATE,10); run(&s,&i,.1); assert(s.altitude_target_ft==12000);
     i.attitude_valid=0; run(&s,&i,.1); assert(!s.ap1 && !s.guidance_valid && s.disconnect_warning);
-    i.attitude_valid=1; i.roll_deg=41; cmd(&s,&i,A380X_FCU_AP1,0); assert(!s.ap1);
-    i.roll_deg=0; cmd(&s,&i,A380X_FCU_AP1,0); assert(s.ap1);
+    i.attitude_valid=1; i.roll_deg=41; cmd(&s,&i,A380X_FCU_AP1,0); assert(s.ap1);   /* no bank limit */
+    i.roll_deg=0;
     i.paused=1; run(&s,&i,.1); assert(s.pitch_servo==0 && s.roll_servo==0);
     i.paused=0; i.pitch_deg=NAN; run(&s,&i,.1); assert(!s.ap1 && !s.guidance_valid);
     a380x_guidance_destroy(&s);

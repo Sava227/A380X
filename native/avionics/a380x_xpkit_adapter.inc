@@ -54,6 +54,7 @@ enum { XPKIT_WEB_NONE, XPKIT_WEB_RUNNING, XPKIT_WEB_RESTARTING };
 #define XPKIT_MAX_RESTARTS 3
 #define XPKIT_RESTART_DELAY 2.0
 #define XPKIT_WATCHDOG 15.0              /* seconds without a PFD frame or heartbeat */
+#define XPKIT_STARTUP_WATCHDOG 90.0      /* before the first PFD frame: page load while X-Plane loads */
 #define XPKIT_STATE_PERIOD (1.0 / 75.0)   /* PFD/ND state publication */
 #define XPKIT_SLOW_PERIOD .045            /* MFD/SD/EFB publishers (unchanged) */
 #define XPKIT_UPLOADS_PER_FRAME 2         /* upload path: PFD/ND uploads per simulator frame... */
@@ -542,7 +543,7 @@ static void xpkit_supervise(double now) {
             double progress=xpkit_shared->frame_time[0];
             if(progress!=xpkit_watch_progress) { xpkit_watch_progress=progress; xpkit_watch_since=now; }
             if(xpkit_loop_time>0 && now-xpkit_loop_time>1.0) xpkit_watch_since=now;
-            if(now-xpkit_watch_since>XPKIT_WATCHDOG) {
+            if(now-xpkit_watch_since>(atomic_load(&xpkit_shared->frame_seq[0])?XPKIT_WATCHDOG:XPKIT_STARTUP_WATCHDOG)) {
 #if APL
                 xpkit_kill_helper();
 #else

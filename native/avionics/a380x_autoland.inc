@@ -303,8 +303,7 @@ static void landing_athr(A380XGuidanceState *s, const A380XGuidanceInputs *i, do
     double lever = levers_valid ? max_lever(i) : 0, ceiling;
     int all_idle = levers_valid && lever <= i->idle_detent_ratio;
     int inner_reverse = levers_valid && i->reverse_selected[1] && i->reverse_selected[2];
-    int levers_in_range = levers_valid && !all_idle && !inner_reverse &&
-        lever <= i->cl_detent_ratio + i->detent_tolerance_ratio;
+    int levers_in_range = levers_valid && !all_idle && !inner_reverse && athr_lever_range(i, lever);
     ceiling = clamp(lever / (i->cl_detent_ratio > 0 ? i->cl_detent_ratio : 1) * .88, 0, .88);
     if (i->athr_ceiling_valid && isfinite(i->athr_ceiling)) ceiling = clamp(i->athr_ceiling, 0, 1);
     /* retard_mode_active: A/THR engaged, LAND, AP engaged, RA <= 50 ft; reset by A/THR off, GA,

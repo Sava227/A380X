@@ -5,6 +5,7 @@
  */
 #ifndef A380X_GUIDANCE_H
 #define A380X_GUIDANCE_H
+#include <stddef.h>
 #include "a380x_avionics_core.h"
 #include "a380x_autoland.h"
 #ifdef __cplusplus
@@ -148,6 +149,10 @@ A380XB1Message a380x_guidance_fma_vertical(const A380XGuidanceState *state);
 
 void a380x_guidance_init(A380XGuidanceState *state, const A380XGuidanceInputs *inputs);
 void a380x_guidance_destroy(A380XGuidanceState *state);
+/* Why AP/FD/A-THR cannot engage now (for the on-screen and log diagnostics); returns the number of
+ * problems written to out (0 = can engage). */
+int a380x_guidance_engage_problems(const A380XGuidanceState *state, const A380XGuidanceInputs *inputs,
+                                   char *out, size_t size);
 /* amount is signed detents for ROTATE; other commands ignore it. */
 void a380x_guidance_command(A380XGuidanceState *state, const A380XGuidanceInputs *inputs,
                            A380XFcuCommand command, double amount);

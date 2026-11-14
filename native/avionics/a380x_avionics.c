@@ -271,6 +271,8 @@ static void read_side(Side *side, int powered)
 #include "a380x_ewd_data.inc"
 #include "a380x_thrust.inc"      /* thrust/reverse levers, FADEC rating + FLEX, instinctive disconnect */
 #include "a380x_flaps.inc"       /* FLAPS lever (pull-out, gates 1/3), FBW SFCC, flap/slat FPPU drives */
+#include "a380x_fctl.inc"        /* PRIM normal law, protections, auto-trim; nosewheel/body steering */
+#define SPB_ALPHA_PROTECTION() (guidance.alpha_floor_latched != 0 || fctl_link.alpha_prot != 0)
 #include "a380x_speedbrake.inc"  /* SPEED BRAKE lever (push down, 1/2 notch, ARM), FBW speed brake + ground spoilers */
 #ifndef GL_CLAMP_TO_EDGE
 #define GL_CLAMP_TO_EDGE 0x812F /* OpenGL 1.2; absent from the Windows GL 1.1 header */
@@ -365,6 +367,8 @@ static float flight_loop(float elapsed_since_last_call, float elapsed_since_last
     published.captain_valid = refs.side[0].display_valid;
     published.first_officer_valid = refs.side[1].display_valid;
     update_guidance(dt);
+    /* Flight-control laws after the AP decided (its own actuator path), before the next physics step. */
+    fctl_update(dt);
     /* FADEC N1 command to the engines unless A/THR (just decided above) drives them. */
     thrust_engines_update(elapsed_since_last_call > 0.0f ? elapsed_since_last_call : dt);
     efis_update(dt);
@@ -656,7 +660,9 @@ PLUGIN_API int XPluginStart(char *name, char *signature, char *description)
     if (!flaps_init()) XPLMDebugString("A380X flaps lever: registration failed; X-Plane's flap handle drives the flaps directly\n");
     /* SPEED BRAKE lever manipulator / animation datarefs before the aircraft OBJs bind them. */
     if (!speedbrake_init()) XPLMDebugString("A380X speed brake lever: registration failed; X-Plane's speedbrake handle drives the spoilers directly\n");
+    if (!fctl_init()) XPLMDebugString("A380X FBW: laws not started; X-Plane's direct controls and steering remain\n");
     if (!XPLMRegisterDrawCallback(draw_panel, xplm_Phase_Gauges, 0, NULL)) {
+        fctl_shutdown();
         speedbrake_shutdown();
         flaps_shutdown();
         thrust_shutdown();
@@ -721,6 +727,7 @@ PLUGIN_API void XPluginStop(void)
     efis_nd_shutdown();
     efis_shutdown();
     cockpit_door_shutdown();
+    fctl_shutdown();
     speedbrake_shutdown();
     flaps_shutdown();
     thrust_shutdown();
@@ -762,6 +769,7 @@ PLUGIN_API void XPluginDisable(void)
     thrust_release_controls(); /* engines back on X-Plane's handles, disconnect buttons released */
     flaps_release_controls();  /* a lever drag ends; X-Plane keeps the configuration in its handle */
     speedbrake_release_controls(); /* a lever drag ends; X-Plane's auto speedbrake setting restored */
+    fctl_release_controls();   /* artstab and wheel-steering overrides back to X-Plane */
     center_right_release_controls();
     clock_release_controls();
     release_guidance_controls();
@@ -795,6 +803,7 @@ PLUGIN_API void XPluginReceiveMessage(XPLMPluginID from, int message, void *para
         thrust_plane_loaded(); /* levers re-read from X-Plane, FADEC reset, A/THR disable cleared */
         flaps_plane_loaded();  /* lever, SFCC and surfaces re-read from X-Plane's flap handle */
         speedbrake_plane_loaded(); /* lever re-read from X-Plane's speedbrake handle (ARMED = ARM) */
+        fctl_plane_loaded();       /* laws reset, nose / body gears re-identified */
     }
     if (message == XPLM_MSG_PLANE_LOADED && (intptr_t)param == 0) { engs_release(); cfb_reset(); rmpa_reset(); }
     if (message == XPLM_MSG_PLANE_LOADED && (intptr_t)param == 0 && guidance.initialized) {

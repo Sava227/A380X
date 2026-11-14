@@ -128,6 +128,9 @@ void XPLMCommandOnce(XPLMCommandRef ref) {
 }
 float XPLMGetElapsedTime(void) { return mock_clock; }
 void XPLMDebugString(const char *message) {size_t n=strlen(mock_debug);snprintf(mock_debug+n,sizeof(mock_debug)-n,"%s",message);}
+static char mock_spoken[512];
+void XPLMGetSystemPath(char *out) {out[0]=0;}
+void XPLMSpeakString(const char *text) {snprintf(mock_spoken,sizeof(mock_spoken),"%s",text);}
 void XPLMGetNthAircraftModel(int index,char *filename,char *path) {
     assert(index==0);strcpy(filename,"User Selected Aircraft.acf");strcpy(path,mock_aircraft_path);
 }
@@ -416,8 +419,10 @@ static void test_override_lifecycles(void) {
     setup();assert(fcu_init());engage();r(fcu.override_roll)->value=0;tick(1);assert(!guidance.ap1&&!fcu.own_pitch&&!fcu.own_roll);
     command("athr_toggle");tick(1);assert(fcu.own_throttle);r(fcu.override_throttle)->value=0;tick(1);assert(!guidance.athr_armed&&!guidance.athr_active&&!fcu.own_throttle);
     r(fcu.override_throttle)->value=1;command("athr_toggle");assert(!guidance.athr_armed);
+    assert(strstr(mock_spoken,"A/THR not armed"));
     guidance.athr_armed=1;tick(1);assert(!guidance.athr_active&&XPLMGetDatai(fcu.override_throttle)==1);
     r(fcu.override_pitch)->value=1;command("ap1_toggle");assert(!guidance.ap1);
+    assert(strstr(mock_spoken,"AP1 not engaged: the flight controls are held by another add-on"));
     fcu_shutdown();assert(XPLMGetDatai(fcu.override_pitch)==1&&XPLMGetDatai(fcu.override_throttle)==1);
 }
 /* Rudder/nosewheel lease (a380x_autoland.inc ALIGN / ROLL OUT): same ownership and release rules. */
@@ -476,6 +481,21 @@ static void test_hardware_and_disconnect(void) {
     r(fcu.axis_values)->array_f[0]=.3f;command("ap1_toggle");tick(1);assert(guidance.ap1);
     XPLMCommandOnce(fcu.native_disconnect);assert(!guidance.ap1&&!fcu.own_pitch&&!fcu.own_roll);
     command("ap1_toggle");tick(1);r(refs.avionics_power)->value=0;tick(1);assert(!guidance.ap1&&!guidance.athr_armed&&!fcu.own_pitch);
+    fcu_shutdown();
+}
+/* AP pressed on the ground is kept and engages after liftoff above 100 ft; a second press cancels. */
+static void test_ap_after_liftoff(void) {
+    setup();assert(fcu_init());
+    r(refs.on_ground)->value=1;refs.side[0].radio_altitude_value=0;tick(10);
+    command("ap1_toggle");tick(1);assert(!guidance.ap1&&afs_ap_pending==1&&strstr(mock_spoken,"AP1 armed"));
+    r(refs.on_ground)->value=0;refs.side[0].radio_altitude_value=50;tick(2);assert(!guidance.ap1&&afs_ap_pending==1);
+    refs.side[0].radio_altitude_value=150;tick(2);
+    assert(guidance.ap1&&!afs_ap_pending&&fcu.own_pitch&&strstr(mock_spoken,"AP1 engaged"));
+    command("ap1_toggle");tick(1);assert(!guidance.ap1&&!fcu.own_pitch);
+    r(refs.on_ground)->value=1;refs.side[0].radio_altitude_value=0;tick(2);
+    command("ap1_toggle");assert(afs_ap_pending==1);command("ap1_toggle");assert(!afs_ap_pending&&!guidance.ap1);
+    command("ap1_toggle");assert(afs_ap_pending==1);command("ap_disconnect");assert(!afs_ap_pending);
+    refs.side[0].radio_altitude_value=8000;r(refs.on_ground)->value=0;
     fcu_shutdown();
 }
 static int calibration_text(const char *text,size_t length) {
@@ -589,5 +609,6 @@ int main(int argc,char **argv) {
     test_clean_performance_boundary();
     test_thrust_calibration_parser();test_raw_pilot_thrust_boundary();test_stock_authority_bridge();
     test_individual_engine_lever_limits();
+    test_ap_after_liftoff();
     puts("a380x FCU XPLM adapter tests passed");return 0;
 }
