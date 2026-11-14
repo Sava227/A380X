@@ -103,6 +103,16 @@ engine reverses, the outer levers are held at IDLE (a single hardware axis then 
 amount). FLEX with hardware: put the hardware lever in its FLX/MCT detent (within the calibrated
 tolerance); the 15 s inhibit also counts a held hardware binding of `a380x/xp12/fcu/athr_disconnect`.
 
+**Keyboard and joystick-button throttles.** X-Plane's step commands (`sim/engines/throttle_up`,
+`throttle_down` and their `_1` .. `_4` forms) are tapped, not replaced. While one is held, a lever
+that reaches (within the calibration tolerance) or crosses CL or FLX/MCT stops in that detent until the
+key is released; the next press moves it on (up: IDLE → CL → FLX/MCT → TOGA, down the same way back).
+Without this, a keyboard lever usually landed a degree or two beside CL. It looked like CL in 3D, but
+A/THR stayed in manual thrust. Bindable commands
+`a380x/xp12/thrust/levers_idle`, `levers_cl`, `levers_flx_mct`, `levers_toga`, `levers_detent_up` and
+`levers_detent_down` put all four levers into a detent directly (with the click). A hardware axis is still
+adopted without stickiness.
+
 ## Detent click
 
 `native/avionics/sounds/thrust_detent_click.wav` (mono PCM16, 44.1 kHz, 80 ms) is an original synthesis by
@@ -208,7 +218,8 @@ Writable: `lever_1..4_input` (TLA 0..45), `reverse_2/3_input` (0..1) (manipulato
 3 FLX, 4 TOGA, 5 MREV), `flex_rating`, `flex_latch`, `limits_valid`, `athr_disabled`, `engine_override`.
 Read-only floats: `lever_1..4_anim`, `reverse_2/3_anim`, `disc_left/right_anim`, `tla_1..4`,
 `n1_command_1..4`, `engine_command_1..4`, `thrust_limit_n1`, `flex_n1`, `flex_temp_c`,
-`athr_disc_held_s`. Commands: `athr_disconnect_left`, `athr_disconnect_right`. The list is
+`athr_disc_held_s`. Commands: `athr_disconnect_left`, `athr_disconnect_right`, `levers_idle`,
+`levers_cl`, `levers_flx_mct`, `levers_toga`, `levers_detent_up`, `levers_detent_down`. The list is
 `THRUST_COMMANDS` / `THRUST_DATAREFS` in `tools/avionics_provider.py`; `build.py` fails when the native
 registry differs.
 
@@ -252,8 +263,11 @@ commands, datarefs and the click WAV into the provider manifest), then `tools/va
   TOGA/FLEX at the start of the roll through the same fraction.
 - Manual thrust at CL is now the CLB rating (about 0.95+ of X-Plane's throttle at low altitude), no
   longer 0.556; A/THR at CL is limited to the same value instead of 0.88.
-- A/THR engagement stays system-wide (all levers at or below CL); FBW's per-FADEC active range (TLA <= 35)
-  for engine-out is not modelled.
+- A/THR active range (user decision 2026-11-09): the A380 limits A/THR to IDLE..CL (all engines).
+  Here it is active from above IDLE up to, but not including, the FLX/MCT detent. The lever's FADEC
+  thrust is the ceiling, so between CL and FLX/MCT A/THR may use more than climb thrust. In the
+  FLX/MCT and TOGA detents thrust stays manual (takeoff, go-around). FBW's per-FADEC engine-out
+  range is not modelled.
 - FBW's FADEC thrust lock (THR LK on A/THR loss with the levers in CL) is not modelled here.
 - Hardware detent entries click (as FBW, sound on 3D position); with a noisy axis the 1 deg re-arm band
   prevents chatter.

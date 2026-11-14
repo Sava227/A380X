@@ -102,6 +102,103 @@ static int controls_available(void)
         && (!XPLMGetDatai(fcu.override_roll) || fcu.own_roll);
 }
 
+/* Cockpit AFS diagnostics (docs/AUTOPILOT_DEVELOPMENT.md, "When AP or A/THR will not engage"): when an AP
+ * or the A/THR does not engage, or disconnects, the reason is shown in the simulator window
+ * (XPLMSpeakString) and written to Log.txt as "A380X AFS: ..."; an "A380X AFS status" line is logged
+ * every 10 s in flight while AP/FD/A-THR are in use. Nothing here changes the guidance. */
+#include <stdarg.h>
+static char afs_last_notice[256];
+static float afs_last_notice_time=-100.0f, afs_athr_check_at=-1.0f, afs_status_at;
+static int afs_override_axis=-1;
+static float afs_override_value;
+/* AP pressed on the ground: engaged by update_guidance after liftoff (0 none, 1 AP1, 2 AP2). */
+static int afs_ap_pending;
+/* Own copy of the AFS lines, kept beyond X-Plane's Log.txt rotation: Output/A380X-XP12_AFS.log (this
+ * X-Plane session) and Output/A380X-XP12_AFS.previous.log (the session before). */
+static FILE *afs_file;
+static int afs_file_state;   /* 0 not opened yet, 1 open, -1 unavailable */
+static void afs_file_write(const char *line)
+{
+    static int rotated;
+    if (afs_file_state==0) {
+        char root[1024], path[1200], previous[1220];
+        root[0]=0; afs_file_state=-1;
+        XPLMGetSystemPath(root);
+        if (root[0] && snprintf(path,sizeof(path),"%sOutput/A380X-XP12_AFS.log",root)<(int)sizeof(path)
+            && snprintf(previous,sizeof(previous),"%sOutput/A380X-XP12_AFS.previous.log",root)<(int)sizeof(previous)) {
+            if (!rotated) { remove(previous); rename(path,previous); rotated=1; }
+            if ((afs_file=fopen(path,"a"))) afs_file_state=1;
+        }
+    }
+    if (afs_file_state==1 && afs_file) {
+        fprintf(afs_file,"%9.1f %s",XPLMGetElapsedTime(),line);
+        fflush(afs_file);
+    }
+}
+static void afs_log(const char *format, ...)
+{
+    char text[256], line[300];
+    va_list args;
+    va_start(args,format); vsnprintf(text,sizeof(text),format,args); va_end(args);
+    snprintf(line,sizeof(line),"A380X AFS: %s\n",text); XPLMDebugString(line); afs_file_write(line);
+}
+static void afs_notice(const char *format, ...)
+{
+    char text[256], line[300];
+    va_list args;
+    float now=XPLMGetElapsedTime();
+    va_start(args,format); vsnprintf(text,sizeof(text),format,args); va_end(args);
+    if (!strcmp(text,afs_last_notice) && now-afs_last_notice_time<5.0f) return;
+    snprintf(afs_last_notice,sizeof(afs_last_notice),"%s",text); afs_last_notice_time=now;
+    snprintf(line,sizeof(line),"A380X AFS: %s\n",text); XPLMDebugString(line); afs_file_write(line);
+    XPLMSpeakString(text);
+}
+static double afs_max_lever(void)
+{
+    int i; double m=0;
+    for (i=0;i<4;++i) if (isfinite(guidance_inputs.throttle_lever_ratio[i])) m=fmax(m,guidance_inputs.throttle_lever_ratio[i]);
+    return m;
+}
+/* Why an armed A/THR is not active (the guidance activation terms, in plain language). */
+static void afs_athr_reason(void)
+{
+    char why[220]; size_t len=0; int n=0;
+    double lever=afs_max_lever(), cl=guidance_inputs.cl_detent_ratio, tol=guidance_inputs.detent_tolerance_ratio;
+    why[0]=0;
+#define AFS_WHY(cond,...) do { if(cond) { int w; if(n && len<sizeof(why)) { w=snprintf(why+len,sizeof(why)-len,"; "); if(w>0) len+=(size_t)w; } \
+        if(len<sizeof(why)) { w=snprintf(why+len,sizeof(why)-len,__VA_ARGS__); if(w>0) len+=(size_t)w; } len=len>=sizeof(why)?sizeof(why)-1:len; ++n; } } while(0)
+    AFS_WHY(!guidance_inputs.powered,"FCU not powered");
+    AFS_WHY(guidance_inputs.paused,"simulator paused");
+    AFS_WHY(guidance_inputs.on_ground,"on the ground (A/THR becomes active in flight)");
+    AFS_WHY(!guidance_inputs.athr_speed_valid,"speed data invalid (ADR)");
+    AFS_WHY(!guidance_inputs.throttle_levers_valid,"thrust levers not recognised (fcu-calibration.ini / lever input)");
+    AFS_WHY(guidance_inputs.throttle_levers_valid && lever>=guidance_inputs.mct_detent_ratio-tol,
+            "thrust levers in FLX/MCT or TOGA (manual thrust): bring them below FLX/MCT, e.g. to CL "
+            "(throttle keys stop at CL, or use a380x/xp12/thrust/levers_cl)");
+    (void)cl;
+    AFS_WHY(guidance_inputs.throttle_levers_valid && lever<=guidance_inputs.idle_detent_ratio,"thrust levers at IDLE");
+#undef AFS_WHY
+    afs_notice("A/THR armed but not active: %s",n?why:"conditions met, activation pending");
+}
+static void afs_status_log(void)
+{
+    char line[600];
+    snprintf(line,sizeof(line),
+        "A380X AFS status: AP %d/%d FD %d/%d ATHR armed %d active %d thr %d lat %d vert %d | IAS %.0f VLS %.0f VMAX %.0f "
+        "ALT %.0f V/S %.0f HDG %.0f | sel SPD %.0f HDG %.0f ALT %.0f V/S %.0f | levers %.3f/%.3f/%.3f/%.3f valid %d CL %.3f | "
+        "override J%d P%d R%d T%d own P%d R%d T%d lease %d | adr %d ir %d gnd %d pending %d\n",
+        guidance.ap1,guidance.ap2,guidance.fd1,guidance.fd2,guidance.athr_armed,guidance.athr_active,(int)guidance.thrust_mode,
+        (int)guidance.lateral_mode,(int)guidance.vertical_mode,guidance_inputs.ias_knots,guidance_inputs.vls_knots,
+        guidance_inputs.vmax_knots,guidance_inputs.altitude_ft,guidance_inputs.vertical_speed_fpm,guidance_inputs.heading_deg,
+        guidance.selected_speed_knots,guidance.selected_heading_deg,guidance.selected_altitude_ft,guidance.selected_vs_fpm,
+        guidance_inputs.throttle_lever_ratio[0],guidance_inputs.throttle_lever_ratio[1],guidance_inputs.throttle_lever_ratio[2],
+        guidance_inputs.throttle_lever_ratio[3],guidance_inputs.throttle_levers_valid,guidance_inputs.cl_detent_ratio,
+        XPLMGetDatai(fcu.override_all),XPLMGetDatai(fcu.override_pitch),XPLMGetDatai(fcu.override_roll),
+        XPLMGetDatai(fcu.override_throttle),fcu.own_pitch,fcu.own_roll,fcu.own_throttle,fcu_thrust_link.lease,
+        guidance_inputs.airdata_valid,guidance_inputs.attitude_valid,guidance_inputs.on_ground,afs_ap_pending);
+    XPLMDebugString(line); afs_file_write(line);
+}
+
 /* Optional observer of applied FCU commands (the native FMS knob events, spec 07 section 2.1). */
 static void (*fcu_command_observer)(A380XFcuCommand command);
 /* Optional distance (nm) to the tuned localizer antenna of a receiver side (a380x_autoland_adapter.inc);
@@ -122,9 +219,20 @@ static int fcu_command_handler(XPLMCommandRef command, XPLMCommandPhase phase, v
     if (!plugin_enabled || phase==xplm_CommandEnd) return 1;
     if (phase==xplm_CommandContinue && (c->amount==0 || now<c->next_repeat)) return 1;
     c->next_repeat=now+(phase==xplm_CommandBegin ? 0.4f : 0.08f);
+    int ap_request=(c->command==A380X_FCU_AP1 && !guidance.ap1) ? 1 : (c->command==A380X_FCU_AP2 && !guidance.ap2) ? 2 : 0;
+    if (c->command==A380X_FCU_AP_DISCONNECT && afs_ap_pending) { afs_log("AP%d engagement after liftoff cancelled",afs_ap_pending); afs_ap_pending=0; }
+    if (ap_request && afs_ap_pending==ap_request) {      /* second press on the ground: cancel */
+        afs_notice("AP%d: engagement after liftoff cancelled",ap_request);
+        afs_ap_pending=0;
+        return 1;
+    }
     if ((c->command==A380X_FCU_AP1 && !guidance.ap1) || (c->command==A380X_FCU_AP2 && !guidance.ap2)) {
         Side *side=&refs.side[c->command==A380X_FCU_AP2 ? 1 : 0];
-        if (!controls_available()) return 1;
+        if (!controls_available()) {
+            afs_notice("AP%d not engaged: the flight controls are held by another add-on (override_joystick %d, pitch %d, roll %d)",
+                       ap_request,XPLMGetDatai(fcu.override_all),XPLMGetDatai(fcu.override_pitch),XPLMGetDatai(fcu.override_roll));
+            return 1;
+        }
         /* Engagement is evaluated against the requested channel, before the
          * AP state changes. Never borrow a healthy captain sensor set for AP2. */
         command_inputs.attitude_valid=side->display_valid && side->attitude_valid && side->heading_valid && side->navigation_valid;
@@ -142,9 +250,30 @@ static int fcu_command_handler(XPLMCommandRef command, XPLMCommandPhase phase, v
         fcu.suppress_native_disconnect=0;
     }
     if (c->command==A380X_FCU_ATHR && !guidance.athr_armed
-        && XPLMGetDatai(fcu.override_throttle) && !fcu.own_throttle && !fcu_thrust_link.lease) return 1;
+        && XPLMGetDatai(fcu.override_throttle) && !fcu.own_throttle && !fcu_thrust_link.lease) {
+        afs_notice("A/THR not armed: the throttles are held by another controller (override_throttles set, no thrust-lever lease)");
+        return 1;
+    }
     if (c->command==A380X_FCU_ATHR && !guidance.athr_armed) fcu_authority_prepare_athr();
     a380x_guidance_command(&guidance,&command_inputs,c->command,c->amount);
+    if (ap_request && !(ap_request==1 ? guidance.ap1 : guidance.ap2)) {
+        char why[220];
+        if (command_inputs.on_ground && command_inputs.powered) {
+            afs_ap_pending=ap_request;
+            afs_notice("AP%d armed: it engages by itself after liftoff (above 100 ft, stick released). Press again to cancel",
+                       ap_request);
+        } else {
+            a380x_guidance_engage_problems(&guidance,&command_inputs,why,sizeof(why));
+            afs_notice("AP%d not engaged: %s",ap_request,why[0]?why:"engagement refused");
+        }
+    } else if (ap_request) { afs_ap_pending=0; afs_log("AP%d engaged",ap_request); }
+    else if (c->command==A380X_FCU_AP1 || c->command==A380X_FCU_AP2) afs_log("AP%d off (pushbutton)",c->command==A380X_FCU_AP1?1:2);
+    if (c->command==A380X_FCU_ATHR) afs_log("A/THR pushbutton: armed %d active %d",guidance.athr_armed,guidance.athr_active);
+    if (c->command==A380X_FCU_ATHR) {
+        if (guidance.athr_armed && !guidance.athr_active) afs_athr_check_at=now+2.0f;
+        else if (!guidance.athr_armed && command_inputs.athr_inhibited)
+            afs_notice("A/THR not armed: A/THR disabled (instinctive disconnect held more than 15 s) until the FMGC resets on the ground");
+    }
     a380x_fcu_motion_applied(&fcu_motion,c->command,c->amount);
     if (fcu_command_observer) fcu_command_observer(c->command);
     if (c->command==A380X_FCU_FD1 && guidance.fd1!=guidance.fd2)
@@ -178,11 +307,14 @@ static int pilot_override(void)
         for (i=0;i<n;++i) {
             float range=maximum[i]-minimum[i], value=values[i];
             if (isfinite(range) && range>0.001f) value=(value-minimum[i])/range;
-            if (assignments[i]>=1 && assignments[i]<=3 && isfinite(value) && fabsf(value-0.5f)>0.20f) return 1;
+            if (assignments[i]>=1 && assignments[i]<=3 && isfinite(value) && fabsf(value-0.5f)>0.20f) {
+                afs_override_axis=i; afs_override_value=value; return 1;
+            }
         }
     }
     /* While the yaw lease is held, yoke_heading_ratio is this plugin's own pedal output: only the
      * physical rudder axis above (assignment 3) can then signal a pilot pedal override. */
+    afs_override_axis=-2;
     return !fcu.own_yaw && fabsf(XPLMGetDataf(fcu.pilot_rudder))>0.35f;
 }
 
@@ -411,13 +543,64 @@ static void update_guidance(float dt)
     if ((guidance.ap1||guidance.ap2) && (!controls_available() || pilot_override()
         || (fcu.own_pitch && !XPLMGetDatai(fcu.override_pitch))
         || (fcu.own_roll && !XPLMGetDatai(fcu.override_roll))
-        || (fcu.own_yaw && !XPLMGetDatai(fcu.override_heading))))
+        || (fcu.own_yaw && !XPLMGetDatai(fcu.override_heading)))) {
+        int which=guidance.ap1?1:2;
+        if (!controls_available()) afs_notice("AP%d disconnected: the flight controls were taken by another add-on",which);
+        else if (pilot_override()) {
+            if (afs_override_axis>=0)
+                afs_notice("AP%d disconnected: joystick axis %d (pitch/roll/yaw) at %.2f, more than 20%% off centre - "
+                           "centre the stick/rudder or recalibrate it",which,afs_override_axis,afs_override_value);
+            else afs_notice("AP%d disconnected: rudder pedal input",which);
+        } else afs_notice("AP%d disconnected: control lease lost",which);
         a380x_guidance_command(&guidance,&guidance_inputs,A380X_FCU_AP_DISCONNECT,0);
+    }
     if ((guidance.athr_armed || guidance.athr_active)
         && ((XPLMGetDatai(fcu.override_throttle) && !fcu.own_throttle && !fcu_thrust_link.lease)
             || (fcu.own_throttle && !XPLMGetDatai(fcu.override_throttle))))
         a380x_guidance_command(&guidance,&guidance_inputs,A380X_FCU_ATHR_DISCONNECT,0);
-    a380x_guidance_update(&guidance,&guidance_inputs,dt);
+    {
+        int ap_before=guidance.ap1||guidance.ap2, athr_before=guidance.athr_armed;
+        float now=XPLMGetElapsedTime();
+        a380x_guidance_update(&guidance,&guidance_inputs,dt);
+        if (ap_before && !guidance.ap1 && !guidance.ap2) {
+            char why[220];
+            a380x_guidance_engage_problems(&guidance,&guidance_inputs,why,sizeof(why));
+            afs_notice("AP disconnected by the guidance: %s",why[0]?why:"mode or sensor limit");
+        }
+        if (athr_before && !guidance.athr_armed) afs_notice("A/THR disconnected");
+        /* AP pressed on the ground: engage once airborne above 100 ft RA (5 s airborne without a radio
+         * altitude), with the pilot's stick and rudder released so the engagement is not overridden. */
+        if (afs_ap_pending) {
+            if (guidance.ap1 || guidance.ap2 || !guidance_inputs.powered) afs_ap_pending=0;
+            else if (!guidance_inputs.on_ground && !guidance_inputs.paused
+                     && (guidance_inputs.radio_height_valid ? guidance_inputs.radio_height_ft>=100
+                                                            : guidance.airborne_seconds>=5)) {
+                int which=afs_ap_pending;
+                if (!controls_available())
+                    afs_notice("AP%d waiting to engage: the flight controls are held by another add-on",which);
+                else if (pilot_override())
+                    afs_notice("AP%d waiting to engage: release the stick/rudder",which);
+                else {
+                    a380x_guidance_command(&guidance,&guidance_inputs,which==1?A380X_FCU_AP1:A380X_FCU_AP2,0);
+                    if (guidance.ap1 || guidance.ap2) { afs_notice("AP%d engaged",which); afs_ap_pending=0; }
+                    else {
+                        char why[220];
+                        a380x_guidance_engage_problems(&guidance,&guidance_inputs,why,sizeof(why));
+                        afs_notice("AP%d waiting to engage: %s",which,why[0]?why:"engagement refused");
+                    }
+                }
+            }
+        }
+        if (afs_athr_check_at>0.0f && now>=afs_athr_check_at) {
+            afs_athr_check_at=-1.0f;
+            if (guidance.athr_armed && !guidance.athr_active) afs_athr_reason();
+        }
+        if (now>=afs_status_at && !guidance_inputs.on_ground &&
+            (guidance.fd1||guidance.fd2||guidance.ap1||guidance.ap2||guidance.athr_armed)) {
+            afs_status_at=now+10.0f;
+            afs_status_log();
+        }
+    }
     /* A direct foreign native activation must be caught after automatic
      * detent arming and before either custom actuator lease is acquired. */
     fcu_authority_guard();
@@ -471,6 +654,9 @@ static void update_guidance(float dt)
 
 static void fcu_shutdown(void)
 {
+    afs_ap_pending=0;
+    if (afs_file) { fclose(afs_file); afs_file=NULL; }
+    afs_file_state=0;
     fcu_authority_shutdown();
     fcu_thrust_shutdown();
     fcu_motion_shutdown();

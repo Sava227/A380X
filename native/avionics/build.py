@@ -65,6 +65,9 @@ FLAPS_ADAPTER_TEST = HERE / "test_flaps_adapter.c"
 SPEEDBRAKE_TEST = HERE / "test_speedbrake.c"
 SPEEDBRAKE_ADAPTER_TEST = HERE / "test_speedbrake_adapter.c"
 SPEEDBRAKE_SOURCES = [HERE / "a380x_speedbrake.h", HERE / "a380x_speedbrake.inc"]
+FCTL_TEST = HERE / "test_fctl.c"
+FCTL_ADAPTER_TEST = HERE / "test_fctl_adapter.c"
+FCTL_SOURCES = [HERE / "a380x_fctl.h", HERE / "a380x_fctl.inc"]
 DETENT_CLICK_GENERATOR = HERE.parent.parent / "tools/build_detent_click.py"
 EFB = HERE / "a380x_efb.c"
 EFB_HEADER = HERE / "a380x_efb.h"
@@ -170,7 +173,7 @@ MFD_TESTS = (("test_mfd_formats", "core"), ("test_fms_core", "core"), ("test_nav
 MFD_OPTIONAL_TESTS = (("test_mfd_pages_a", "render"), ("test_mfd_page_perf", "render"),
                       ("test_mfd_page_fpln", "render"), ("test_mfd_pages_h", "render"))
 EXTRA_INPUTS = [TERRAIN_TEST, TERRAIN_ADAPTER_TEST, TAWS_TEST, PFD_ANIMATION_CLOCK, TERRAIN_LAYER, PWP_LAYER, HERE / "xp-kit/bridge.js", HERE / "xp-kit-nd/native-bridge.js",
-    FMGC_FLIGHT_TEST, EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", HERE / "test_xpkit_zero_copy.c", XPKIT_SURFACE, ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, *AUTOLAND_SOURCES, AUTOLAND_TEST, AUTOLAND_SIM_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
+    FMGC_FLIGHT_TEST, EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", HERE / "test_xpkit_zero_copy.c", XPKIT_SURFACE, ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, FCTL_TEST, FCTL_ADAPTER_TEST, *FCTL_SOURCES, GUIDANCE, GUIDANCE_TEST, *AUTOLAND_SOURCES, AUTOLAND_TEST, AUTOLAND_SIM_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
     EWD_DATA_TEST, EWD_RENDER_TEST, FCU_MOTION_TEST, FCU_LIGHT_TEST, ISIS_TEST, CONTROL_MOTION_TEST,
     *CXX_SOURCES, *[p for p in HERE.glob("*.h") if not p.name.startswith("._")],
     *[p for p in HERE.glob("*.inc") if not p.name.startswith("._")],
@@ -387,6 +390,16 @@ def main() -> None:
     speedbrake_adapter_result = run([str(speedbrake_adapter_binary)]).strip()
     speedbrake_contracts = run([str(speedbrake_adapter_binary), "--contracts"]).splitlines()
     speedbrake_stock_commands = [line[2:] for line in speedbrake_contracts if line.startswith("X ")]
+    # Flight-control laws and steering (docs/FLIGHT_CONTROLS.md): core closed-loop bench + adapter.
+    fctl_binary = output / "test_fctl"
+    run([clang, *warnings, str(FCTL_TEST), "-lm", "-o", str(fctl_binary)])
+    fctl_result = run([str(fctl_binary)]).strip().splitlines()[-1]
+    run([mingw, *warnings, "-c", str(FCTL_TEST), "-o", str(output / "test_fctl_win_check.o")])
+    fctl_adapter_binary = output / "test_fctl_adapter"
+    run([clang, *warnings, "-Wno-deprecated-declarations", "-DAPL=1", "-DXPLM200=1", "-DXPLM210=1", "-DXPLM300=1",
+         "-DXPLM301=1", "-DXPLM400=1", "-I", str(headers), str(FCTL_ADAPTER_TEST), "-lm", "-o", str(fctl_adapter_binary)])
+    fctl_adapter_result = run([str(fctl_adapter_binary)]).strip()
+    fctl_contracts = run([str(fctl_adapter_binary), "--contracts"]).splitlines()
 
     def compile_laws(compiler, flags, suffix):
         objects = []
@@ -762,6 +775,10 @@ def main() -> None:
     if ([line[2:] for line in speedbrake_contracts if line.startswith("C ")] != list(SPEEDBRAKE_COMMANDS)
             or [line[2:] for line in speedbrake_contracts if line.startswith("D ")] != list(SPEEDBRAKE_DATAREFS)):
         raise RuntimeError("SPEED BRAKE native registry disagrees with tools/avionics_provider.py")
+    from avionics_provider import FCTL_COMMANDS, FCTL_DATAREFS
+    if ([line[2:] for line in fctl_contracts if line.startswith("C ")] != list(FCTL_COMMANDS)
+            or [line[2:] for line in fctl_contracts if line.startswith("D ")] != list(FCTL_DATAREFS)):
+        raise RuntimeError("Flight-control native registry disagrees with tools/avionics_provider.py")
     from elec_panel_contract import COMMANDS as ELEC_COMMANDS, DATAREFS as ELEC_DATAREFS, SOUND_FILES as ELEC_SOUNDS
     if ({line[2:] for line in elec_contracts if line.startswith("C ")} != set(ELEC_COMMANDS)
             or {line[2:] for line in elec_contracts if line.startswith("D ")} != set(ELEC_DATAREFS)
@@ -948,7 +965,10 @@ def main() -> None:
                # number formats). Same Universal CRT (ucrtbase.dll) as the API sets above; present on
                # Windows 10+ and with the UCRT redistributable. No new runtime library.
                "api-ms-win-crt-utility-l1-1-0.dll",
-               "api-ms-win-crt-locale-l1-1-0.dll"}
+               "api-ms-win-crt-locale-l1-1-0.dll",
+               # AFS diagnostics log (2026-11-09): rename/remove rotate Output/A380X-XP12_AFS.log. Same
+               # Universal CRT (ucrtbase.dll), no new runtime library.
+               "api-ms-win-crt-filesystem-l1-1-0.dll"}
     if not {name.lower() for name in dlls} <= allowed:
         raise RuntimeError(f"Unexpected Windows dependencies: {dlls}")
 
@@ -1098,6 +1118,13 @@ def main() -> None:
                         "xplane_flap_mapping": "flap_handle_request_ratio = FBW FlapsConf / 6 on the seven-detent "
                                                "ACF (tools/flaps_lever_cockpit.py ACF_CHANGES)",
                         "behaviour": "docs/FLAPS_LEVER.md", "simulator_tested": False},
+        "flight_controls_test_result": fctl_result,
+        "flight_controls_adapter_test_result": fctl_adapter_result,
+        "flight_controls": {"commands": list(FCTL_COMMANDS), "datarefs": list(FCTL_DATAREFS),
+                            "raw_inputs": [line[2:] for line in fctl_contracts if line.startswith("R ")],
+                            "law_source": "original port law from the published Airbus normal-law description "
+                                          "(docs/FLIGHT_CONTROLS.md); not FBW PRIM code",
+                            "behaviour": "docs/FLIGHT_CONTROLS.md", "simulator_tested": False},
         "speedbrake_test_result": speedbrake_result,
         "speedbrake_adapter_test_result": speedbrake_adapter_result,
         "speed_brake": {"commands": list(SPEEDBRAKE_COMMANDS), "datarefs": list(SPEEDBRAKE_DATAREFS),

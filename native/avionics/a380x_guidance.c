@@ -10,6 +10,7 @@
 #include "a380x_guidance.h"
 #include "a380x_fbw_laws.h"
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #define RAD (0.017453292519943295)
@@ -43,6 +44,12 @@ static double max_lever(const A380XGuidanceInputs *i) {
     return fmax(fmax(i->throttle_lever_ratio[0],i->throttle_lever_ratio[1]),
         fmax(i->throttle_lever_ratio[2],i->throttle_lever_ratio[3]));
 }
+/* A/THR active range (above IDLE): up to, not including, the FLX/MCT detent. The A380 stops at CL;
+ * this port lets A/THR regulate up to FLX/MCT with the lever's FADEC thrust as the ceiling (user
+ * decision 2026-11-09: no extra engagement limits). FLX/MCT and TOGA stay manual (takeoff, go-around). */
+static int athr_lever_range(const A380XGuidanceInputs *i,double lever) {
+    return lever<i->mct_detent_ratio-i->detent_tolerance_ratio;
+}
 static A380XA1A2Message manual_thrust_mode(const A380XGuidanceInputs *i) {
     double lever;
     if(!i->powered || !lever_inputs_valid(i)) return A380X_A1A2_NONE;
@@ -62,8 +69,9 @@ static void disconnect_athr(A380XGuidanceState *s,const A380XGuidanceInputs *i) 
     s->thrust_mode=manual_thrust_mode(i);
     s->throttle_command=isfinite(i->throttle_ratio)?clamp(i->throttle_ratio,0,1):0;
 }
-static int airborne_valid(const A380XGuidanceInputs *i) {
-    return i->powered && !i->paused && !i->on_ground && i->airdata_valid && i->attitude_valid &&
+/* The flight data the guidance laws need, in flight (pause aside). */
+static int flight_data_valid(const A380XGuidanceInputs *i) {
+    return i->powered && !i->on_ground && i->airdata_valid && i->attitude_valid &&
         isfinite(i->pitch_deg) && isfinite(i->roll_deg) && isfinite(i->heading_deg) &&
         isfinite(i->track_deg) && isfinite(i->altitude_ft) && isfinite(i->vertical_speed_fpm) &&
         isfinite(i->ias_knots) && isfinite(i->tas_knots) && isfinite(i->ground_speed_knots) &&
@@ -73,12 +81,31 @@ static int airborne_valid(const A380XGuidanceInputs *i) {
         isfinite(i->accel_x_m_s2) && isfinite(i->accel_y_m_s2) && isfinite(i->accel_z_m_s2) &&
         i->ias_knots>40 && i->tas_knots>40;
 }
+static int airborne_valid(const A380XGuidanceInputs *i) { return !i->paused && flight_data_valid(i); }
+/* AP engagement has no envelope, speed or time-since-liftoff limit (user decision 2026-11-09; the
+ * A380 manual's 5 s after liftoff, pitch -11..22.5, bank < 40 and VLS..VMAX are not applied): pressed
+ * in flight with the data the laws need, it engages. On the ground the FCU adapter keeps the press
+ * and engages after liftoff (a380x_fcu_adapter.inc). */
 static int can_engage(const A380XGuidanceState *s,const A380XGuidanceInputs *i) {
-    /* The manual permits engagement at five seconds after liftoff. Allow
-     * sub-nanosecond integration roundoff, never an earlier simulation frame. */
-    return airborne_valid(i) && s->airborne_seconds>=5-1e-9 && i->pitch_deg>=-11 && i->pitch_deg<=22.5 &&
-        fabs(i->roll_deg)<40 && (i->vls_knots<=0 || i->ias_knots>=i->vls_knots) &&
-        (i->vmax_knots<=0 || i->ias_knots<=i->vmax_knots);
+    (void)s;
+    return flight_data_valid(i);
+}
+int a380x_guidance_engage_problems(const A380XGuidanceState *s,const A380XGuidanceInputs *i,char *out,size_t size) {
+    int n=0; size_t len=0;
+    if(!out || !size) return can_engage(s,i)?0:1;
+    out[0]=0;
+#define WHY(cond,...) do { if(cond) { int w; \
+        if(n && len<size) { w=snprintf(out+len,size-len,"; "); if(w>0) len+=(size_t)w; } \
+        if(len<size) { w=snprintf(out+len,size-len,__VA_ARGS__); if(w>0) len+=(size_t)w; } \
+        len=len>=size?size-1:len; ++n; } } while(0)
+    WHY(!i->powered,"FCU/guidance not powered");
+    WHY(i->on_ground,"on the ground");
+    WHY(!i->airdata_valid,"air data invalid (ADR: check ADIRS)");
+    WHY(!i->attitude_valid,"attitude/heading/navigation invalid (IR: check ADIRS in NAV)");
+    WHY(!(isfinite(i->ias_knots) && i->ias_knots>40),"no valid airspeed");
+    if(!n && !can_engage(s,i)) WHY(1,"a flight-data input is not available");
+#undef WHY
+    return n;
 }
 static double speed_ratio(const A380XGuidanceInputs *i) {
     return i->mach>0.05 && isfinite(i->mach)?clamp(i->ias_knots/i->mach,100,900):661.47;
@@ -303,15 +330,9 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
     s->speed_dashes=s->speed_managed && s->speed_preselect_seconds<=0;
     s->heading_dashes=(s->heading_managed || loc_mode(s)) && s->heading_preselect_seconds<=0;
     s->vs_dashes=!vs_mode(s) && s->vs_preselect_seconds<=0;
-    if(!valid || i->pitch_deg < -13 || i->pitch_deg>25 || fabs(i->roll_deg)>45 ||
-        /* Port speed guard. In approach modes it stands in for the alpha-prot + 1 deg disconnect
-         * (roughly VLS - 10 kt in landing configuration) and is not applied in LAND. */
-        (i->vls_knots>0 && !s->land.land_active &&
-         i->ias_knots<i->vls_knots-(s->approach_selected || loc_mode(s) || gs_mode(s) ||
-                                    s->land.go_around_active ? 10 : 0)) ||
-        (i->vmax_knots>0 && i->ias_knots>i->vmax_knots+15)) {
-        disconnect(s,1);
-    }
+    /* Only lost flight data disconnects; no attitude or speed envelope disconnect (user decision
+     * 2026-11-09): an AP engaged outside the normal attitudes flies back to its commands. */
+    if(!valid) disconnect(s,1);
     if(!i->powered) { s->athr_armed=0; s->loc_armed=s->gs_armed=s->approach_selected=0; }
     if(valid && nav_mode(s) && !i->managed_route_valid) managed_nav_lost(s,i);
     managed_update(s,i,valid);
@@ -441,8 +462,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         }
         s->all_levers_idle=all_idle;
         s->athr_active=s->athr_armed && athr_valid && (s->alpha_floor_latched ||
-            (levers_valid && !all_idle && !inner_reverse &&
-             lever<=i->cl_detent_ratio+i->detent_tolerance_ratio));
+            (levers_valid && !all_idle && !inner_reverse && athr_lever_range(i,lever)));
         s->thrust_mode=A380X_A1A2_NONE;
         if(s->athr_active) {
             double speed_error=s->speed_target_knots-i->ias_knots;
