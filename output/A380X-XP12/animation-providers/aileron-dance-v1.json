@@ -142,7 +142,7 @@
     {
       "path": "plugins/FlyWithLua/Scripts (required)/A380X_XP12_Ailerons.lua",
       "install_path": "Scripts/A380X_XP12_Ailerons.lua",
-      "sha256": "4b8159a0a6f324e3a99d0c886cceb107c74f70b7a5a980691a021d9bba42f6ea"
+      "sha256": "66a51f4b9147f4dcad1aded07e822af57dace81dfa814e9be7a50e33a86cdf2a"
     },
     {
       "path": "plugins/FlyWithLua/Modules/a380x_aileron_dance.lua",
@@ -157,7 +157,7 @@
     {
       "path": "plugins/FlyWithLua/Scripts (required)/A380X_XP12_Hydraulics.lua",
       "install_path": "Scripts/A380X_XP12_Hydraulics.lua",
-      "sha256": "d10030eef7eaab703d8f6387702f3adc62a3c0d33f4f39c4921f454606d75c04"
+      "sha256": "779f96cd644fdaddc2c83fadb61afedb5c1abdba443bc336abaa02726b85193e"
     }
   ],
   "bootstrap": {
@@ -165,12 +165,25 @@
     "files": [
       {
         "path": "plugins/A380XAileronDatarefs/mac_x64/A380XAileronDatarefs.xpl",
-        "sha256": "7f44049c71c6830b2476de605bb9ce17ca8193a2fd94017a086e9d96d9f0c191"
+        "sha256": "132f27e03f43e4f7abf58faa9ebab418319a039bf9ac34c4966248e31f985dba"
       },
       {
         "path": "plugins/A380XAileronDatarefs/win_x64/A380XAileronDatarefs.xpl",
-        "sha256": "345e68de8d953bbe57d9b09a1035394ffabcc52d3d295caade58221d7ad2f8dd"
+        "sha256": "803e156ab00958cb24b775a7ca43bc13278d9c4b84b2fd6534937ee7feb87611"
       }
+    ]
+  },
+  "native_driver": {
+    "plugin": "A380XAileronDatarefs",
+    "flag_dataref": "a380x/xp12/hydraulics/native_driver",
+    "flag_type": "Int",
+    "flight_loop": true,
+    "writes_simulator_datarefs": false,
+    "ports": [
+      "FlyWithLua/Scripts/A380X_XP12_Ailerons.lua",
+      "FlyWithLua/Modules/a380x_aileron_dance.lua",
+      "FlyWithLua/Modules/a380x_hydraulic_surfaces.lua",
+      "FlyWithLua/Scripts/A380X_XP12_Hydraulics.lua"
     ]
   }
 }

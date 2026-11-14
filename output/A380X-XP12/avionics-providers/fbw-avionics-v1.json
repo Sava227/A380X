@@ -588,13 +588,24 @@
     "a380x/xp12/gear/grvty_switch_down",
     "a380x/xp12/thrust/athr_disconnect_left",
     "a380x/xp12/thrust/athr_disconnect_right",
+    "a380x/xp12/thrust/levers_idle",
+    "a380x/xp12/thrust/levers_cl",
+    "a380x/xp12/thrust/levers_flx_mct",
+    "a380x/xp12/thrust/levers_toga",
+    "a380x/xp12/thrust/levers_detent_up",
+    "a380x/xp12/thrust/levers_detent_down",
     "a380x/xp12/flaps/lever_down",
     "a380x/xp12/flaps/lever_up",
     "a380x/xp12/speedbrake/extend_one",
     "a380x/xp12/speedbrake/retract_one",
     "a380x/xp12/speedbrake/arm_toggle",
     "a380x/xp12/speedbrake/arm",
-    "a380x/xp12/speedbrake/retract"
+    "a380x/xp12/speedbrake/retract",
+    "a380x/xp12/aurals/gpws_voice_toggle",
+    "a380x/xp12/fbw/toggle",
+    "a380x/xp12/steering/toggle",
+    "a380x/xp12/steering/tiller_left",
+    "a380x/xp12/steering/tiller_right"
   ],
   "datarefs": [
     "a380x/xp12/fcu/selected_speed",
@@ -622,6 +633,13 @@
     "a380x/xp12/fcu/ls_first_officer",
     "a380x/xp12/fcu/athr_armed",
     "a380x/xp12/fcu/altitude_hold_active",
+    "a380x/xp12/fcu/land_active",
+    "a380x/xp12/fcu/flare_active",
+    "a380x/xp12/fcu/rollout_active",
+    "a380x/xp12/fcu/retard_active",
+    "a380x/xp12/fcu/go_around_active",
+    "a380x/xp12/fcu/land_capability",
+    "a380x/xp12/fcu/yaw_servo_active",
     "a380x/xp12/fcu/ap1_pressed",
     "a380x/xp12/fcu/ap2_pressed",
     "a380x/xp12/fcu/fd_pressed",
@@ -1878,7 +1896,22 @@
     "a380x/xp12/speedbrake/spoiler_7_deg",
     "a380x/xp12/speedbrake/spoiler_8_deg",
     "a380x/xp12/speedbrake/extension_ratio",
-    "a380x/xp12/speedbrake/xp_handle_ratio"
+    "a380x/xp12/speedbrake/xp_handle_ratio",
+    "a380x/xp12/fbw/enabled",
+    "a380x/xp12/fbw/normal_law",
+    "a380x/xp12/fbw/law",
+    "a380x/xp12/fbw/mode",
+    "a380x/xp12/fbw/protections",
+    "a380x/xp12/fbw/auto_trim",
+    "a380x/xp12/steering/active",
+    "a380x/xp12/fbw/nz_command",
+    "a380x/xp12/fbw/pitch_rate_command",
+    "a380x/xp12/fbw/roll_rate_command",
+    "a380x/xp12/fbw/alpha_prot",
+    "a380x/xp12/fbw/alpha_max",
+    "a380x/xp12/steering/nose_deg",
+    "a380x/xp12/steering/body_deg",
+    "a380x/xp12/steering/tiller"
   ],
   "stock_xplane_efis_modes_consumed": true,
   "logic_sources": [
@@ -1923,11 +1956,11 @@
   "files": [
     {
       "path": "plugins/A380XAvionics/mac_x64/A380XAvionics.xpl",
-      "sha256": "fd490c87a5ed9dcbbb237916f67fbbce1f3a1e9d69ad765d75196a804291c41d"
+      "sha256": "acb939b5da4c71fbff2125f87d93b27c1505d8c28eb7db91c033f07bddee18ed"
     },
     {
       "path": "plugins/A380XAvionics/win_x64/A380XAvionics.xpl",
-      "sha256": "c181af854471f330ddf612a52ef00a993d20ad0ff612a4a3af33988995ddb299"
+      "sha256": "03e2608633f942b7834d96937f6cd2fd56647a9e4f7a1b74dc1306bc62d8857f"
     },
     {
       "path": "plugins/A380XAvionics/sounds/priority_left.pcm",
@@ -1966,8 +1999,140 @@
       "sha256": "461ec054fb3225a2dd5c2877e16cf76676ce816101477d4e0f539a1ae3c34c4d"
     },
     {
+      "path": "plugins/A380XAvionics/sounds/systems/ptu.wav",
+      "sha256": "f6654d12df19ab5e3b5dce965e3c6262560522b41e2b1237e2515ecee4084a90"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/systems/provenance.json",
+      "sha256": "eadc96380a1143136f3270edd845117b83296310c0da48b7a019c57c8e9ac22c"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_10.wav",
+      "sha256": "bb20820a30c6e973bd4a002a63c93b936522e659734f19502b7daa7efae69736"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_100.wav",
+      "sha256": "7dc5d4822a4a88b3016db904740556224aa74a8223a7ada555f375507647c781"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_1000.wav",
+      "sha256": "2f187ac22be2619d882db9f589dbfcad12ca6e8b997b8f964ed5487d07ae507f"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_20.wav",
+      "sha256": "223b19923969f0192ee616e2556dda4411dc7886109621cde58aac742602df11"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_200.wav",
+      "sha256": "26ea8a6d496a835b4c41148fc045b84f992b8a0e0110b29448912b946d2d195a"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_2000.wav",
+      "sha256": "38b74834dc50d834957aecde3be40eb84f19ffaf9f6d5cfc0cbad5713e47b056"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_2500.wav",
+      "sha256": "57c33b40b615a110e13b0234557eb35d858b5daf218d368d399a0bd9e41ac73d"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_30.wav",
+      "sha256": "d02522d307f8ae37c3bad516782dd682b76e6ea7dd2a41c31600fe8b784a0a75"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_300.wav",
+      "sha256": "d3421537e22aa619d2656c2af6589b406796e92903c5e8c357eea0d7d7d7ea2a"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_40.wav",
+      "sha256": "d005a40f854116e1caf30d92120c2ae7b74aab7225823171f5199f89d0094fdb"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_400.wav",
+      "sha256": "d006254c1f955bec235862ecc9e407d8cae1fa3b05d9c8e493e6e48ef08c1e78"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_5.wav",
+      "sha256": "870bca733e2e9a127e0ffa88c82708f539a4c96b4bff9435d6c9490be01e453d"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_50.wav",
+      "sha256": "2106fdb85aa88b56f3a0d7285b4ed389ef6cd7e193b86ff7666c2c942916e473"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_500.wav",
+      "sha256": "a05b6f6ba3cea520a93565a357f0502da152874d513d33711c920c3416e9ad9c"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_60.wav",
+      "sha256": "d6024673a72a4e4c7b87f28f0f052cf35ba39846403d18e204a6890ec8db6d13"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_70.wav",
+      "sha256": "93693e3d8482e2e28ac531508fc28d9245f9cee46dbd23dbe9adab1d64dce93e"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_80.wav",
+      "sha256": "3a1f1aa7bdb05397224f1e44d4c9bdf7da977ee16ac065ccec3f579b3a2d4945"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/callout_90.wav",
+      "sha256": "3dc1614ab1f13f3b6c6ed71f9eeb24f7f1ee79c1976d851808f64147b449ae47"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/cavalry_charge.wav",
+      "sha256": "03ffaa512dc4156e0d97340d9e6aa421925618f4666319080edd86b19d2210a6"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/cchord.wav",
+      "sha256": "981e8b999d55d6dffca2dbc93e8fb099be02b4e947e5c3f0fd8bac246782d1d4"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/crc_master_warning.wav",
+      "sha256": "1834a4ccef0fb039b0a12970205e4a91310fd6bd1f71ae96bd28588e52b5ecdb"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/hundred_above.wav",
+      "sha256": "921c0c00e66fefa2b0ad7fc6894a2ac433eb7a8f456a8418e8f108b6abaacfc7"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/minimum.wav",
+      "sha256": "e2587cb178c7702537bc0346c94b364481a22fddd47d1f6f2dbc5f9a0dac8ef9"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/provenance.json",
+      "sha256": "b1769de41d08f12f5b87c49370dd97e41683216f4e7903741a110e499fdef210"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/pull_up_new.wav",
+      "sha256": "04d26ba49d4cf929279f03dd73d3b2ba1e0b7a77a317ef430d1fa360f3c4ebb9"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/pull_up_old.wav",
+      "sha256": "f47b71c26005587e897a40a5d8e19f9b04115415aecdd9c486aee89ceb53a9fb"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/retard.wav",
+      "sha256": "cb426107e4dd6b7ebcffd68fec38fd711bb4afc5b047eb185d706659b484dbbe"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/seatbelt_chime.wav",
+      "sha256": "455a1d6c35c5dfed3d3c5a1b704383fa0f98f709db385f4119f30990614f9ec9"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/stall.wav",
+      "sha256": "f117b5ca935442a96b84e5fc6851ebad5c609e78c3426d2e2fe98d9d0ccbe2e1"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/triple_click.wav",
+      "sha256": "c4abcfb46de6987b9419af4e07ded02dfd5ad3dadeb80d0be177477478274691"
+    },
+    {
+      "path": "plugins/A380XAvionics/sounds/cockpit/v1.wav",
+      "sha256": "d7d6bee71357819fe307b9c9b8d4493d7d38c25644fde2098a27f288941fcc94"
+    },
+    {
       "path": "plugins/A380XAvionics/build-report.json",
-      "sha256": "662aaf08c0db4e3e1192fe4d9a7edbf495e7096909df23f23d7503a7f24f5f2f"
+      "sha256": "b05bd7c89d36caa9b2e8bc86ad80d0ae67e4713be400232df51040b8403ef9d3"
     }
   ],
   "runtime_tested": false,
@@ -4124,5 +4289,30 @@
       "a380x.xp12.rmp.3"
     ],
     "runtime_tested": false
+  },
+  "efb_devices": {
+    "cockpit_devices": [
+      "a380x.xp12.efb.captain",
+      "a380x.xp12.efb.first_officer"
+    ],
+    "commands": [
+      "a380x/xp12/efb/slides_arm_all",
+      "a380x/xp12/efb/slides_disarm_all",
+      "a380x/xp12/efb/captain/popup",
+      "a380x/xp12/efb/first_officer/popup"
+    ],
+    "datarefs": [
+      "a380x/xp12/efb/slide_armed",
+      "a380x/xp12/efb/slides_armed_count",
+      "a380x/xp12/efb/doors_open_count",
+      "a380x/xp12/efb/devices_active",
+      "a380x/xp12/efb/captain/device_bound",
+      "a380x/xp12/efb/first_officer/device_bound",
+      "a380x/xp12/efb/captain/web_live",
+      "a380x/xp12/efb/first_officer/web_live",
+      "a380x/xp12/efb/actions_processed",
+      "a380x/xp12/efb/actions_rejected",
+      "a380x/xp12/efb/touch_events"
+    ]
   }
 }

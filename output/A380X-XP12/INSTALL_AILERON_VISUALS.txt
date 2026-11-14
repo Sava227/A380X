@@ -1,23 +1,21 @@
-A380X aileron and hydraulic surface visual animation dependency
+A380X aileron and hydraulic surface visual animations
 
-Install FlyWithLua NG (tested API: 2.8.12), then, with X-Plane closed:
-1. Copy plugins/FlyWithLua/Modules/a380x_aileron_dance.lua and
-   plugins/FlyWithLua/Modules/a380x_hydraulic_surfaces.lua to
-   X-Plane 12/Resources/plugins/FlyWithLua/Modules/.
-2. Copy plugins/FlyWithLua/Scripts (required)/A380X_XP12_Ailerons.lua and
-   plugins/FlyWithLua/Scripts (required)/A380X_XP12_Hydraulics.lua to
-   X-Plane 12/Resources/plugins/FlyWithLua/Scripts/.
-3. Keep the included plugins/A380XAileronDatarefs folder in this aircraft.
-   It registers all 22 animation datarefs before X-Plane loads the objects.
-4. Fully restart X-Plane and load this A380X-XP12 aircraft.
+The included plugins/A380XAileronDatarefs plugin registers the 22 animation
+datarefs before X-Plane loads the objects and drives them itself from a flight
+loop: a native C port of the FlyWithLua drivers and modules listed below. No
+FlyWithLua installation is needed. While the native driver runs it publishes
+a380x/xp12/hydraulics/native_driver = 1; the FlyWithLua drivers then stand down,
+so there is never a second writer. Keep the plugin folder in this aircraft.
 
-The same Lua files support Mac and Windows. Do not install or enable the
-optional experimental FBW control-law script for these animations.
-Only custom visual values are written; flight physics are unchanged.
-The six legacy and eight hydraulic ratios use [-1, 1]; eight hydraulic
-spoiler angles use [0, 65] degrees. Both drivers and modules are required.
-Without the drivers these surfaces cannot animate normally; a stopped Lua
-runtime may leave the last visual pose until the aircraft is reloaded.
-Restore the saved native-animation build if FlyWithLua is unavailable.
-Back up existing files before upgrading; do not overwrite unrelated scripts.
-These scripts passed offline Lua 5.1/5.4 tests, not a simulator flight test.
+Only custom visual values are written; flight physics and the simulator's
+flight controls are never changed. The six legacy and eight hydraulic ratios
+use [-1, 1]; the eight hydraulic spoiler angles use [0, 65] degrees.
+
+The packaged FlyWithLua files (plugins/FlyWithLua/) are the reference the native
+driver is tested against, frame by frame. They are only needed for an aircraft
+folder named A380X-XP12 whose plugin predates the native driver: install
+FlyWithLua NG (tested API 2.8.12), then, with X-Plane closed, copy
+plugins/FlyWithLua/Modules/*.lua to X-Plane 12/Resources/plugins/FlyWithLua/Modules/
+and plugins/FlyWithLua/Scripts (required)/*.lua to .../FlyWithLua/Scripts/.
+Back up existing files first. Do not enable the optional FBW control-law script.
+Offline tested (mock XPLM, Lua 5.4 golden comparison), not a simulator flight test.
