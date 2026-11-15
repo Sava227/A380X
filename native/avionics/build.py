@@ -878,6 +878,7 @@ def main() -> None:
 
     common = [*warnings, "-Wno-deprecated-declarations", "-fvisibility=hidden",
               "-DXPLM200=1", "-DXPLM210=1", "-DXPLM300=1", "-DXPLM400=1", "-DXPLM410=1",
+              "-DA380X_XPAP_DEFAULT=1",   # AP/A/THR through X-Plane's autopilot (a380x_xpap_bridge.inc)
               *mfd_page_flags, "-I", str(headers)]
     mac = output / "mac.xpl"
     run([clang, *common, *(["-DA380X_XPKIT=1"] if args.xpkit else []), "-DAPL=1", "-arch", "arm64", "-arch", "x86_64",

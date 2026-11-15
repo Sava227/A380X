@@ -21,6 +21,9 @@
  * Unity-build include of a380x_avionics.c after a380x_fcu_adapter.inc and a380x_ewd_data.inc.
  */
 #include "a380x_thrust.h"
+#ifndef A380X_HAVE_XPAP   /* built without the FCU adapter (unit tests): no X-Plane AP bridge */
+__attribute__((unused)) static int xpap_athr_driving(void) { return 0; }
+#endif
 #include "a380x_ewd_fadec.h"
 #include "a380x_cockpit_lever.inc"
 
@@ -364,6 +367,11 @@ static void thrust_engines_update(float wall_dt)
     int i;
     if (!thr.ready || !plugin_enabled) return;
     if (fcu.own_throttle) { thr.lease = 0; fcu_thrust_link.lease = 0; return; }   /* A/THR drives */
+    if (xpap_athr_driving()) {   /* X-Plane's A/THR drives the engines (A330 style): hand them back */
+        thr_release_lease();
+        for (i = 0; i < A380X_THRUST_ENGINES; ++i) thr.engine_command[i] = a380x_thrust_xp_lever(&thr.core, i).ratio;
+        return;
+    }
     if (thr.replay || thr.core.fadec_mode == A380X_FADEC_RAW || !thr.in.limits.valid || !thr.raw[THR_RAW_OVERRIDE]
         || !thr.raw[THR_RAW_THRO_USE]) {
         thr_release_lease();

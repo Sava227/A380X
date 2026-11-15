@@ -207,7 +207,10 @@ static void (*fcu_command_observer)(A380XFcuCommand command);
 static double (*fcu_localizer_distance_provider)(int side);
 
 #include "a380x_fcu_thrust.inc"
+static int xpap_enabled;   /* a380x_xpap_bridge.inc: X-Plane AP/A/THR (A330 style) */
+static int xpap_on(void);  /* enabled and X-Plane's autopilot found */
 #include "a380x_fcu_authority.inc"
+#include "a380x_xpap_bridge.inc"
 
 static int fcu_command_handler(XPLMCommandRef command, XPLMCommandPhase phase, void *refcon)
 {
@@ -220,6 +223,7 @@ static int fcu_command_handler(XPLMCommandRef command, XPLMCommandPhase phase, v
     if (!plugin_enabled || phase==xplm_CommandEnd) return 1;
     if (phase==xplm_CommandContinue && (c->amount==0 || now<c->next_repeat)) return 1;
     c->next_repeat=now+(phase==xplm_CommandBegin ? 0.4f : 0.08f);
+    if (xpap_on() && xpap_command(c->command,c->amount)) return 1;   /* X-Plane AP/A/THR (A330 style) */
     int ap_request=(c->command==A380X_FCU_AP1 && !guidance.ap1) ? 1 : (c->command==A380X_FCU_AP2 && !guidance.ap2) ? 2 : 0;
     if (c->command==A380X_FCU_AP_DISCONNECT && afs_ap_pending) { afs_log("AP%d engagement after liftoff cancelled",afs_ap_pending); afs_ap_pending=0; }
     if (ap_request && afs_ap_pending==ap_request) {      /* second press on the ground: cancel */
@@ -287,6 +291,7 @@ static int fcu_command_handler(XPLMCommandRef command, XPLMCommandPhase phase, v
 static int native_disconnect_handler(XPLMCommandRef command, XPLMCommandPhase phase, void *refcon)
 {
     (void)command; (void)refcon;
+    if (xpap_on()) return 1;   /* X-Plane's own AP: its disconnect is its own */
     if (phase==xplm_CommandBegin && !fcu.suppress_native_disconnect) {
         a380x_guidance_command(&guidance,&guidance_inputs,A380X_FCU_AP_DISCONNECT,0);
         release_ap_controls();
@@ -307,10 +312,11 @@ static int pilot_override(void)
         && XPLMGetDatavf(fcu.axis_maximum,maximum,0,n)==n) {
         for (i=0;i<n;++i) {
             float range=maximum[i]-minimum[i], value=values[i];
-            /* X-Plane 12 reports pitch/roll/yaw centred at 0 (-1..1); with a calibrated range, map it there
-             * too. 2026-11-12: the old 0..1 / 0.5 assumption read a centred stick as fully deflected. */
-            if (isfinite(range) && range>0.001f) value=2.0f*(value-minimum[i])/range-1.0f;
-            if (assignments[i]>=1 && assignments[i]<=3 && isfinite(value) && fabsf(value)>0.20f) {
+            /* The normalized axis is centred at 0.5 (0..1 hardware) or at 0 (X-Plane 12 centred axes over a
+             * 0..1 calibration: the user's stick, 2026-11-12/15). It counts as deflected only when it is more than
+             * 20 % off both centres: a "-1..1 remap" read that stick as -1.02 and dropped every AP engagement. */
+            if (isfinite(range) && range>0.001f) value=(value-minimum[i])/range;
+            if (assignments[i]>=1 && assignments[i]<=3 && isfinite(value) && fminf(fabsf(value-0.5f),fabsf(value))>0.20f) {
                 afs_override_axis=i; afs_override_value=value; return 1;
             }
         }
@@ -543,6 +549,7 @@ static void update_guidance(float dt)
     float thrust[4]; int i;
     a380x_fcu_motion_update(&fcu_motion,dt,XPLMGetElapsedTime(),guidance.altitude_increment_1000);
     read_guidance_inputs(dt);
+    if (xpap_on()) { xpap_update(dt); return; }   /* X-Plane AP/A/THR fly; the native guidance stands by */
     if ((guidance.ap1||guidance.ap2) && (!controls_available() || pilot_override()
         || (fcu.own_pitch && !XPLMGetDatai(fcu.override_pitch))
         || (fcu.own_roll && !XPLMGetDatai(fcu.override_roll))
@@ -674,6 +681,7 @@ static void fcu_shutdown(void)
     if (afs_file) { fclose(afs_file); afs_file=NULL; }
     afs_file_state=0;
     fcu_authority_shutdown();
+    xpap_shutdown();
     fcu_thrust_shutdown();
     fcu_motion_shutdown();
     pfd_outputs_shutdown();
@@ -761,6 +769,7 @@ static int fcu_init(void)
     if (!fcu.native_disconnect) { fcu_shutdown(); return 0; }
     XPLMRegisterCommandHandler(fcu.native_disconnect,native_disconnect_handler,1,NULL);
     if (!fcu_authority_init()) { fcu_shutdown(); return 0; }
+    xpap_init();
     publish_guidance();
     return 1;
 }

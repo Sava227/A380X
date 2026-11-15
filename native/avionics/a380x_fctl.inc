@@ -25,6 +25,9 @@
  * a380x_flaps.inc.
  */
 #include "a380x_fctl.h"
+#ifndef A380X_HAVE_XPAP   /* built without the FCU adapter (unit tests): no X-Plane AP bridge */
+__attribute__((unused)) static int xpap_servos_active(void) { return 0; }
+#endif
 
 #define FCTL_NAME(suffix) "a380x/xp12/fbw/" suffix
 #define STEER_NAME(suffix) "a380x/xp12/steering/" suffix
@@ -228,7 +231,8 @@ static void fctl_update(float dt)
     in->adr_valid = refs.side[0].air_valid || refs.side[1].air_valid;
     in->ir_valid = refs.side[0].attitude_valid || refs.side[1].attitude_valid;
     in->on_ground = fctl_rawi(FCTLR_ON_GROUND) != 0;
-    in->ap_pitch_roll = (guidance.ap1 || guidance.ap2) && (fcu.own_pitch || fcu.own_roll);
+    /* The AP flies (native guidance via the yoke override, or X-Plane's servos): the law's corrections are 0. */
+    in->ap_pitch_roll = ((guidance.ap1 || guidance.ap2) && (fcu.own_pitch || fcu.own_roll)) || xpap_servos_active();
     in->ap_yaw = fcu.own_yaw;
     in->ap_pitch = guidance.pitch_servo; in->ap_roll = guidance.roll_servo;
     in->stick_pitch = fctl_rawf(FCTLR_YOKE_P); in->stick_roll = fctl_rawf(FCTLR_YOKE_R); in->pedals = fctl_rawf(FCTLR_YOKE_H);
