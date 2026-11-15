@@ -39,6 +39,7 @@ typedef struct {
     /* system states (adapter: native network / X-Plane datarefs the pushbuttons drive) */
     unsigned char apu_master, apu_failed, apu_start, apu_avail, apu_bleed;
     unsigned char eng_bleed[4], eng_bleed_failed[4], pack[2];
+    unsigned char apu_bleed_failed, pack_failed[2];   /* X-Plane rel_APU_press / rel_HVAC */
     unsigned char eng_ai[4], eng_ai_failed[4], wing_ai, wing_ai_failed, window_heat;
     unsigned char feed_pump[4], crew_oxy;
     unsigned char fault[A380X_OVHD_PB_COUNT];   /* writable fail/<id> inputs */
@@ -91,6 +92,8 @@ static inline int a380x_ovhd_condition(const A380XOvhdInputs *in, int pb, int se
     case A380X_OVHD_SRC_ENG_BLEED_OFF: return !in->eng_bleed[i];
     case A380X_OVHD_SRC_ENG_BLEED_FAULT: return in->fault[pb] || (in->eng_bleed[i] && in->eng_bleed_failed[i]);
     case A380X_OVHD_SRC_PACK_OFF: return !in->pack[i & 1];
+    case A380X_OVHD_SRC_APU_BLEED_FAULT: return in->fault[pb] || (in->apu_bleed && in->apu_bleed_failed);
+    case A380X_OVHD_SRC_PACK_FAULT: return in->fault[pb] || (in->pack[i & 1] && in->pack_failed[i & 1]);
     case A380X_OVHD_SRC_ENG_AI_ON: return in->eng_ai[i] != 0;
     case A380X_OVHD_SRC_ENG_AI_FAULT: return in->fault[pb] || (in->eng_ai[i] && in->eng_ai_failed[i]);
     case A380X_OVHD_SRC_WING_AI_ON: return in->wing_ai != 0;

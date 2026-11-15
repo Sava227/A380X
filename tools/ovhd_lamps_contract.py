@@ -51,6 +51,10 @@ SOURCES = (
     "test", "fault", "apu_master_on", "apu_master_fault", "apu_start_on", "apu_avail", "apu_bleed_on",
     "eng_bleed_off", "eng_bleed_fault", "pack_off", "eng_ai_on", "eng_ai_fault", "wing_ai_on",
     "wing_ai_fault", "window_heat_on", "feed_pump_off", "crew_oxy_off", "pb_off", "pb_on",
+    # X-Plane APU bleed pressure / air conditioning failures (rel_APU_press, rel_HVAC) on the APU BLEED
+    # and PACK FAULT legends, as the ENG BLEED / anti-ice FAULT legends (restored 2026-11-15 from the
+    # installed 2026-11-10 build).
+    "apu_bleed_fault", "pack_fault",
 )
 
 # id, panel caption, FBW pushbutton node, upper (SEQ1) legend, lower (SEQ2) legend,
@@ -64,9 +68,9 @@ PUSHBUTTONS = (
     ("eng2_bleed", "ENG 2 BLEED", "PUSH_OVHD_AIRCOND_ENG2BLEED", "fault", "off", "DC_ESS", "eng_bleed_fault:1", "eng_bleed_off:1"),
     ("eng3_bleed", "ENG 3 BLEED", "PUSH_OVHD_AIRCOND_ENG3BLEED", "fault", "off", "DC_ESS", "eng_bleed_fault:2", "eng_bleed_off:2"),
     ("eng4_bleed", "ENG 4 BLEED", "PUSH_OVHD_AIRCOND_ENG4BLEED", "fault", "off", "DC2", "eng_bleed_fault:3", "eng_bleed_off:3"),
-    ("apu_bleed", "APU BLEED", "PUSH_OVHD_AIRCOND_APUBLEED", "fault", "on", "DC_ESS", "fault", "apu_bleed_on"),
-    ("pack1", "PACK 1", "PUSH_OVHD_AIRCOND_PACK1", "fault", "off", "DC1&DC_ESS", "fault", "pack_off:0"),
-    ("pack2", "PACK 2", "PUSH_OVHD_AIRCOND_PACK2", "fault", "off", "DC2", "fault", "pack_off:1"),
+    ("apu_bleed", "APU BLEED", "PUSH_OVHD_AIRCOND_APUBLEED", "fault", "on", "DC_ESS", "apu_bleed_fault", "apu_bleed_on"),
+    ("pack1", "PACK 1", "PUSH_OVHD_AIRCOND_PACK1", "fault", "off", "DC1&DC_ESS", "pack_fault:0", "pack_off:0"),
+    ("pack2", "PACK 2", "PUSH_OVHD_AIRCOND_PACK2", "fault", "off", "DC2", "pack_fault:1", "pack_off:1"),
     ("hot_air1", "HOT AIR 1", "PUSH_OVHD_AIRCOND_HOTAIR", "fault", "off", "DC1&DC_ESS", "fault", "test"),
     ("hot_air2", "HOT AIR 2", "PUSH_OVHD_AIRCOND_HOTAIR2", "fault", "off", "DC1&DC_ESS", "fault", "test"),
     ("ram_air", "RAM AIR", "PUSH_OVHD_AIRCOND_RAMAIR", None, "on_white", "DC_ESS", None, "test"),

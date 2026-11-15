@@ -7,6 +7,7 @@
  * (a380x_autoland.inc) with the same ownership and release rules as pitch/roll.
  */
 #include "a380x_elec_power.h"
+#include "a380x_fbw_laws.h"
 typedef struct {
     XPLMDataRef paused, replay, magvar, tas, pitch_rate, roll_rate, yaw_rate;
     XPLMDataRef alpha, beta, weight, vmax, mmo, pressure_altitude;
@@ -306,8 +307,10 @@ static int pilot_override(void)
         && XPLMGetDatavf(fcu.axis_maximum,maximum,0,n)==n) {
         for (i=0;i<n;++i) {
             float range=maximum[i]-minimum[i], value=values[i];
-            if (isfinite(range) && range>0.001f) value=(value-minimum[i])/range;
-            if (assignments[i]>=1 && assignments[i]<=3 && isfinite(value) && fabsf(value-0.5f)>0.20f) {
+            /* X-Plane 12 reports pitch/roll/yaw centred at 0 (-1..1); with a calibrated range, map it there
+             * too. 2026-11-12: the old 0..1 / 0.5 assumption read a centred stick as fully deflected. */
+            if (isfinite(range) && range>0.001f) value=2.0f*(value-minimum[i])/range-1.0f;
+            if (assignments[i]>=1 && assignments[i]<=3 && isfinite(value) && fabsf(value)>0.20f) {
                 afs_override_axis=i; afs_override_value=value; return 1;
             }
         }
@@ -564,8 +567,21 @@ static void update_guidance(float dt)
         a380x_guidance_update(&guidance,&guidance_inputs,dt);
         if (ap_before && !guidance.ap1 && !guidance.ap2) {
             char why[220];
+            const char *law=a380x_fbw_laws_fault(guidance.fbw_laws);
             a380x_guidance_engage_problems(&guidance,&guidance_inputs,why,sizeof(why));
-            afs_notice("AP disconnected by the guidance: %s",why[0]?why:"mode or sensor limit");
+            afs_notice("AP disconnected by the guidance: %s%s%s",why[0]?why:a380x_guidance_drop_text(guidance.drop_reason),
+                       law[0]?" - ":"",law);
+            afs_log("AP drop snapshot: IAS %.0f TAS %.0f ALT %.0f RA %.0f V/S %.0f pitch %.1f roll %.1f alpha %.1f HDG %.0f TRK %.0f "
+                    "| sel HDG %.0f ALT %.0f | lat %d vert %d vsel %d FD %d/%d | dt %.3f",
+                    guidance_inputs.ias_knots,guidance_inputs.tas_knots,guidance_inputs.altitude_ft,guidance_inputs.radio_height_ft,
+                    guidance_inputs.vertical_speed_fpm,guidance_inputs.pitch_deg,guidance_inputs.roll_deg,guidance_inputs.alpha_deg,
+                    guidance_inputs.heading_deg,guidance_inputs.track_deg,guidance.selected_heading_deg,guidance.selected_altitude_ft,
+                    guidance.lateral_mode,guidance.vertical_mode,guidance.vertical_guidance_selected,guidance.fd1,guidance.fd2,dt);
+        } else if ((guidance.ap1||guidance.ap2) && !guidance.guidance_valid && guidance.guidance_fault_seconds>0
+                   && guidance.guidance_fault_seconds<=dt+1e-6) {
+            const char *law=a380x_fbw_laws_fault(guidance.fbw_laws);
+            afs_notice("AP guidance fault (%s%s%s): AP kept, law restarting",a380x_guidance_drop_text(guidance.drop_reason),
+                       law[0]?" - ":"",law);
         }
         if (athr_before && !guidance.athr_armed) afs_notice("A/THR disconnected");
         /* AP pressed on the ground: engage once airborne above 100 ft RA (5 s airborne without a radio
