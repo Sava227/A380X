@@ -48,6 +48,19 @@ cockpit-feedback lamps; faces exported in node-local frames matched at their res
 BLEED upper face, which covers the whole cap, hides for either legend. Run it after any tool that adds
 lamp quads. Idempotent.
 
+**Since 2026-11-23 the overhead pushbutton legends are lit in place instead** (user sim check: the
+overlay quads' generic font read as hazy text floating over the button). `tools/light_legends_in_place.py`
+does what Laminar's A330 does (`cockpit_annunciators.obj`: day texture with dim printed legends,
+`TEXTURE_LIT` with the glowing ones, `ATTR_light_level` per legend face, no overlay, no blending):
+`decal_a380_pushbutton_decal.obj` gets `TEXTURE_LIT a380_pushbutton_decal_LIT.png` (FBW's own
+`A380X_PUSH_TEXT_EMIS` art, same UVs as the albedo, each legend scaled to full brightness because MSFS
+boosts emissive at runtime), its 291 single-lamp hide blocks become `# A380X LIT DECAL GLOW` blocks with
+`ATTR_light_level` on the lamp, the rest of the object stays dark (`a380x/xp12/no_ref`), and those lamps'
+overlay quads get an unconditional `ANIM_hide`. ENG 2 BLEED (one face, two lamps), the EFIS / FCU bars
+(emis decal) and the ECAM / RMP keys (lovis decal) keep the quads. Tool order after any regeneration:
+cockpit_feedback → hide_lit_legend_decals → seat_lamp_quads → light_legends_in_place, then the DDS
+converter on the installed aircraft.
+
 ## Why the lamps were still invisible in the sim (2026-10-22, X-Plane 12.4.4)
 
 First in-simulator check (cold & dark, BAT 1/2/ESS/APU AUTO, DC ESS live): the lamp datarefs were
