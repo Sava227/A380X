@@ -105,6 +105,20 @@ class Motion(unittest.TestCase):
             for line in cf.stage_lines(cf.compile_motion(self.source, self.by_id[cid])):
                 self.assertFalse(has_exponent(line), line)
 
+    def test_foreign_quad_follows_key_once(self):
+        stage = dict(kind='translation', dataref='a380x/xp12/glareshield/master_warning_left_pressed',
+                     values=[0.0, 1.0], poses=[(0, 0, 0), (0, -0.001, 0)], times=[0, 1])
+        motion = dict(stages=[stage], chain=lambda _i: [stage], face_index={'FACE_SEQ1': 7})
+        text = '\n'.join(['# FCU ANNUNCIATOR FACE_SEQ1', 'ANIM_begin', 'ANIM_hide\t-0.5\t0.5\tlit', 'TRIS\t10\t6',
+                          'ANIM_end', '# FCU ANNUNCIATOR OTHER_SEQ1', 'ANIM_begin', 'TRIS\t16\t6', 'ANIM_end'])
+        face = lambda line: line.split()[-1]
+        out, done = cf.follow_foreign_quads(text, {'FACE_SEQ1': motion}, face)
+        self.assertEqual(done, ['FACE_SEQ1'])
+        self.assertIn(f'{cf.MARKER} FOLLOW FACE_SEQ1\nANIM_begin\nANIM_trans_begin\t{stage["dataref"]}', out)
+        self.assertIn('TRIS\t16\t6', out.split('OTHER_SEQ1')[1])          # other quads untouched
+        again, done = cf.follow_foreign_quads(out, {'FACE_SEQ1': motion}, face)
+        self.assertEqual((again, done), (out, []))                         # re-running is a no-op
+
 
 @unittest.skipUnless((AIRCRAFT / cf.CONTROLS_OBJ).is_file(), 'installable aircraft not present')
 class InstalledAircraft(unittest.TestCase):
