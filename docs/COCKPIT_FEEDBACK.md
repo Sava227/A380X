@@ -27,6 +27,8 @@ native module (`native/avionics/a380x_cockpit_feedback.inc`, table generated int
 | Wipers | CAPT / F/O WIPER selector (OFF / SLOW / FAST), blades | selector clip; blades follow `wipers/<side>_sweep` | rotary | native sweep (1.2 / 2 strokes per s, needs AC), parks at OFF |
 | Furniture | seats (height, fore-aft), armrests (stow, height, tilt), inboard armrests, tables, meal tables, keyboard trays, footrests, sliding windows, sun shades (forward, side), stowage doors (AFT OXY, AFT OIT, LH / RH, CAPT OXY, gear pin) | FBW clips (nested parts compose, e.g. the keyboard keys ride on the tray) | on FBW's click spots; seats / armrests: click up or down | state only |
 
+| FBW lights (Nov 2026) | EFIS option bars (CSTR, WPT, VORD, NDB, ARPT, VOR / ADF needles, WX, TERR, TRAF, TAXI, both sides), ENG MASTER FIRE / FAULT, oxygen TMR RESET FAULT / ON, DOOR LOCKING SYS OFF, GND HF DATALINK OVRD | lit quads follow the key travel / the lever; EFIS quads sit in front of the 2 mm raised legend decal | DOOR LOCKING SYS and GND HF DATALINK are latched pushbuttons (`cockpit/<key>`) | FBW rules (`LAMP_RULES` in the contract): EFIS option on, X-Plane engine fire, start aborted or engine failure, key held, latched position; all also lit in ANN LT TEST, dark without DC, 0.3 with ANN LT DIM |
+
 Datarefs: `<key>_pressed` / `press_ratio` 0..1 for key travel; selectors and switches are writable ints.
 Press handlers are registered in front of the owning module's handler and return 1, so the original
 action still runs. Lamps are dark without DC power.
@@ -46,6 +48,13 @@ Geometry notes
   cannot be moved by OBJ animation; the F/O big armrest has no FBW stow clip; the seat adjuster switch
   rocking motion and the KCCU KBD / CCD switch ON direction need the behaviour XML to confirm (the switch
   shows ON at the clip's last key).
+* New legend cells: OVRD blue (15) and FIRE red (63) on unused cells of `cockpit_3d/fcu_labels*.png`, painted
+  by `tools/paint_feedback_legends.py` (Pillow; run the DDS converter afterwards) and drawn by
+  `tools/build_fcu_panel.py` when it regenerates the atlas. The CKPT DOOR lock-status pushbutton is not in
+  the X-Plane objects, so it has no lamp; the gear lights were already complete (GEAR_WING / GEAR_BODY).
+* `test_ovhd_lamps_adapter --cold-dark` prints the lit overhead / ELEC legends after loading with the
+  batteries on (only GEN 1-4 FAULT and CREW OXY OFF: the normal positions are dark, as in FBW's
+  `apron.FLT`), then with two latched pushbuttons pushed to OFF.
 * `tools/audit_fbw_animations.py --aircraft <aircraft>` lists every FBW clip as animated / static /
   partial / not exported in the X-Plane objects.
 

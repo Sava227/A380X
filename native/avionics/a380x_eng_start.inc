@@ -114,4 +114,10 @@ static void engs_update(void)
     if (write_igniter && engs.refs[ENGS_IGNITER]) XPLMSetDatavi(engs.refs[ENGS_IGNITER], igniter, 0, 4);
 }
 
+/* ENG MASTER FAULT light (a380x_cockpit_feedback.inc): the start was aborted (timeout). */
+static int engs_start_fault(int engine)
+{
+    return engs.initialized && engine >= 0 && engine < 4 && engs.aborted[engine];
+}
+
 static void engs_shutdown(void) { if (engs.initialized) engs_release(); memset(&engs, 0, sizeof(engs)); }

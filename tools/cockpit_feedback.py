@@ -342,7 +342,7 @@ def mesh_targets(source: Source, motion: dict) -> list[dict]:
     gets its own chain). Children (legends, lamp faces) match either at their FBW position or lifted
     LEGEND_LIFT along their face normal, as the legend export placed them."""
     control = motion["control"]
-    if control.kind == "static":
+    if control.kind == "static" or not control.patch:
         return []
     emis_lamps = {lamp.face: lamp for lamp in control.lamps if lamp.cell is None}
     animated, owner, chain = motion["animated"], motion["owner"], motion["chain"]
@@ -588,8 +588,37 @@ def _invert(m):
     return [inv[0] + [it[0]], inv[1] + [it[1]], inv[2] + [it[2]], [0, 0, 0, 1]]
 
 
-def lamp_geometry(source: Source, lamp, cell: int):
-    """Lit triangles over a lamp face, lifted toward the crew, sampling one atlas cell."""
+def decal_offset(aircraft: Path, source: Source, face: str) -> float:
+    """Where the exported decal of a lamp face sits along its normal toward the crew (0, or the 2 mm of
+    the legend export), measured in the panel OBJ of the face's material."""
+    index = source.names[face]
+    for material, triangles, _count in source.primitives(index):
+        path = next((p for d in PANEL_DIRS for p in sorted((aircraft / d).glob("*.obj"))
+                     if p.name.endswith(material + ".obj") and not p.name.startswith("._")), None)
+        if path is None:
+            continue
+        points = sorted({p for tri in triangles for p in tri})
+        normal = _unit(tuple(sum(c) for c in zip(*[_cross(_sub(t[1], t[0]), _sub(t[2], t[0])) for t in triangles])))
+        centre = tuple(sum(p[a] for p in points) / len(points) for a in range(3))
+        if _dot(normal, _sub(EYE, centre)) < 0:
+            normal = tuple(-n for n in normal)
+        grid = _Grid(tuple(map(float, line.split()[1:4])) for line in path.read_bytes().decode("latin-1").splitlines()
+                     if line.startswith("VT"))
+        offsets = []
+        for p in points:
+            near = list(grid.near(p, LEGEND_LIFT + LIFT_TOLERANCE))
+            if near:
+                q = min(near, key=lambda q: math.dist(p, q))
+                offsets.append(_dot(_sub(q, p), normal))
+        if offsets:
+            offsets.sort()
+            return max(0.0, offsets[len(offsets) // 2])
+    return 0.0
+
+
+def lamp_geometry(source: Source, lamp, cell: int, lift: float = 0.0):
+    """Lit triangles over a lamp face, lifted toward the crew (LAMP_LIFT in front of its decal, which
+    sits `lift` in front of the authored face), sampling one atlas cell."""
     index = source.names[lamp.face]
     u = (cell % FCU_LABEL_COLUMNS + .5) / FCU_LABEL_COLUMNS
     v = 1 - (cell // FCU_LABEL_COLUMNS + .5) / FCU_LABEL_ROWS
@@ -605,7 +634,7 @@ def lamp_geometry(source: Source, lamp, cell: int):
             facing = tuple(-n for n in normal)  # toward the crew
             base = len(vertices)
             for p in tri:
-                lifted = tuple(p[a] + LAMP_LIFT * facing[a] for a in range(3))
+                lifted = tuple(p[a] + (lift + LAMP_LIFT) * facing[a] for a in range(3))
                 vertices.append("VT\t" + _vec((*lifted, *facing, u, v)))
             indices.extend((base, base + 1, base + 2))
     if not indices:
@@ -613,7 +642,7 @@ def lamp_geometry(source: Source, lamp, cell: int):
     return vertices, indices
 
 
-def append_controls(text: str, source: Source, motions: list[dict]):
+def append_controls(text: str, source: Source, motions: list[dict], lifts: dict | None = None):
     """Append one block with the click targets and lamp quads not present yet (re-runs add nothing)."""
     clicks, lamps, report = [], [], []
     for motion in motions:
@@ -631,7 +660,7 @@ def append_controls(text: str, source: Source, motions: list[dict]):
             clicks.append((control, manip, vertices, indices, motion))
         for lamp in control.lamps:
             if lamp.cell is not None and f"{MARKER} LAMP {control.id} {lamp.face}\n" not in text:
-                vertices, indices = lamp_geometry(source, lamp, lamp.cell)
+                vertices, indices = lamp_geometry(source, lamp, lamp.cell, (lifts or {}).get(lamp.face, 0.0))
                 lamps.append((control, lamp, vertices, indices, motion))
     if not clicks and not lamps:
         return text, []
@@ -788,7 +817,10 @@ def run(aircraft: Path, source_path: Path, dry_run: bool, controls=CONTROLS) -> 
                  or r["wrapped"] > 2.2 * r["source_indices"] + 6]
     controls_path = aircraft / CONTROLS_OBJ
     original = controls_path.read_bytes().decode("latin-1")
-    patched, rows = append_controls(original, source, motions)
+    lifts = {lamp.face: decal_offset(aircraft, source, lamp.face) for m in motions
+             for lamp in m["control"].lamps if lamp.cell is not None
+             and f"{MARKER} LAMP {m['control'].id} {lamp.face}\n" not in original}
+    patched, rows = append_controls(original, source, motions, lifts)
     if patched != original:
         staged[controls_path] = (original, patched)
     report["controls"] = rows

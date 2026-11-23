@@ -50,6 +50,27 @@ class Lamp:
     dataref: str         # 0..1 light level, 0 = hidden
     cell: int | None     # fcu_labels atlas cell for a lit quad in the controls OBJ; None: the face is in
                          # the emissive decal object and is lit in place with its own LIT art
+    rule: str = ""       # generic lamp rule (LAMP_RULES), computed by the native module; "" = own logic
+
+
+# Generic lamp rules (a380x_cockpit_feedback.inc cfb_lamp_rule): lit when the condition holds or ANN LT
+# is in TEST, with DC power; 0.3 with ANN LT DIM (FBW: (code || ANN TEST) && powered, DIM 0.1-0.3).
+#   efis:<side>:<field>   EFIS option key (a380x_efis.h field), FBW INDICATOR_CODE ..._LIGHT_ON
+#   eng_fire:<n>          ENG MASTER FIRE: X-Plane engine fire annunciator
+#   eng_fault:<n>         ENG MASTER FAULT: start aborted (a380x_eng_start.inc) or X-Plane engine failure
+#   door_open             CKPT DOOR OPEN: cockpit door not locked
+#   test                  ANN LT TEST only (no system behind the legend here)
+#   pressed:<dataref>     while the key is held (press travel > 0.5)
+#   latch_off:<dataref>   latched pushbutton released (FBW_Push_Toggle OFF)
+#   latch_on:<dataref>    latched pushbutton pressed in (ON / OVRD)
+LAMP_RULES = ("efis", "eng_fire", "eng_fault", "door_open", "test", "pressed", "latch_off", "latch_on")
+EFIS_FIELDS = ("cstr", "wpt", "vord", "ndb", "arpt", "vor1", "vor2", "terr", "traf", "ls", "vv",
+               "wx_requested", "taxi_requested")
+# Atlas cells this pass paints into cockpit_3d/fcu_labels*.png (unused cells; 14 is still free):
+# key -> (text, RGBA, cell)
+EXTRA_LEGEND_CELLS = {"ovrd_blue": ("OVRD", (80, 175, 255, 255), 15),
+                      "fire_red": ("FIRE", (255, 55, 45, 255), 63)}
+FAULT_AMBER_CELL, FAULT_WHITE_CELL, OFF_CELL = 47, 12, 48
 
 
 @dataclass(frozen=True)
@@ -82,6 +103,9 @@ class Control:
     wrap: bool = False                        # rotary turns endlessly
     click_node: str | None = None             # node whose subtree is the click box (default: node)
     manip: str = ""                           # rotary click: "" knob, "up_down" switch up / down
+    latch: int = -1                           # press: also a latched int <dataref without _pressed>
+                                              # toggled by the command (initial value; -1 = none)
+    patch: bool = True                        # wrap the panel geometry (False: lamps / clicks only)
 
 
 def _ecam():
@@ -180,9 +204,14 @@ def _kccu():
 def _eng_master():
     # The lever bodies already follow mixture_ratio (generic export); their FBW child decals (engine
     # number, FIRE / FAULT faces) were baked at the OFF rest pose and floated there while the lever is ON.
+    # FIRE (SEQ1) and FAULT (SEQ2) lights on the lever (FBW_Airbus_Engine_Lights) ride with it too.
+    p = PREFIX + "eng_master/"
     return [Control(f"eng{n}_master_decals", "follow", f"SWITCH_ENGINES_ENG{n}", f"SWITCH_ENGINES_ENG{n}",
                     f"sim/cockpit2/engine/actuators/mixture_ratio[{n - 1}]", click=False,
-                    files=("decal_a380x_cockpit_decal_lovis.obj", "decal_new_decal_noemis.obj"), group="eng_master")
+                    files=("decal_a380x_cockpit_decal_lovis.obj", "decal_new_decal_noemis.obj"), group="eng_master",
+                    lamps=(Lamp(f"PUSH_ENGINES_{n}_SEQ1", f"{p}lamp/fire{n}", EXTRA_LEGEND_CELLS["fire_red"][2],
+                                f"eng_fire:{n - 1}"),
+                           Lamp(f"PUSH_ENGINES_{n}_SEQ2", f"{p}lamp/fault{n}", FAULT_AMBER_CELL, f"eng_fault:{n - 1}")))
             for n in (1, 2, 3, 4)]
 
 
@@ -330,8 +359,25 @@ def _sidesticks():
 EFIS_KEYS = ("PFD", "RECONF", "BLANK")
 
 
+EFIS_OPTION_KEYS = (("CSTR", "cstr"), ("WPT", "wpt"), ("VORD", "vord"), ("NDB", "ndb"), ("ARPT", "arpt"),
+                    ("VOR", "vor1"), ("ADF", "vor2"), ("WX", "wx_requested"), ("TERR", "terr"), ("TRAF", "traf"),
+                    ("TAXI", "taxi_requested"))
+EFIS_PRESSED = {"vor1": "vor1_pressed", "vor2": "vor2_pressed", "wx_requested": "wx_pressed",
+                "taxi_requested": "taxi_pressed"}
+
+
 def _efis():
+    """EFIS option keys: green bar while the option is on (FBW efis-cp.xml INDICATOR_CODE; VOR / ADF are
+    the VOR 1 / VOR 2 needle keys). The keys already travel (EFIS module); the lit quad follows that."""
     rows = []
+    for short, side in (("CS", "captain"), ("FO", "first_officer")):
+        for key, field in EFIS_OPTION_KEYS:
+            node = f"PUSH_EFIS_{short}_{key}"
+            pressed = EFIS_PRESSED.get(field, field + "_pressed")
+            rows.append(Control(f"efis_{side}_{key.lower()}_bar", "follow", node, node,
+                                f"{PREFIX}efis/{side}/{pressed}", click=False, patch=False, group="efis",
+                                lamps=(Lamp(f"{node}_SEQ2", f"{PREFIX}efis/{side}/lamp/{key.lower()}", GREEN_CELL,
+                                            f"efis:{0 if side == 'captain' else 1}:{field}"),)))
     for short, side, caption in (("CS", "captain", "CAPT"), ("FO", "first_officer", "F/O")):
         for key in EFIS_KEYS:
             node = f"PUSH_EFIS_{short}_{key}"
@@ -419,10 +465,27 @@ PANEL_KEYS = (
 HOOKED_KEYS = {"oxygen_crew": ("PUSH_OVHD_OXYGEN_CREW", "sim/oxy/crew_valve_toggle")}
 
 
+# FBW_Push_Toggle / FBW_Covered_Push_Toggle keys of PANEL_KEYS: key -> (initial position, lamps)
+LATCHED_KEYS = {"door_locking_sys": 1, "gnd_hf_datalink": 0}
+
+
+def _panel_lamps(key: str, node: str, p: str) -> tuple:
+    if key == "oxygen_tmr_reset":     # FAULT (white) / ON while held: FBW A32NX_OXYGEN_TMR_RESET(_FAULT)
+        return (Lamp(f"{node}_SEQ1", f"{p}lamp/{key}_fault", FAULT_WHITE_CELL, "test"),
+                Lamp(f"{node}_SEQ2", f"{p}lamp/{key}_on", ON_WHITE_CELL, f"pressed:{p}{key}_pressed"))
+    if key == "door_locking_sys":     # OFF while released
+        return (Lamp(f"{node}_SEQ2", f"{p}lamp/{key}_off", OFF_CELL, f"latch_off:{p}{key}"),)
+    if key == "gnd_hf_datalink":      # OVRD (blue) while pressed in
+        return (Lamp(f"{node}_SEQ2", f"{p}lamp/{key}_ovrd", EXTRA_LEGEND_CELLS["ovrd_blue"][2], f"latch_on:{p}{key}"),)
+    return ()
+
+
 def _panel_keys():
     p = PREFIX + "cockpit/"
     rows = [Control(f"key_{key}", "press", node, clip, f"{p}{key}_pressed", (f"{p}{key}",), f"{label} - pushbutton",
-                    own=True, group="panel_keys") for node, clip, key, label in PANEL_KEYS]
+                    own=True, group="panel_keys", lamps=_panel_lamps(key, node, p), latch=LATCHED_KEYS.get(key, -1))
+            for node, clip, key, label in PANEL_KEYS]
+    # (CKPT DOOR lock status OPEN / FAULT: the pushbutton is not in the X-Plane objects, so no lamp)
     for key, (node, command) in HOOKED_KEYS.items():   # the CREW OXY SUPPLY click target exists already
         rows.append(Control(f"key_{key}", "press", node, node, f"{p}{key}_pressed", (command,), click=False,
                             group="panel_keys"))
@@ -667,6 +730,7 @@ def published_datarefs() -> tuple[str, ...]:
         if c.kind not in ("follow", "static"):
             out.append(c.dataref)
         out += [lamp.dataref for lamp in c.lamps]
+    out += [c.commands[0] for c in CONTROLS if c.kind == "press" and c.latch >= 0]   # latched position
     out += [*WIPER_DATAREFS, FIRE_PUSHBUTTON_DATAREF]
     return tuple(d for d in dict.fromkeys(out) if d not in others)
 
@@ -712,6 +776,9 @@ def emit_c_table() -> str:
            "typedef struct { const char *dataref; int positions, initial, switch_kind; } CfbPositionRow;",
            "typedef struct { const char *dataref; int page; } CfbEcamLampRow;",
            "typedef struct { const char *dataref; float travel, initial; } CfbToggleRow;",
+           "typedef struct { const char *dataref, *command; int initial; } CfbLatchRow;",
+           "typedef struct { const char *dataref; int rule, index; const char *arg; } CfbLampRuleRow;",
+           "enum { " + ", ".join(f"CFB_RULE_{r.upper()}" for r in LAMP_RULES) + " };",
            "typedef struct { const char *dataref, *up, *down; float step, initial, travel; int wrap, hooked; } CfbRotaryRow;",
            "",
            "static const CfbPressRow cfb_press_rows[] = {"]
@@ -733,6 +800,17 @@ def emit_c_table() -> str:
             up, down = rotary_commands(c)
             out.append(f'    {{"{c.dataref}", "{up}", "{down}", {_cf(c.step)}, {_cf(c.initial)}, {_cf(c.travel)}, '
                        f'{1 if c.wrap else 0}, {1 if c.commands else 0}}},')
+    out += ["};", "", "static const CfbLatchRow cfb_latch_rows[] = {"]
+    out += [f'    {{"{c.commands[0]}", "{c.commands[0]}", {c.latch}}},' for c in CONTROLS
+            if c.kind == "press" and c.latch >= 0]
+    out += ["};", "", "static const CfbLampRuleRow cfb_lamp_rules[] = {"]
+    for c in CONTROLS:
+        for lamp in c.lamps:
+            if lamp.rule:
+                rule, *args = lamp.rule.split(":")
+                index = int(args[0]) if args and args[0].lstrip("-").isdigit() else 0
+                arg = args[-1] if args and not args[-1].lstrip("-").isdigit() else ""
+                out.append(f'    {{"{lamp.dataref}", CFB_RULE_{rule.upper()}, {index}, "{arg}"}},')
     out += ["};", "", "static const char *const cfb_wiper_selectors[] = {"]
     out += [f'    "{c.dataref}",' for c in CONTROLS if c.group == "wipers" and c.kind == "selector"]
     out += ["};", "", "static const char *const cfb_wiper_sweeps[] = {"]

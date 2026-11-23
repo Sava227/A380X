@@ -18,6 +18,11 @@
  *   rotary   knobs without logic of their own and the seat / armrest adjusters: float 0..1, commands _up /
  *            _down (or hooked ones) step it, eased at 1/travel per second; `wrap` turns endlessly.
  *   wipers   WIPER selector 0 OFF / 1 SLOW / 2 FAST sweeps the blade (0 parked .. 1 and back); OFF parks it.
+ *   latches  FBW_Push_Toggle keys without a system here (DOOR LOCKING SYS, GND HF DATALINK): int position
+ *            toggled by the key's command.
+ *   rules    generic lamps (cfb_lamp_rules: EFIS option bars, ENG MASTER FIRE / FAULT, CKPT DOOR, TMR
+ *            RESET, latched keys): lit when the rule holds or ANN LT is in TEST, with DC power, dimmed
+ *            with ANN LT DIM like the overhead legends (a380x_ovhd_lamps.h).
  *
  * Every dataref is registered in XPluginStart, before the aircraft OBJs bind them.
  * Included after the SD, ADIRS and FMS adapters (reads sda, calls adirs_set_source).
@@ -33,6 +38,10 @@
 #define CFB_ROTARY_COUNT ((int)ARRAY_LEN(cfb_rotary_rows))
 #define CFB_WIPERS ((int)ARRAY_LEN(cfb_wiper_sweeps))
 #define CFB_FIRE_PBS ((int)ARRAY_LEN(cfb_fire_pushbuttons))
+#define CFB_LATCH_COUNT ((int)ARRAY_LEN(cfb_latch_rows))
+#define CFB_LAMP_RULES ((int)ARRAY_LEN(cfb_lamp_rules))
+
+static int engs_start_fault(int engine);   /* a380x_eng_start.inc, included after this module */
 
 enum { CFB_SURV_XPDR_TCAS_SYS, CFB_SURV_WXR_TAWS_SYS, CFB_SURV_TCAS_ALERT_LEVEL, CFB_SURV_TCAS_ALT_SELECT,
        CFB_SURV_GS_MODE_OFF, CFB_SURV_REFS };
@@ -81,6 +90,10 @@ static struct {
     CfbRotary rotary[CFB_ROTARY_COUNT];
     CfbWiper wiper[CFB_WIPERS];
     XPLMDataRef fire_ref;
+    int latch[CFB_LATCH_COUNT];
+    XPLMDataRef latch_refs[CFB_LATCH_COUNT], rule_refs[CFB_LAMP_RULES], engine_fires, engine_failure[4];
+    XPLMCommandRef latch_commands[CFB_LATCH_COUNT];
+    int rule_arg[CFB_LAMP_RULES];   /* EFIS field / press row / latch row the rule reads */
     XPLMCommandRef surv_commands[CFB_SURV_COUNT];
     XPLMDataRef surv_lamp_refs[CFB_SURV_COUNT], ecam_lamp_refs[CFB_ECAM_LAMPS];
     XPLMDataRef surv_refs[CFB_SURV_REFS], fms_knob;
@@ -312,6 +325,69 @@ static void cfb_wiper_update(float dt)
     }
 }
 
+/* ------------------------------------------------------------------ latched keys and generic lamps */
+
+static int cfb_latch_geti(void *refcon) { return cfb.latch[(int)(intptr_t)refcon]; }
+static void cfb_latch_seti(void *refcon, int value) { if (plugin_enabled) cfb.latch[(int)(intptr_t)refcon] = value != 0; }
+
+static int cfb_latch_command(XPLMCommandRef command, XPLMCommandPhase phase, void *refcon)
+{
+    (void)command;
+    if (plugin_enabled && phase == xplm_CommandBegin) cfb.latch[(int)(intptr_t)refcon] ^= 1;
+    return 0;
+}
+
+static int cfb_rule_condition(int i)
+{
+    const CfbLampRuleRow *r = &cfb_lamp_rules[i];
+    int arg = cfb.rule_arg[i], v[8] = {0};
+    switch (r->rule) {
+    case CFB_RULE_EFIS:
+        return arg >= 0 && r->index >= 0 && r->index < 2 &&
+               *(const int *)((const char *)&efis[r->index] + efis_fields[arg].offset) != 0;
+    case CFB_RULE_ENG_FIRE:
+        if (!cfb.engine_fires) cfb.engine_fires = XPLMFindDataRef("sim/cockpit/warnings/annunciators/engine_fires");
+        if (cfb.engine_fires) XPLMGetDatavi(cfb.engine_fires, v, 0, 8);
+        return r->index >= 0 && r->index < 8 && v[r->index] != 0;
+    case CFB_RULE_ENG_FAULT:
+        if (r->index < 0 || r->index > 3) return 0;
+        if (!cfb.engine_failure[r->index]) {
+            char name[64];
+            snprintf(name, sizeof(name), "sim/operation/failures/rel_engfai%d", r->index);
+            cfb.engine_failure[r->index] = XPLMFindDataRef(name);
+        }
+        return engs_start_fault(r->index) ||
+               (cfb.engine_failure[r->index] && XPLMGetDatai(cfb.engine_failure[r->index]) == 6);
+    case CFB_RULE_DOOR_OPEN: return !cockpit_door.locked;
+    case CFB_RULE_PRESSED: return arg >= 0 && cfb.press[arg].value > 0.5f;
+    case CFB_RULE_LATCH_OFF: return arg >= 0 && !cfb.latch[arg];
+    case CFB_RULE_LATCH_ON: return arg >= 0 && cfb.latch[arg];
+    default: return 0;                                             /* CFB_RULE_TEST */
+    }
+}
+
+static float cfb_rule_get(void *refcon)
+{
+    int i = (int)(intptr_t)refcon, ann = ovhd.ready ? ovhd.ann_lt : A380X_OVHD_ANN_BRT;
+    if (!cfb.initialized || !cfb_lamp_power()) return 0.0f;
+    if (ann != A380X_OVHD_ANN_TEST && !cfb_rule_condition(i)) return 0.0f;
+    return ann == A380X_OVHD_ANN_DIM ? A380X_OVHD_DIM_LEVEL : 1.0f;
+}
+
+/* Index of the EFIS field / press row / latch row a rule reads (-1: none). */
+static int cfb_rule_target(const CfbLampRuleRow *r)
+{
+    if (r->rule == CFB_RULE_EFIS) {
+        for (int k = 0; k < (int)ARRAY_LEN(efis_fields); ++k)
+            if (!efis_fields[k].floating && !strcmp(efis_fields[k].name, r->arg)) return k;
+    } else if (r->rule == CFB_RULE_PRESSED) {
+        for (int k = 0; k < CFB_PRESS_COUNT; ++k) if (!strcmp(cfb_press_rows[k].dataref, r->arg)) return k;
+    } else if (r->rule == CFB_RULE_LATCH_OFF || r->rule == CFB_RULE_LATCH_ON) {
+        for (int k = 0; k < CFB_LATCH_COUNT; ++k) if (!strcmp(cfb_latch_rows[k].dataref, r->arg)) return k;
+    }
+    return -1;
+}
+
 /* ------------------------------------------------------------------ lifecycle */
 
 static void cfb_shutdown(void)
@@ -347,6 +423,12 @@ static void cfb_shutdown(void)
     for (int i = 0; i < CFB_WIPERS; ++i)
         if (cfb.wiper[i].ref) XPLMUnregisterDataAccessor(cfb.wiper[i].ref);
     if (cfb.fire_ref) XPLMUnregisterDataAccessor(cfb.fire_ref);
+    for (int i = 0; i < CFB_LATCH_COUNT; ++i) {
+        if (cfb.latch_commands[i])
+            XPLMUnregisterCommandHandler(cfb.latch_commands[i], cfb_latch_command, 0, (void *)(intptr_t)i);
+        if (cfb.latch_refs[i]) XPLMUnregisterDataAccessor(cfb.latch_refs[i]);
+    }
+    for (int i = 0; i < CFB_LAMP_RULES; ++i) if (cfb.rule_refs[i]) XPLMUnregisterDataAccessor(cfb.rule_refs[i]);
     memset(&cfb, 0, sizeof(cfb));
 }
 
@@ -446,6 +528,22 @@ static int cfb_init(void)
         for (int k = 0; k < CFB_TOGGLE_COUNT; ++k)
             if (!strcmp(cfb_toggle_rows[k].dataref, cfb_fire_pushbuttons[i])) cfb.fire_toggle[i] = k;
     }
+    for (int i = 0; i < CFB_LATCH_COUNT; ++i) {
+        cfb.latch[i] = cfb_latch_rows[i].initial;
+        if (XPLMFindDataRef(cfb_latch_rows[i].dataref)) { cfb_shutdown(); return 0; }
+        cfb.latch_refs[i] = XPLMRegisterDataAccessor(cfb_latch_rows[i].dataref, xplmType_Int, 1, cfb_latch_geti,
+                                                     cfb_latch_seti, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+                                                     NULL, NULL, NULL, (void *)(intptr_t)i, (void *)(intptr_t)i);
+        cfb.latch_commands[i] = cfb_command(cfb_latch_rows[i].command, cfb_latch_rows[i].command);
+        if (!cfb.latch_refs[i] || !cfb.latch_commands[i]) { cfb_shutdown(); return 0; }
+        /* after the press handler (registered in front), so the key travels as well */
+        XPLMRegisterCommandHandler(cfb.latch_commands[i], cfb_latch_command, 0, (void *)(intptr_t)i);
+    }
+    for (int i = 0; i < CFB_LAMP_RULES; ++i) {
+        cfb.rule_arg[i] = cfb_rule_target(&cfb_lamp_rules[i]);
+        cfb.rule_refs[i] = cfb_float_ref(cfb_lamp_rules[i].dataref, cfb_rule_get, (void *)(intptr_t)i);
+        if (!cfb.rule_refs[i]) { cfb_shutdown(); return 0; }
+    }
     if (!XPLMFindDataRef("a380x/xp12/engine/fire_pushbutton"))
         cfb.fire_ref = XPLMRegisterDataAccessor("a380x/xp12/engine/fire_pushbutton", xplmType_IntArray, 0, NULL,
                                                 NULL, NULL, NULL, NULL, NULL, cfb_fire_get, NULL, NULL, NULL,
@@ -454,7 +552,7 @@ static int cfb_init(void)
     cfb.initialized = 1;
     snprintf(name, sizeof(name), "A380X cockpit feedback: %d keys, %d selectors/switches, %d toggles, %d knobs, "
              "%d lamps registered\n", CFB_PRESS_COUNT, CFB_POSITION_COUNT, CFB_TOGGLE_COUNT, CFB_ROTARY_COUNT,
-             CFB_SURV_COUNT + CFB_ECAM_LAMPS);
+             CFB_SURV_COUNT + CFB_ECAM_LAMPS + CFB_LAMP_RULES);
     XPLMDebugString(name);
     return 1;
 }
@@ -507,4 +605,5 @@ static void cfb_reset(void)
     for (int i = 0; i < CFB_TOGGLE_COUNT; ++i) cfb.toggle[i].value = cfb.toggle[i].target = cfb_toggle_rows[i].initial;
     for (int i = 0; i < CFB_ROTARY_COUNT; ++i) cfb.rotary[i].value = cfb.rotary[i].target = cfb_rotary_rows[i].initial;
     for (int i = 0; i < CFB_WIPERS; ++i) { cfb.wiper[i].sweep = 0.0f; cfb.wiper[i].direction = 1; }
+    for (int i = 0; i < CFB_LATCH_COUNT; ++i) cfb.latch[i] = cfb_latch_rows[i].initial;
 }

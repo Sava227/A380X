@@ -358,6 +358,27 @@ int main(int argc, char **argv)
         ovhd_shutdown(); eln_shutdown(); elec_shutdown();
         return 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "--cold-dark")) {
+        /* Report: the lit overhead / ELEC legends after loading the aircraft with only the batteries
+         * on (default lamp supply), then with HOT AIR 1 / CARGO HEATER pushed to OFF. */
+        static const char *const steps[] = {"plane loaded", "BAT 1 + BAT 2 + ESS + APU BAT AUTO",
+                                            "HOT AIR 1 and CARGO HEATER pushed (to OFF)"};
+        assert(elec_init() && eln_init() && ovhd_init());
+        elec_plane_loaded(); eln_plane_loaded(); ovhd_plane_loaded();
+        for (int step = 0; step < 3; ++step) {
+            if (step == 1) { click("bat1_toggle"); click("bat2_toggle"); click("bat_ess_toggle"); click("bat_apu_toggle"); }
+            if (step == 2) { fire("a380x/xp12/ovhd/pb/hot_air1"); fire("a380x/xp12/ovhd/pb/cargo_heater"); }
+            frames(1.0f);
+            printf("== %s:", steps[step]);
+            for (n = 0; n < ref_count; ++n)
+                if (mock_refs[n].registered && strstr(mock_refs[n].name, "/lamp/") &&
+                    XPLMGetDataf((XPLMDataRef)&mock_refs[n]) > 0.0f)
+                    printf(" %s", strstr(mock_refs[n].name, "/lamp/") + 6);
+            printf("\n");
+        }
+        ovhd_shutdown(); eln_shutdown(); elec_shutdown();
+        return 0;
+    }
     (void)cds_overlay;
     test_power_up();
     test_simple_supply_and_lifecycle();

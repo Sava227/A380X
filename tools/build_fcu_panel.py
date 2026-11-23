@@ -120,6 +120,23 @@ def ovhd_legends(atlas: Image.Image, cell_width: int, cell_height: int) -> None:
         atlas.paste(ovhd_legend_cell(legend, (cell_width, cell_height)), (column * cell_width, row * cell_height))
 
 
+def feedback_legend_cell(key: str, size: tuple[int, int]) -> Image.Image:
+    """Cockpit-feedback lamp legend cell (tools/cockpit_feedback_contract.py EXTRA_LEGEND_CELLS), ELEC style."""
+    from cockpit_feedback_contract import EXTRA_LEGEND_CELLS
+    text, rgba, _cell = EXTRA_LEGEND_CELLS[key]
+    image = Image.new('RGBA', size, (0, 0, 0, 0))
+    centered_text(ImageDraw.Draw(image), (2, 2, size[0] - 2, size[1] - 2), text, rgba, 34)
+    return image
+
+
+def feedback_legends(atlas: Image.Image, cell_width: int, cell_height: int) -> None:
+    """Cockpit-feedback lamp legends on unused atlas cells (tools/paint_feedback_legends.py)."""
+    from cockpit_feedback_contract import EXTRA_LEGEND_CELLS
+    for key, (_text, _rgba, index) in EXTRA_LEGEND_CELLS.items():
+        column, row = index % FCU_LABEL_COLUMNS, index // FCU_LABEL_COLUMNS
+        atlas.paste(feedback_legend_cell(key, (cell_width, cell_height)), (column * cell_width, row * cell_height))
+
+
 def build_label_atlas(output: Path) -> None:
     size = (1024, 512)
     atlas = Image.new('RGBA', size, (0, 0, 0, 0))
@@ -164,6 +181,7 @@ def build_label_atlas(output: Path) -> None:
         centered_text(draw, box, label, color, 34)
     elec_legends(draw, cell_width, cell_height)
     ovhd_legends(atlas, cell_width, cell_height)
+    feedback_legends(atlas, cell_width, cell_height)
     atlas.save(output / 'fcu_labels.png')
 
     lit = Image.new('RGBA', size, (0, 0, 0, 0))
@@ -202,6 +220,7 @@ def build_label_atlas(output: Path) -> None:
         centered_text(lit_draw, box, label, color, 34)
     elec_legends(lit_draw, cell_width, cell_height)
     ovhd_legends(lit, cell_width, cell_height)
+    feedback_legends(lit, cell_width, cell_height)
     lit.save(output / 'fcu_labels_LIT.png')
 
 
