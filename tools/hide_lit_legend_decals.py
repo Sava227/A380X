@@ -32,6 +32,7 @@ from patch_efis_animations import vertex_payload
 CONTROLS_OBJ = "objects/interior/cockpit-controls/a380x_cockpit_controls.obj"
 DECAL_DIR = "objects/interior/cockpit-panels"
 MARKER = "# A380X LIT DECAL HIDE"
+GLOW = "# A380X LIT DECAL GLOW"     # lit in place by light_legends_in_place.py: leave alone
 
 
 def lamp_faces(controls_text: str) -> dict[str, tuple[str, float]]:
@@ -152,7 +153,7 @@ def _apply(m, p):
 def patch_decal(text: str, targets: list[tuple[str, list, None, list, list]]):
     """targets: (face, [(dataref, threshold)], None, points, lifted); a face hides while any of its lamps
     is lit. Returns (text, {face: triangles wrapped})."""
-    targets = [t for t in targets if f"{MARKER} {t[0]}\n" not in text]
+    targets = [t for t in targets if f"{MARKER} {t[0]}\n" not in text and f"{GLOW} {t[0]}\n" not in text]
     if not targets:
         return text, {}
     lines = text.splitlines(keepends=True)
@@ -187,6 +188,9 @@ def patch_decal(text: str, targets: list[tuple[str, list, None, list, list]]):
             back -= 1
         if lines[back].split()[:1] == ["ANIM_begin"] and lines[back - 1].lstrip().startswith(MARKER):
             output.append(line)          # already inside one of our hide blocks
+            continue
+        if lines[line_index - 2].lstrip().startswith(GLOW):
+            output.append(line)
             continue
         start, count = int(w[1]), int(w[2])
         m = matrices.get(line_index, IDENTITY)
@@ -232,7 +236,7 @@ def _plan(aircraft: Path, source: Source, conditions: dict):
         if not targets:
             continue
         text = path.read_bytes().decode("latin-1")
-        done = {t[0]: 0 for t in targets if f"{MARKER} {t[0]}\n" in text}
+        done = {t[0]: 0 for t in targets if f"{MARKER} {t[0]}\n" in text or f"{GLOW} {t[0]}\n" in text}
         patched, counts = patch_decal(text, targets)
         out[path] = (text, patched, {**done, **counts})
     return out
