@@ -378,6 +378,10 @@ def _efis():
                                 f"{PREFIX}efis/{side}/{pressed}", click=False, patch=False, group="efis",
                                 lamps=(Lamp(f"{node}_SEQ2", f"{PREFIX}efis/{side}/lamp/{key.lower()}", GREEN_CELL,
                                             f"efis:{0 if side == 'captain' else 1}:{field}"),)))
+        for key in ("LS", "VV"):       # lit by the FCU annunciators; motion only, so those quads follow the key
+            node = f"PUSH_EFIS_{short}_{key}"
+            rows.append(Control(f"efis_{side}_{key.lower()}_key", "follow", node, node,
+                                f"{PREFIX}efis/{side}/{key.lower()}_pressed", click=False, patch=False, group="efis"))
     for short, side, caption in (("CS", "captain", "CAPT"), ("FO", "first_officer", "F/O")):
         for key in EFIS_KEYS:
             node = f"PUSH_EFIS_{short}_{key}"

@@ -24,6 +24,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 
 from build_cockpit_controls import (FCU_LABEL_COLUMNS, FCU_LABEL_ROWS, accessor_values, load_buffer,
@@ -589,37 +590,10 @@ def _invert(m):
     return [inv[0] + [it[0]], inv[1] + [it[1]], inv[2] + [it[2]], [0, 0, 0, 1]]
 
 
-def decal_offset(aircraft: Path, source: Source, face: str) -> float:
-    """Where the exported decal of a lamp face sits along its normal toward the crew (0, or the 2 mm of
-    the legend export), measured in the panel OBJ of the face's material."""
-    index = source.names[face]
-    for material, triangles, _count in source.primitives(index):
-        path = next((p for d in PANEL_DIRS for p in sorted((aircraft / d).glob("*.obj"))
-                     if p.name.endswith(material + ".obj") and not p.name.startswith("._")), None)
-        if path is None:
-            continue
-        points = sorted({p for tri in triangles for p in tri})
-        normal = _unit(tuple(sum(c) for c in zip(*[_cross(_sub(t[1], t[0]), _sub(t[2], t[0])) for t in triangles])))
-        centre = tuple(sum(p[a] for p in points) / len(points) for a in range(3))
-        if _dot(normal, _sub(EYE, centre)) < 0:
-            normal = tuple(-n for n in normal)
-        grid = _Grid(tuple(map(float, line.split()[1:4])) for line in path.read_bytes().decode("latin-1").splitlines()
-                     if line.startswith("VT"))
-        offsets = []
-        for p in points:
-            near = list(grid.near(p, LEGEND_LIFT + LIFT_TOLERANCE))
-            if near:
-                q = min(near, key=lambda q: math.dist(p, q))
-                offsets.append(_dot(_sub(q, p), normal))
-        if offsets:
-            offsets.sort()
-            return max(0.0, offsets[len(offsets) // 2])
-    return 0.0
-
-
-def lamp_geometry(source: Source, lamp, cell: int, lift: float = 0.0):
-    """Lit triangles over a lamp face, lifted toward the crew (LAMP_LIFT in front of its decal, which
-    sits `lift` in front of the authored face), sampling one atlas cell."""
+def lamp_geometry(source: Source, lamp, cell: int):
+    """Lit triangles over a lamp face, LAMP_LIFT toward the crew from the key itself, sampling one atlas
+    cell. Not in front of a legend decal the export raised 2 mm: that decal hides while the lamp is lit
+    (hide_lit_legend_decals.py), and a quad out there would hover above the key."""
     index = source.names[lamp.face]
     u = (cell % FCU_LABEL_COLUMNS + .5) / FCU_LABEL_COLUMNS
     v = 1 - (cell // FCU_LABEL_COLUMNS + .5) / FCU_LABEL_ROWS
@@ -635,7 +609,7 @@ def lamp_geometry(source: Source, lamp, cell: int, lift: float = 0.0):
             facing = tuple(-n for n in normal)  # toward the crew
             base = len(vertices)
             for p in tri:
-                lifted = tuple(p[a] + (lift + LAMP_LIFT) * facing[a] for a in range(3))
+                lifted = tuple(p[a] + LAMP_LIFT * facing[a] for a in range(3))
                 vertices.append("VT\t" + _vec((*lifted, *facing, u, v)))
             indices.extend((base, base + 1, base + 2))
     if not indices:
@@ -687,7 +661,68 @@ def prune_clicks(text: str, motions: list[dict]) -> tuple[str, list[str]]:
     return "\n".join(out), removed
 
 
-def append_controls(text: str, source: Source, motions: list[dict], lifts: dict | None = None):
+FOREIGN_LAMPS = ("# FCU ANNUNCIATOR ", "# ADIRS ANNUNCIATOR ", "# OVHD LAMP lamp/", "# ELEC LAMP lamp/")
+
+
+def follow_foreign_quads(text: str, moved: dict[str, dict], lamp_face) -> tuple[str, list[str]]:
+    """Lit quads of the other lamp tools whose legend this pass moves (a key's press travel): the quad's
+    TRIS is wrapped in the same motion, so the light stays on the key while it is pressed.
+    moved: legend face -> motion (with 'chain'); lamp_face: comment line -> legend face or None."""
+    lines, out, done = text.split("\n"), [], []
+    pending, block = None, []
+    for line in lines:
+        if line.startswith(FOREIGN_LAMPS):
+            face = lamp_face(line)
+            pending = face if face in moved and f"{MARKER} FOLLOW {face}" not in text else None
+            block = []
+        elif pending and line.startswith("TRIS"):
+            refs = {stage["dataref"] for stage in moved[pending]["stages"]}
+            if any(ref in " ".join(block).split() for ref in refs):
+                pending = None          # this quad already travels with the key
+                out.append(line)
+                continue
+            motion = moved[pending]
+            out += [f"{MARKER} FOLLOW {pending}", "ANIM_begin",
+                    *stage_lines(motion["chain"](motion["face_index"][pending])), line, "ANIM_end"]
+            done.append(pending)
+            pending = None
+            continue
+        if pending:
+            block.append(line)
+        out.append(line)
+    return "\n".join(out), done
+
+
+def reseat_lamps(text: str, source: Source, motions: list[dict]) -> tuple[str, list[str]]:
+    """Put this pass's lit quads back on their key (lamp_geometry): quads written by an earlier version in
+    front of a raised legend decal hovered 2 mm above the key. Rewrites only those quads' VT lines."""
+    lines = text.split("\n")
+    vt = [i for i, line in enumerate(lines) if line.startswith("VT")]
+    indices = [int(v) for line in lines if line.startswith(("IDX\t", "IDX10\t")) for v in line.split()[1:]]
+    lamps = {(m["control"].id, lamp.face): lamp for m in motions for lamp in m["control"].lamps if lamp.cell is not None}
+    moved = []
+    for i, line in enumerate(lines):
+        words = line.split()
+        if not line.startswith(f"{MARKER} LAMP ") or len(words) < 7 or (words[5], words[6]) not in lamps:
+            continue
+        tris = next(l for l in lines[i:i + 40] if l.startswith("TRIS")).split()
+        start, count = int(tris[1]), int(tris[2])
+        lamp = lamps[(words[5], words[6])]
+        expected, order = lamp_geometry(source, lamp, lamp.cell)
+        targets = [indices[start + k] for k in range(count)]
+        if len(order) != count:
+            continue
+        changed = False
+        for k, v in enumerate(targets):
+            if lines[vt[v]] != expected[order[k]]:
+                lines[vt[v]] = expected[order[k]]
+                changed = True
+        if changed:
+            moved.append(words[6])
+    return "\n".join(lines), moved
+
+
+def append_controls(text: str, source: Source, motions: list[dict]):
     """Append one block with the click targets and lamp quads not present yet (re-runs add nothing)."""
     clicks, lamps, report = [], [], []
     for motion in motions:
@@ -705,7 +740,7 @@ def append_controls(text: str, source: Source, motions: list[dict], lifts: dict 
             clicks.append((control, manip, vertices, indices, motion))
         for lamp in control.lamps:
             if lamp.cell is not None and f"{MARKER} LAMP {control.id} {lamp.face}\n" not in text:
-                vertices, indices = lamp_geometry(source, lamp, lamp.cell, (lifts or {}).get(lamp.face, 0.0))
+                vertices, indices = lamp_geometry(source, lamp, lamp.cell)
                 lamps.append((control, lamp, vertices, indices, motion))
     if not clicks and not lamps:
         return text, []
@@ -865,11 +900,38 @@ def run(aircraft: Path, source_path: Path, dry_run: bool, controls=CONTROLS) -> 
                  or r["wrapped"] > 2.2 * r["source_indices"] + 6]
     controls_path = aircraft / CONTROLS_OBJ
     original = controls_path.read_bytes().decode("latin-1")
-    lifts = {lamp.face: decal_offset(aircraft, source, lamp.face) for m in motions
-             for lamp in m["control"].lamps if lamp.cell is not None
-             and f"{MARKER} LAMP {m['control'].id} {lamp.face}\n" not in original}
     pruned, report["removed_clicks"] = prune_clicks(original, motions)
-    patched, rows = append_controls(pruned, source, motions, lifts)
+    # legends this pass moves (marked in the decal objects) -> their motion, for the other tools' lit quads
+    moved = {}
+    by_id = {m["control"].id: m for m in motions}
+    for directory in PANEL_DIRS:
+        for path in sorted((aircraft / directory).glob("decal_*.obj")):
+            if path.name.startswith("._"):
+                continue
+            for cid, face in re.findall(r"^\s*" + re.escape(MARKER) + r" (\S+) (\S+)$",
+                                        staged.get(path, (None, path.read_bytes().decode("latin-1")))[1], re.M):
+                motion = by_id.get(cid)
+                if motion and face in source.names and motion["stages"]:
+                    motion.setdefault("face_index", {})[face] = source.names[face]
+                    moved[face] = motion
+    for motion in motions:      # motion-only rows (patch=False): their key already moves, by another tool
+        if not motion["control"].patch and motion["stages"]:
+            for index in source.descendants(motion["index"]):
+                face = source.nodes[index].get("name", "")
+                if face.endswith(("_SEQ1", "_SEQ2")):
+                    motion.setdefault("face_index", {})[face] = index
+                    moved.setdefault(face, motion)
+    from elec_panel_contract import lamps as elec_lamps
+    from ovhd_lamps_contract import lamps as ovhd_lamps
+    lamp_face_by_id = {row[0].split("/lamp/", 1)[1]: row[4] for row in (*ovhd_lamps(), *elec_lamps())}
+
+    def lamp_face(line):
+        if line.startswith(("# OVHD LAMP lamp/", "# ELEC LAMP lamp/")):
+            return lamp_face_by_id.get(line.split("lamp/", 1)[1].strip())
+        return line.split()[-1]
+    pruned, report["followed"] = follow_foreign_quads(pruned, moved, lamp_face)
+    pruned, report["reseated_lamps"] = reseat_lamps(pruned, source, motions)
+    patched, rows = append_controls(pruned, source, motions)
     if patched != original:
         staged[controls_path] = (original, patched)
     report["controls"] = rows
