@@ -616,8 +616,15 @@ def _wipers():
     return rows
 
 
+# Controls taken out again: cockpit_feedback.py unwraps their geometry (back to static) and removes their
+# click blocks. The sun shades (forward LH / RH / CTR and the captain / F/O side shades): no interaction
+# wanted (user, 2026-11-05).
+REMOVED_CONTROL_IDS = ("sunshade_fwd_lh", "sunshade_fwd_rh", "sunshade_fwd_ctr", "small_shade_captain",
+                       "small_shade_first_officer")
+
+
 def _furniture():
-    """Seats, armrests, tables, keyboard trays, windows, shades and stowage doors (FBW cabin clips).
+    """Seats, armrests, tables, keyboard trays, windows, side shades and stowage doors (FBW cabin clips).
     Two-position parts glide over `travel` seconds; seat height / fore-aft and armrest tilt are rotaries."""
     p = PREFIX + "cockpit/"
     rows = []
@@ -658,16 +665,7 @@ def _furniture():
             Control(f"sliding_window_{side}", "toggle", f"{short}_SLIDING_WINDOW_CLICK", f"{short}_SLIDING_WINDOW_ANIM",
                     f"{p}{side}_sliding_window", label=f"{short} SLIDING WINDOW - open / close", travel=3.0,
                     all_nodes=True, group="furniture"),
-            Control(f"small_shade_{side}", "toggle", "Plane.075" if short == "CPT" else "Plane.154",
-                    f"{short}_SMALL_SHADE_ANIM", f"{p}{side}_small_shade", label=f"{short} side SUNSHADE",
-                    travel=1.0, all_nodes=True, group="furniture"),
         ]
-    for key, clip, node, label in (("fwd_lh", "SUNSHADE_FWD_LH_ANIM", "SUNSHADE_FWD_LH", "FWD LH SUNSHADE"),
-                                   ("fwd_rh", "SUNSHADE_FWD_RH_ANIM", "SUNSHADE_FWD_RH", "FWD RH SUNSHADE"),
-                                   ("fwd_ctr", "SUNSHADE_FWD_CTR_ANIM", "SUNSHADE_FWD_CTR_BALL", "FWD CTR SUNSHADE")):
-        # no click target: the shade's box hangs in front of the overhead and took its clicks (commands only)
-        rows.append(Control(f"sunshade_{key}", "toggle", node, clip, f"{p}sunshade_{key}", label=f"{label} - up / down",
-                            travel=1.5, all_nodes=True, click=False, group="furniture"))
     for key, clip, node, click, label in (
             ("aft_oxy", "AFT_OXY_ANIM", "Cube.082", "AFT_OXY_CLICK", "AFT OXYGEN stowage"),
             ("aft_oit", "AFT_OIT_ANIM", "Cube.444", "AFT_OIT_CLICK", "AFT OIT stowage"),
