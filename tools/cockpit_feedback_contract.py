@@ -665,8 +665,9 @@ def _furniture():
     for key, clip, node, label in (("fwd_lh", "SUNSHADE_FWD_LH_ANIM", "SUNSHADE_FWD_LH", "FWD LH SUNSHADE"),
                                    ("fwd_rh", "SUNSHADE_FWD_RH_ANIM", "SUNSHADE_FWD_RH", "FWD RH SUNSHADE"),
                                    ("fwd_ctr", "SUNSHADE_FWD_CTR_ANIM", "SUNSHADE_FWD_CTR_BALL", "FWD CTR SUNSHADE")):
+        # no click target: the shade's box hangs in front of the overhead and took its clicks (commands only)
         rows.append(Control(f"sunshade_{key}", "toggle", node, clip, f"{p}sunshade_{key}", label=f"{label} - up / down",
-                            travel=1.5, all_nodes=True, group="furniture"))
+                            travel=1.5, all_nodes=True, click=False, group="furniture"))
     for key, clip, node, click, label in (
             ("aft_oxy", "AFT_OXY_ANIM", "Cube.082", "AFT_OXY_CLICK", "AFT OXYGEN stowage"),
             ("aft_oit", "AFT_OIT_ANIM", "Cube.444", "AFT_OIT_CLICK", "AFT OIT stowage"),

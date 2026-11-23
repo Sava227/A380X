@@ -642,6 +642,25 @@ def lamp_geometry(source: Source, lamp, cell: int, lift: float = 0.0):
     return vertices, indices
 
 
+def prune_clicks(text: str, motions: list[dict]) -> tuple[str, list[str]]:
+    """Remove the click blocks of controls that no longer have a click target (their vertices stay,
+    unreferenced). A block runs from its '# ... CLICK <id>' marker to its ANIM_end."""
+    gone = {m["control"].id for m in motions if click_manipulator(m["control"]) is None}
+    lines, out, removed, i = text.split("\n"), [], [], 0
+    while i < len(lines):
+        words = lines[i].split()
+        if lines[i].startswith(f"{MARKER} CLICK ") and len(words) >= 6 and words[5] in gone:
+            removed.append(words[5])
+            i += 1
+            while i < len(lines) and lines[i] != "ANIM_end":
+                i += 1
+            i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    return "\n".join(out), removed
+
+
 def append_controls(text: str, source: Source, motions: list[dict], lifts: dict | None = None):
     """Append one block with the click targets and lamp quads not present yet (re-runs add nothing)."""
     clicks, lamps, report = [], [], []
@@ -820,7 +839,8 @@ def run(aircraft: Path, source_path: Path, dry_run: bool, controls=CONTROLS) -> 
     lifts = {lamp.face: decal_offset(aircraft, source, lamp.face) for m in motions
              for lamp in m["control"].lamps if lamp.cell is not None
              and f"{MARKER} LAMP {m['control'].id} {lamp.face}\n" not in original}
-    patched, rows = append_controls(original, source, motions, lifts)
+    pruned, report["removed_clicks"] = prune_clicks(original, motions)
+    patched, rows = append_controls(pruned, source, motions, lifts)
     if patched != original:
         staged[controls_path] = (original, patched)
     report["controls"] = rows

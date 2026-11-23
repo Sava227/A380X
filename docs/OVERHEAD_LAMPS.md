@@ -31,6 +31,23 @@ supply bus is powered, at full brightness with ANN LT BRT and 0.3 with DIM.
 | Tests | `native/avionics/test_ovhd_lamps.c`, `test_ovhd_lamps_adapter.c`, `tools/test_ovhd_cockpit_lamps.py` |
 | Offline previews | `tools/preview_ovhd_lamps.py` |
 
+## Lit legends still invisible: the decals are drawn after the lamps (2026-11-04)
+
+Second in-sim check with the Log.txt diagnostics: the lamp datarefs were 1.0 (PACK 1 OFF, APU MASTER
+ON) yet nothing glowed. The quads sit 0.4 mm in front of their decal with nothing drawn in front of them
+(checked with every animation applied), the DDS atlas keeps its alpha, and the UVs cover the legend cell.
+What differs from the FCU lamps that work is draw order: every legend decal object (`decal_*.obj`,
+_obja 120-125) is drawn after `a380x_cockpit_controls.obj` (119), and the lamp quads carry
+`ATTR_poly_os`, so the later decal still painted over them (the 2026-10-22 alpha-test fix did not
+change this in the sim).
+
+`tools/hide_lit_legend_decals.py` wraps each decal face that has a lamp quad in `ANIM_hide` on that
+lamp's dataref above its dark threshold: while lit, the quad (legend art plus glow) replaces the decal;
+while dark the decal shows as before. 360 of 364 lamp faces (overhead, ELEC, ADIRS, glareshield / gear,
+cockpit-feedback lamps; faces exported in node-local frames matched at their rest pose); the ENG 2
+BLEED upper face, which covers the whole cap, hides for either legend. Run it after any tool that adds
+lamp quads. Idempotent.
+
 ## Why the lamps were still invisible in the sim (2026-10-22, X-Plane 12.4.4)
 
 First in-simulator check (cold & dark, BAT 1/2/ESS/APU AUTO, DC ESS live): the lamp datarefs were
