@@ -2,6 +2,8 @@
  * Independent captain/first-officer EFIS controls. Stock EFIS datarefs mirror
  * physical selector positions; our native PFD/ND renderers consume this state.
  * WX and ETACS selections are recorded for an explicit INOP annunciation only.
+ * WX and TERR select the ND's one surveillance overlay (FBW A380FcuComputer pSurvFilter NONE/WX/TERR):
+ * pressing the selected one deselects it, pressing the other replaces it (docs/ND_TERRAIN.md).
  */
 #include "a380x_elec_power.h"
 #include <stddef.h>
@@ -149,8 +151,10 @@ static int efis_command_handler(XPLMCommandRef command, XPLMCommandPhase phase, 
         EFIS_TOGGLE(EFIS_CSTR, cstr); EFIS_TOGGLE(EFIS_WPT, wpt); EFIS_TOGGLE(EFIS_VORD, vord);
         EFIS_TOGGLE(EFIS_NDB, ndb); EFIS_TOGGLE(EFIS_ARPT, arpt);
         EFIS_TOGGLE(EFIS_VOR1, vor1); EFIS_TOGGLE(EFIS_VOR2, vor2);
-        EFIS_TOGGLE(EFIS_TERR, terr); EFIS_TOGGLE(EFIS_TRAF, traf);
-        EFIS_TOGGLE(EFIS_WX, wx_requested); EFIS_TOGGLE(EFIS_TAXI, taxi_requested);
+        EFIS_TOGGLE(EFIS_TRAF, traf);
+        EFIS_TOGGLE(EFIS_TAXI, taxi_requested);
+        case EFIS_TERR: s->terr = !s->terr; if (s->terr) s->wx_requested = 0; break;
+        case EFIS_WX: s->wx_requested = !s->wx_requested; if (s->wx_requested) s->terr = 0; break;
         EFIS_TOGGLE(EFIS_VV, vv);
 #undef EFIS_TOGGLE
         case EFIS_LS:
@@ -219,11 +223,16 @@ static void efis_update(float dt)
                                      guidance_inputs.powered && refs.side[side].display_valid);
 #define EFIS_READ(field) s->field = XPLMGetDatai(b->field) != 0
         EFIS_READ(cstr); EFIS_READ(wpt); EFIS_READ(vord); EFIS_READ(ndb); EFIS_READ(arpt);
-        EFIS_READ(terr); EFIS_READ(traf);
+        EFIS_READ(traf);
 #undef EFIS_READ
+        {   /* stock EFIS_terrain_on (hardware, other plugins): selecting TERR there replaces WX */
+            int terr = XPLMGetDatai(b->terr) != 0;
+            if (terr && !s->terr) s->wx_requested = 0;
+            s->terr = terr;
+        }
         s->vor1 = XPLMGetDatai(b->vor1) == 2;
         s->vor2 = XPLMGetDatai(b->vor2) == 2;
-        if (XPLMGetDatai(b->wx)) s->wx_requested = 1;
+        if (XPLMGetDatai(b->wx)) { s->wx_requested = 1; s->terr = 0; }
         s->ls = side ? guidance.ls2 : guidance.ls1;
         if (range < 0 || range > 7 || mode < 0 || mode > 4) {
             s->mode = 2;

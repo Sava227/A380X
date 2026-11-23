@@ -8,8 +8,53 @@ from pathlib import Path
 import shutil
 
 from patch_xp_kit_sd import patch_file as patch_sd_html
+from patch_xp_kit_nd import patch_file as patch_nd_html
+from patch_xp_kit_pfd import patch_file as patch_pfd_html
 
 ROOT = Path(__file__).resolve().parents[1]
+EFB_SOURCE = ROOT / 'native/avionics/xp-kit-efb'
+SEVEN_VIEWS = ['captain_pfd', 'first_officer_pfd', 'captain_nd', 'first_officer_nd',
+               'captain_mfd', 'first_officer_mfd', 'ecam_sd']
+NINE_VIEWS = [*SEVEN_VIEWS, 'captain_efb', 'first_officer_efb']
+EFB_FONTS = ('Manrope-Regular.ttf', 'Manrope-Medium.ttf', 'Manrope-SemiBold.ttf', 'Manrope-Bold.ttf',
+             'JetBrainsMono-Regular.ttf', 'OFL.txt')
+
+
+def package_efb(destination):
+    """The web EFB tablet page (views 7/8): one self-contained efb.html plus its OFL fonts.
+
+    Built from the repository sources every time (never reused from an installed package), so
+    the staged page always matches the native frame/action contract of the same build.
+    """
+    destination = Path(destination)
+    template = (EFB_SOURCE / 'efb.html').read_text()
+    css = (EFB_SOURCE / 'efb.css').read_text()
+    script = (EFB_SOURCE / 'efb.js').read_text()
+    if template.count('/*EFB_CSS*/') != 1 or template.count('/*EFB_JS*/') != 1:
+        raise ValueError('EFB template placeholders missing')
+    if '</script' in script or '</style' in css:
+        raise ValueError('EFB sources must not terminate their inline element')
+    for forbidden in ('http://', 'https://', 'fetch(', 'XMLHttpRequest', 'WebSocket', 'import('):
+        if forbidden in script.replace('http://scripts.sil.org', '') or forbidden in css:
+            raise ValueError('EFB page must stay offline: ' + forbidden)
+    html = template.replace('/*EFB_CSS*/', css).replace('/*EFB_JS*/', script)
+    (destination / 'efb.html').write_text(html)
+    fonts = destination / 'Fonts/efb'
+    fonts.mkdir(parents=True, exist_ok=True)
+    for name in EFB_FONTS:
+        with (EFB_SOURCE / 'Fonts/efb' / name).open('rb') as incoming, (fonts / name).open('wb') as outgoing:
+            shutil.copyfileobj(incoming, outgoing, length=1024 * 1024)
+    return hashlib.sha256(html.encode()).hexdigest()
+
+
+def _with_efb(destination, manifest):
+    manifest['views'] = list(NINE_VIEWS)
+    manifest['efb_html_sha256'] = package_efb(destination)
+    manifest['efb_render_resolution'] = [1440, 1000]
+    manifest['asset_hashes'] = {str(p.relative_to(destination)): hashlib.sha256(p.read_bytes()).hexdigest()
+                                for p in Path(destination).rglob('*')
+                                if p.is_file() and p.name != 'manifest.json' and not p.name.startswith('._')}
+    return manifest
 
 
 def reuse_verified_assets(source, destination):
@@ -22,16 +67,18 @@ def reuse_verified_assets(source, destination):
     source, destination = Path(source).resolve(), Path(destination)
     report_path=source.parent/'xp-kit-build-report.json'
     previous=json.loads(report_path.read_text())['xp_kit_native_pfd']
-    expected_views=['captain_pfd','first_officer_pfd','captain_nd','first_officer_nd',
-                    'captain_mfd','first_officer_mfd','ecam_sd']
-    if previous.get('views')!=expected_views or previous.get('browser_server_required') is not False:
-        raise ValueError('Installed view contract is not the complete native seven-view package')
+    # Seven views (before the web EFB) or nine (EFB installed): the EFB page itself is never
+    # reused, it is rebuilt from the repository below.
+    if previous.get('views') not in (SEVEN_VIEWS,NINE_VIEWS) or previous.get('browser_server_required') is not False:
+        raise ValueError('Installed view contract is not the complete native seven-view package (or the nine-view one with the web EFB)')
     hashes=previous.get('asset_hashes',{})
     if not hashes or not all(name in hashes for name in ('pfd.html','nd.html','mfd.html','sd.html','sd-source-manifest.json')):
         raise ValueError('Installed renderer has no complete asset hash manifest')
     verified=[]
     for name,expected in hashes.items():
         relative=Path(name)
+        if name=='efb.html' or name.startswith('Fonts/efb/'):
+            continue   # rebuilt from source by package_efb
         candidate=(source/relative).resolve()
         if relative.is_absolute() or '..' in relative.parts or not candidate.is_relative_to(source):
             raise ValueError('Unsafe renderer asset path: '+name)
@@ -60,6 +107,21 @@ def reuse_verified_assets(source, destination):
         manifest['asset_hashes']=dict(manifest['asset_hashes'])
         manifest['asset_hashes']['sd.html']=manifest['sd_html_sha256']=sd_patch['output_sha256']
         manifest['sd_live_data_patch']=sd_patch
+    # TERRAIN on ND (docs/ND_TERRAIN.md) + FMGC pseudo waypoints: the repository's ND layers, inserted
+    # after the native bridge of the verified ND page (or brought up to date in an already patched one).
+    nd_patch=patch_nd_html(destination/'nd.html')
+    if nd_patch:
+        manifest['asset_hashes']=dict(manifest['asset_hashes'])
+        manifest['asset_hashes']['nd.html']=manifest['nd_html_sha256']=nd_patch['output_sha256']
+        manifest['nd_terrain_patch']=nd_patch
+    # PFD CSS animations (FBW blinking warnings: PULL UP, TERRAIN ...) on the native frame clock
+    # (docs/ND_TERRAIN.md "Terrain alerts"): the repository's clock after the bridge of the verified page.
+    pfd_patch=patch_pfd_html(destination/'pfd.html')
+    if pfd_patch:
+        manifest['asset_hashes']=dict(manifest['asset_hashes'])
+        manifest['asset_hashes']['pfd.html']=manifest['html_sha256']=pfd_patch['output_sha256']
+        manifest['pfd_animation_clock_patch']=pfd_patch
+    _with_efb(destination,manifest)
     (destination/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     return manifest
 
@@ -83,7 +145,7 @@ def package(destination):
         raise ValueError('Native runtime must have exactly one known child-script loader')
     runtime = runtime.replace(loader, 'const RUNTIME_FILES = [];')
     scripts = ['window.__A380_NATIVE=true; window.__a380PfdSource=' + json.dumps(bundle) + ';',
-               (source / 'bridge.js').read_text(), runtime]
+               (source / 'bridge.js').read_text(), (source / 'animation-clock.js').read_text(), runtime]
     scripts.extend((build / 'runtime/msfs' / f).read_text() for f in ('coherent.js', 'simvar.js', 'environment.js', 'instrument.js'))
     html = '<!doctype html><html><head><meta charset="utf-8"><title>A380X cockpit PFD</title><style>' + css + '\nhtml,body{margin:0;width:768px;height:1024px;background:#000}#PFD_CONTENT{width:768px;height:1024px}</style>'
     html += ''.join('<script>' + script.replace('</script', '<\\/script') + '</script>' for script in scripts)
@@ -98,7 +160,7 @@ def package(destination):
     package_nd(destination)
     package_mfd(destination)
     package_sd(destination)
-    manifest['views']=['captain_pfd','first_officer_pfd','captain_nd','first_officer_nd','captain_mfd','first_officer_mfd','ecam_sd']
+    manifest['views']=list(SEVEN_VIEWS)
     manifest['nd_html_sha256']=hashlib.sha256((destination/'nd.html').read_bytes()).hexdigest()
     nd_metadata=json.loads((destination/'nd-source-manifest.json').read_text())
     manifest['nd_render_resolution']=nd_metadata.get('render_resolution',[768,1024])
@@ -106,8 +168,7 @@ def package(destination):
         if key in nd_metadata:manifest[key]=nd_metadata[key]
     manifest['mfd_html_sha256']=hashlib.sha256((destination/'mfd.html').read_bytes()).hexdigest()
     manifest['sd_html_sha256']=hashlib.sha256((destination/'sd.html').read_bytes()).hexdigest()
-    manifest['asset_hashes']={str(p.relative_to(destination)):hashlib.sha256(p.read_bytes()).hexdigest()
-                             for p in destination.rglob('*') if p.is_file() and p.name!='manifest.json' and not p.name.startswith('._')}
+    _with_efb(destination, manifest)
     (destination / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 
 
@@ -126,7 +187,9 @@ def package_nd(destination):
     if runtime.count(loader)!=1: raise ValueError('ND runtime loader mismatch')
     runtime=runtime.replace(loader,'const RUNTIME_FILES = [];')
     scripts=['window.__A380_NATIVE=true; window.__a380NdSource='+json.dumps(bundle)+';',
-             (ROOT/'native/avionics/xp-kit/bridge.js').read_text(),(source/'native-bridge.js').read_text(),runtime]
+             (ROOT/'native/avionics/xp-kit/bridge.js').read_text(),(source/'native-bridge.js').read_text(),
+             (source/'terrain-layer.js').read_text(),   # TERRAIN on ND (docs/ND_TERRAIN.md)
+             (source/'fmgc-pwp-layer.js').read_text(),runtime]   # FMGC pseudo waypoints (tools/patch_xp_kit_nd.py LAYERS)
     scripts.extend((build/'runtime/msfs'/name).read_text() for name in ('coherent.js','simvar.js','environment.js','instrument.js'))
     html='<!doctype html><html><head><meta charset="utf-8"><title>A380X cockpit ND/OANS</title>'
     html+='<meta http-equiv="Content-Security-Policy" content="default-src \'self\' data: file:; script-src \'self\' \'unsafe-inline\' \'unsafe-eval\'; style-src \'self\' \'unsafe-inline\'; connect-src \'none\'">'

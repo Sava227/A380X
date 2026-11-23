@@ -111,8 +111,10 @@ the loaded airport's geometry/name comes from its scenery block.
   Only its calculated straight TF/DF/CF legs are drawn as lines; discontinuities
   are not bridged, and AF/RF/hold turn paths are not invented. TO distance/bearing
   and ETA are geometric estimates, not full FMS performance predictions.
-- Weather/terrain image layers, VNAV profiles and TCAS encounter classification
-  are not ported. Original INOP/standby indications remain. The available received
+- Weather image layers, VNAV profiles and TCAS encounter classification are not ported; the original
+  INOP/standby indications remain (a selected WX shows WXR INOP). TERRAIN on ND is provided by the
+  plugin from X-Plane terrain probes and drawn by `terrain-layer.js` under the FBW symbology
+  ([ND_TERRAIN.md](../../../docs/ND_TERRAIN.md)). The available received
   VOR fields are mapped; this is not a complete radio-navigation implementation.
 - OANS BTV selections do not command X-Plane brakes. No stopping-distance guarantee
   is provided. The airport catalogue is nearby rather than the full Navigraph AMDB;

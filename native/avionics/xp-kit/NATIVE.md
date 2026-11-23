@@ -18,7 +18,9 @@ WebKit. Six views (PFD, ND/OANS and MFD pairs) run at 768×1024. PFD/ND snapshot
 are 384×512; MFD snapshots preserve 768×1024 for dense page text, at up to 20 Hz.
 X-Plane uploads complete, sequence-checked frames on its draw callbacks.
 The offscreen views receive an explicit animation clock, since WebKit suspends
-normal requestAnimationFrame callbacks in hidden windows.
+normal requestAnimationFrame callbacks in hidden windows. The PFD's CSS animations
+(FBW blinking warnings) are advanced on the same clock (`animation-clock.js`,
+inserted by `tools/patch_xp_kit_pfd.py`).
 
 The native plugin remains the source of truth for all sensors, ADIRS alignment,
 source switching, failure validity, power, individual DU brightness, EFIS baro

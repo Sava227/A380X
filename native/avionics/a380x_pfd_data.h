@@ -14,6 +14,7 @@ typedef struct {
     double heading_reference_offset_deg;
     int ap1, ap2, fd1, fd2, athr_armed, athr_active;
     int loc_armed, gs_armed, altitude_armed;
+    int nav_armed, clb_armed, des_armed;   /* FMGC managed modes armed (blue FMA) */
     int guidance_valid, guidance_fault;
     int managed_unavailable, mode_reversion, disconnect_warning;
     /* Positive pitch error commands nose-up; positive roll error commands right. */
@@ -37,6 +38,11 @@ typedef struct {
      * FPPU synchro angles, target markers (-1 = none), F RELIEF and A LOCK. */
     int sfcc_valid, flap_relief, alpha_lock, slat_target_index, flap_target_index;
     double flap_fppu, slat_fppu;
+    /* Shared B1/C1 FMA cell (A380XBc1Message): LAND / FLARE / ROLL OUT replace the G/S and LOC words. */
+    int fma_bc1;
+    /* FMA D3 minimums: 0 none, 1 RADIO (DH), 2 BARO (MDA), 3 NO DH (A380XFmsFeed.minimum_mode). */
+    int fma_minimum_mode;
+    double fma_minimum_ft;
 } A380XPfdGuidance;
 
 /* Native FMS outputs consumed by the existing PFD/guidance boundary (spec 07 section 10.2).
@@ -47,6 +53,16 @@ typedef struct {
     int managed_speed_valid, managed_speed_is_mach;
     double managed_speed_knots, managed_mach;
     double f_speed_knots, s_speed_knots; /* FMS F / S operating speeds, 0 = none */
+    /* PERF APPR minimum for the FMA D3 cell: 0 none, 1 RADIO (DH ft), 2 BARO (MDA ft), 3 NO DH. */
+    int minimum_mode;
+    double minimum_ft;
+    /* FMGC managed guidance (a380x_fmgc_guidance.c); all zero = no managed lateral/vertical guidance.
+     * route_* use the FBW HPATH convention (A380XGuidanceInputs). */
+    int route_valid, nav_capture, vertical_valid, altitude_is_constraint;
+    double route_xtk_nm, route_track_error_deg, route_bank_deg, managed_heading_deg;
+    double managed_altitude_ft, cruise_altitude_ft;
+    int path_valid, path_idle, before_tod, phase_valid, phase;
+    double path_altitude_ft, path_vs_fpm, vdev_ft;
 } A380XFmsFeed;
 
 /* FMS F/S speeds use the FBW A380 PRIM visibility rule (A380PrimComputerFe v_3/v_4_visible: F at

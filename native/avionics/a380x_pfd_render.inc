@@ -11,6 +11,7 @@ static const Color MAGENTA = {1.0f, 0.22f, 0.95f};
 static void ewd_font_draw(float x, float y, const char *text, float size,
                           Color color, float tracking, int anchor);
 static void ewd_font_clip_y(float y0, float y1);
+#include "a380x_terrain_render.inc"   /* TERRAIN on ND image, TERR box, pointer elevation readout */
 
 typedef struct { int mach_visible, excessive_attitude; } PfdDisplayState;
 static PfdDisplayState pfd_display_state[2];
@@ -987,6 +988,9 @@ static void draw_fma(const PfdCanvas *p, const Side *side)
 {
     int active_vertical = pfd_guidance.guidance_valid ? published.fma_b1 : A380X_B1_NONE;
     int active_lateral = pfd_guidance.guidance_valid ? published.fma_c1 : A380X_C1_NONE;
+    /* FMA.tsx BC1Cell: LAND / FLARE / ROLL OUT span B1 and C1 and replace G/S and LOC. */
+    int shared_mode = pfd_guidance.guidance_valid ? pfd_guidance.fma_bc1 : A380X_BC1_NONE;
+    static const char *const shared_text[] = {"", "LAND", "FLARE", "ROLL OUT"};
     int active_thrust = published.fma_a1a2;
     if (!pfd_guidance.athr_active && active_thrust >= A380X_A1A2_SPEED && active_thrust <= A380X_A1A2_TOGA_LK)
         active_thrust = A380X_A1A2_NONE;
@@ -999,12 +1003,15 @@ static void draw_fma(const PfdCanvas *p, const Side *side)
     const char *brake_mode = (center_right.autobrake_armed >= 0 && center_right.autobrake_armed < 7)
         ? brake_modes[center_right.autobrake_armed] : "";
     static const float borders[] = {33.117f,66.241f,102.52f,133.72f};
+    if (shared_mode < 0 || shared_mode > A380X_BC1_ROLL_OUT) shared_mode = A380X_BC1_NONE;
+    if (shared_mode) { active_vertical = A380X_B1_NONE; active_lateral = A380X_C1_NONE; b1 = c1 = ""; }
     char vertical_text[24], armed_vertical[20], fd_status[8];
     const char *ap_status = pfd_guidance.ap1 ? (pfd_guidance.ap2 ? "AP1+2" : "AP1") :
                             (pfd_guidance.ap2 ? "AP2" : "");
     int i;
     int side_index = side == &refs.side[1] ? 1 : 0;
-    for (i = 0; i < ARRAY_LEN(borders); ++i) pfd_line(p,borders[i],0.337f,borders[i],21.201f,GREY);
+    for (i = 0; i < ARRAY_LEN(borders); ++i)
+        if (!shared_mode || i != 1) pfd_line(p,borders[i],0.337f,borders[i],21.201f,GREY);
     if (center_right.autobrake_active) {
         pfd_text_center(p,16.782f,7.128f,brake_mode,GREEN);
     } else if (strncmp(a1,"MAN ",4) == 0) {
@@ -1033,14 +1040,36 @@ static void draw_fma(const PfdCanvas *p, const Side *side)
     if (!pfd_guidance.mode_reversion || ((int)(XPLMGetElapsedTime()*2.0f))%2==0)
         pfd_text_center(p,49.922f,7.104f,b1,GREEN);
     if (pfd_guidance.guidance_valid && pfd_guidance.mode_reversion) pfd_box(p,34.0f,1.0f,65.4f,8.7f,WHITE);
+    /* Armed vertical: managed CLB / DES first (FBW B2Cell priority), then ALT, G/S. */
     snprintf(armed_vertical,sizeof(armed_vertical),"%s%s%s",
-             pfd_guidance.altitude_armed ? "ALT" : "",
-             pfd_guidance.altitude_armed && pfd_guidance.gs_armed ? " " : "",
+             pfd_guidance.clb_armed ? "CLB" : pfd_guidance.des_armed ? "DES" : pfd_guidance.altitude_armed ? "ALT" : "",
+             (pfd_guidance.clb_armed || pfd_guidance.des_armed || pfd_guidance.altitude_armed) && pfd_guidance.gs_armed ? " " : "",
              pfd_guidance.gs_armed ? "G/S" : "");
     if (pfd_guidance.guidance_valid) pfd_text_center(p,49.922f,14.36f,armed_vertical,CYAN);
     if (pfd_guidance.guidance_valid && pfd_guidance.loc_armed) pfd_text_center(p,84.857f,14.36f,"LOC",CYAN);
+    else if (pfd_guidance.nav_armed) pfd_text_center(p,84.857f,14.36f,"NAV",CYAN);
     pfd_text_center(p,84.857f,6.987f,c1,GREEN);
-    pfd_text_center(p,118.459f,7.126f,d1,WHITE);
+    if (shared_mode) {
+        pfd_text_center(p,67.85f,7.05f,shared_text[shared_mode],GREEN);
+        fma_change_box(p,side_index,6,shared_mode,34.0f,1.0f,101.7f,8.7f,WHITE);
+    } else fma_change_box(p,side_index,6,0,34.0f,1.0f,101.7f,8.7f,WHITE);
+    /* D1/D2 landing capability (FBW D1D2Cell): LAND 3 on two lines (SINGLE / DUAL), change box. */
+    if (published.fma_d1d2 == A380X_D1D2_LAND_3_SINGLE || published.fma_d1d2 == A380X_D1D2_LAND_3_DUAL) {
+        pfd_text_center(p,118.459f,7.126f,"LAND 3",WHITE);
+        pfd_text_center(p,118.398f,14.29f,published.fma_d1d2 == A380X_D1D2_LAND_3_DUAL ? "DUAL" : "SINGLE",WHITE);
+        fma_change_box(p,side_index,7,published.fma_d1d2,107.1f,1.814f,130.09f,15.32f,WHITE);
+    } else {
+        pfd_text_center(p,118.459f,7.126f,d1,WHITE);
+        fma_change_box(p,side_index,7,published.fma_d1d2,107.1f,1.814f,130.09f,7.862f,WHITE);
+    }
+    /* D3 minimums (FBW D3Cell): NO DH, or RADIO / BARO with the value in cyan. */
+    if (pfd_guidance.fma_minimum_mode == 3) pfd_text_center(p,118.384f,21.104f,"NO DH",WHITE);
+    else if (pfd_guidance.fma_minimum_mode == 1 || pfd_guidance.fma_minimum_mode == 2) {
+        char minimum[16];
+        snprintf(minimum,sizeof(minimum),"%.0f",pfd_guidance.fma_minimum_ft);
+        pfd_text_sized(p,103.47f,21.104f,pfd_guidance.fma_minimum_mode == 1 ? "RADIO" : "BARO",WHITE,4.5f,0);
+        pfd_text_sized(p,133.425f,21.104f,minimum,CYAN,6.0f,2);
+    }
     fma_change_box(p,side_index,1,active_vertical,34.0f,1.0f,65.4f,8.7f,WHITE);
     fma_change_box(p,side_index,2,active_lateral,67.1f,1.0f,101.7f,8.7f,WHITE);
     pfd_text_center(p,145.62f,6.956f,ap_status,WHITE);
@@ -1098,6 +1127,12 @@ static void draw_pfd(const Side *side, float x, float y, const char *side_name)
     draw_landing_system(&p,side);
     if (pfd_guidance.stall_warning && !pfd_guidance.on_ground)
         pfd_text_sized(&p,68.906f,100.0f,"STALL",RED,7.0f,1);
+    /* TAWS / GPWS (FBW AttitudeIndicatorWarningsA380, same place): PULL UP (TAWS warning, GPWS modes
+     * 1/2), else TERRAIN (TAWS caution); the stall warning has priority. */
+    else if (nd_data.taws_warning || nd_data.gpws_pull_up)
+        pfd_text_sized(&p,68.906f,100.0f,"PULL UP",RED,7.0f,1);
+    else if (nd_data.taws_caution)
+        pfd_text_sized(&p,68.906f,100.0f,"TERRAIN",AMBER,7.0f,1);
     if (pfd_excessive_attitude(side)) {
         /* FBW attitude declutter hides radio height until the recovery bounds. */
     } else if (!side->radio_altitude_valid || !isfinite(side->radio_altitude_value)) {
@@ -1258,27 +1293,12 @@ static void nd_diamond(float x,float y,float size,Color color)
     line(x,y-size,x-size,y,color); line(x-size,y,x,y+size,color);
 }
 
+/* TERRAIN on ND (a380x_terrain_render.inc): the side's swept EGPWS raster under the map symbols,
+ * scaled to this map and clipped to its box. Nothing while TERR is off or unavailable. */
 static void nd_draw_terrain(const EfisNdCanvas *map,int side)
 {
-    const EfisNdTerrain *terrain=&nd_data.terrain[side];
-    int i;
-    float size=terrain->span_nm*.10f*map->radius/map->range_nm;
     if (!efis[side].terr || efis[side].zoom) return;
-    size=fmaxf(1.0f,fminf(12.0f,size));
-    for (i=0;i<EFIS_ND_TERRAIN_COUNT;++i) {
-        const EfisNdTerrainPoint *point=&terrain->points[i];
-        float px,py,relative;
-        Color color;
-        if (!point->valid || point->water ||
-            !nd_map_point(map,point->lat,point->lon,&px,&py) ||
-            !nd_map_visible(map,px,py,size)) continue;
-        relative=point->altitude_ft-nd_data.altitude_ft;
-        if (relative>2000.0f) color=(Color){.50f,.025f,.01f};
-        else if (relative>-500.0f) color=(Color){.44f,.25f,.01f};
-        else if (relative>-2000.0f) color=(Color){.035f,.20f,.035f};
-        else color=(Color){.01f,.065f,.02f};
-        rectangle(map->cx+px-size,map->cy+py-size,map->cx+px+size,map->cy+py+size,color);
-    }
+    terrain_gl_draw(side,map->cx,map->cy,map->radius/map->range_nm,map->clip_l,map->clip_r,map->clip_b,map->clip_t);
 }
 
 /* ---- Native FMS flight plan on the ND (FBW: ACTIVE solid green, TMPY dashed yellow, missed
@@ -1373,12 +1393,15 @@ static void nd_draw_fpln_plan(const EfisNdCanvas *map,int side,int plan_index)
     }
 }
 
+#include "a380x_nd_pwp.inc"   /* FMGC pseudo waypoints (T/C, T/D, DECEL, level-off ...) */
+
 /* Returns 1 when the native FMS has a route to show (the stock X-Plane FMS route is then ignored). */
 static int nd_draw_fms_route(const EfisNdCanvas *map,int side)
 {
     int drew=0;
     if (nd_fpln_plan_drawable(A380X_PLAN_ACTIVE)) { nd_draw_fpln_plan(map,side,A380X_PLAN_ACTIVE); drew=1; }
     if (nd_fpln_plan_drawable(A380X_PLAN_TEMPORARY)) { nd_draw_fpln_plan(map,side,A380X_PLAN_TEMPORARY); drew=1; }
+    if (nd_fpln_plan_drawable(A380X_PLAN_ACTIVE)) nd_draw_fmgc_pwps(map,side);
     return drew;
 }
 
@@ -1622,7 +1645,15 @@ static void draw_nd(const Side *side, float x, float y, const char *side_name)
     else if(nd_data.route_count==0&&mode>=2&&!nd_fpln_plan_drawable(A380X_PLAN_ACTIVE)&&
             !nd_fpln_plan_drawable(A380X_PLAN_TEMPORARY)) text_at(x+8,y+183,"NO F-PLN",GREY);
     if(efis[index].wx_requested) text_at(x+116,y+183,"WX INOP",AMBER);
-    else if(efis[index].terr && !efis[index].zoom) text_at(x+98,y+183,nd_data.terrain[index].valid_count?"TERR LOCAL":"TERR N/A",nd_data.terrain[index].valid_count?GREEN:AMBER);
+    else if(efis[index].terr && !efis[index].zoom) {
+        /* TERRAIN on ND: highest / lowest elevation in hundreds of feet (FBW TERR box values). */
+        char upper[16],lower[16];
+        if(!nd_data.terrain[index].on) text_at(x+98,y+183,"TERR N/A",AMBER);
+        else if(terr_threshold_text(&nd_data.terrain[index].shown,upper,lower)) {
+            snprintf(value,sizeof(value),"TERR%s%s%s",upper,lower[0]?"/":"",lower);
+            text_at(x+86,y+183,value,CYAN);
+        } else text_at(x+120,y+183,"TERR",CYAN);
+    }
     else if(efis[index].traf) text_at(x+129,y+183,nd_data.traffic_available?"TRAF":"TCAS N/A",CYAN);
     if(pfd_glare.chrono_mode[index]) {
         int seconds=pfd_glare.chrono_mode[index]==2?pfd_glare.chrono_frozen[index]:pfd_glare.chrono_seconds[index];

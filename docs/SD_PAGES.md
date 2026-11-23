@@ -1005,6 +1005,13 @@ Every variable read by the pages, with the class (see `tools/sd_pages_census.py`
 
 <!-- sd-census:end -->
 
+DOOR page escape slides: FBW's DoorPage passes `LIGHT BEACON ON` (a TODO proxy) as "slide armed" to
+every door. The SD frame also publishes the native per-door state `L:A380X_SLIDE_ARMED:<n>` (n =
+interactive point, from the EFB's `a380x/xp12/efb/slide_armed`, docs/EFB_DEVELOPMENT.md section 7). The
+version 2 edit of `tools/patch_xp_kit_sd.py` (marker `/*A380X-SD-SLIDES v1*/`, applied over a v1 or an
+original bundle) makes each CabinDoor prefer that value; without it the FBW proxy stays in effect.
+(This note is kept outside the generated census above so `sd_pages_census.py --write` keeps it.)
+
 ## Tests and build
 
 * `native/avionics/test_sd_data.c` (built and run by `build.py`, also compiled with MinGW

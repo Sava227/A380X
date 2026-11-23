@@ -1,10 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * A380 FCU state adapter; actual AP/FD outer-loop laws are vendored FlyByWire.
- * This is not the complete PRIM/FCU/FMS computer network or an autoland system.
+ * This is not the complete PRIM/FCU/FMS computer network. LAND/FLARE/ROLL OUT, RETARD and
+ * SRS GA / GA TRK follow the FBW PRIM FG mode logic (a380x_autoland.h, docs/AUTOLAND.md).
  */
 #ifndef A380X_GUIDANCE_H
 #define A380X_GUIDANCE_H
+#include <stddef.h>
 #include "a380x_avionics_core.h"
+#include "a380x_autoland.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -14,6 +17,11 @@ typedef struct {
     double loc_deviation_dots; /* positive: localizer needle RIGHT */
     double gs_deviation_dots;  /* positive: glideslope needle UP */
     double course_deg, gs_angle_deg, distance_nm; /* course is MAGNETIC */
+    /* Optional: distance to the LOCALIZER antenna (the DME is often at the glide antenna). The
+     * ROLL OUT law converts the angular deviation to metres with it; zero/invalid = use DME. */
+    int localizer_distance_valid;
+    double localizer_distance_nm;
+    double frequency_mhz;   /* tuned frequency, 0 = unknown (LAND capability: both receivers on one ILS) */
 } A380XIlsInputs;
 
 typedef struct {
@@ -54,6 +62,29 @@ typedef struct {
      * N1 to the lever's N1), replacing the 0.88-at-CL approximation when valid. */
     int athr_inhibited, athr_ceiling_valid;
     double athr_ceiling;
+    /* FMGC managed guidance (a380x_fmgc_guidance.c through the FMS adapter, docs/AUTOPILOT_DEVELOPMENT.md);
+     * all zero = absent. route_xtk_nm / route_track_error_deg / route_bank_deg above follow the FBW
+     * HPATH law convention: xtk > 0 = path to the RIGHT of the aircraft, track error > 0 = desired
+     * track to the RIGHT, bank > 0 = right-wing-down feed-forward. */
+    int managed_nav_capture;            /* NAV may engage now (capture zone reached / course leg) */
+    int managed_altitude_is_constraint; /* managed_altitude_ft is an FMS constraint, not the FCU altitude */
+    double managed_cruise_altitude_ft;  /* FMS CRZ altitude (ALT CRZ), 0 = none */
+    int managed_path_valid;             /* descent path computed */
+    double managed_path_altitude_ft, managed_path_vs_fpm, managed_vdev_ft; /* vdev > 0: above the path */
+    int managed_path_idle, managed_before_tod;
+    int fms_phase_valid, fms_phase;     /* FMGC flight phase (A380XFmsPhase numbering) */
+    double fms_v2_knots;                /* takeoff V2 for SRS, 0 = none */
+    /* Landing (a380x_autoland.inc). Missing data keeps LAND/GA unavailable: radio_height_ft is 0
+     * when invalid, so LAND requires radio_height_valid; GA requires a flap handle index >= 1. */
+    int radio_height_valid, flap_handle_index;
+    double rudder_ratio; /* pilot rudder pedal position [-1,1], +right; FBW ROLL OUT entry value */
+    /* LAND capability redundancy as the simulator provides it (a380x_autoland.inc landing_capability):
+     * captain/F-O radio altimeters and ADIRS sides, both hydraulic systems pressurized, no rudder
+     * failure, the rudder (yaw) override available to the AP. Zero = not available. */
+    int side_radio_height_valid[2];
+    double side_radio_height_ft[2];
+    int side_attitude_valid[2], side_airdata_valid[2];
+    int hydraulics_valid, rudder_valid, yaw_channel_available;
 } A380XGuidanceInputs;
 
 typedef enum {
@@ -97,10 +128,31 @@ typedef struct {
     double held_altitude_ft, last_selected_altitude_ft;
     int have_previous_ils, previous_powered, takeoff_detent_active, all_levers_idle;
     int alpha_floor_latched, alpha_floor_inhibited, initialized;
+    /* FMGC managed modes (a380x_guidance_managed.inc). Public: armed modes and the ALT CST / ALT CRZ
+     * qualifiers of ALT / ALT* (FG discrete words 2 and 3, bits 28/29). */
+    int nav_armed, clb_armed, des_armed, alt_constraint, alt_cruise;
+    int des_submode;                    /* DES: 0 on path, 1 above path / no path (idle, speed on pitch), 2 below (V/S) */
+    int des_thrust_idle;                /* DES A/THR THR IDLE (else SPEED/MACH) */
+    int cst_capture_inhibit;            /* DES on a path that descends through the constraint: no ALT CST* */
+    int vertical_law_override;          /* FBW vertical law selector for the bridge, 0 = mode default */
+    int vpath_valid;                    /* bridge: fms_H_c_profile / fms_H_dot_c_profile below */
+    double vpath_altitude_ft, vpath_vs_fpm;
+    /* private */
+    int managed_climb, nav_auto_armed, clb_disarmed, athr_speed_prev;
+    double cst_capture_ft, ias_prev, ias_rate;
+    /* LAND/FLARE/ROLL OUT/RETARD/GA sub-state and the yaw (rudder) actuator output. */
+    A380XLandingState land;
 } A380XGuidanceState;
+
+/* FMA vertical message including the ALT CST / ALT CRZ qualifiers (for the native PFD and FMS). */
+A380XB1Message a380x_guidance_fma_vertical(const A380XGuidanceState *state);
 
 void a380x_guidance_init(A380XGuidanceState *state, const A380XGuidanceInputs *inputs);
 void a380x_guidance_destroy(A380XGuidanceState *state);
+/* Why AP/FD/A-THR cannot engage now (for the on-screen and log diagnostics); returns the number of
+ * problems written to out (0 = can engage). */
+int a380x_guidance_engage_problems(const A380XGuidanceState *state, const A380XGuidanceInputs *inputs,
+                                   char *out, size_t size);
 /* amount is signed detents for ROTATE; other commands ignore it. */
 void a380x_guidance_command(A380XGuidanceState *state, const A380XGuidanceInputs *inputs,
                            A380XFcuCommand command, double amount);

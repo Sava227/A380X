@@ -128,6 +128,9 @@ void XPLMCommandOnce(XPLMCommandRef ref) {
 }
 float XPLMGetElapsedTime(void) { return mock_clock; }
 void XPLMDebugString(const char *message) {size_t n=strlen(mock_debug);snprintf(mock_debug+n,sizeof(mock_debug)-n,"%s",message);}
+static char mock_spoken[512];
+void XPLMGetSystemPath(char *out) {out[0]=0;}
+void XPLMSpeakString(const char *text) {snprintf(mock_spoken,sizeof(mock_spoken),"%s",text);}
 void XPLMGetNthAircraftModel(int index,char *filename,char *path) {
     assert(index==0);strcpy(filename,"User Selected Aircraft.acf");strcpy(path,mock_aircraft_path);
 }
@@ -253,7 +256,7 @@ static void command(const char *suffix) {
 }
 static void engage(void) {tick(70);command("ap1_toggle");tick(1);assert(guidance.ap1&&fcu.own_pitch&&fcu.own_roll);}
 static void test_registry_and_partial_init(void) {
-    int i,j;setup();assert(fcu_init());assert(ARRAY_LEN(fcu_commands)==32&&ARRAY_LEN(fcu_outputs)==25);
+    int i,j;setup();assert(fcu_init());assert(ARRAY_LEN(fcu_commands)==32&&ARRAY_LEN(fcu_outputs)==32);
     for(i=0;i<ARRAY_LEN(fcu_commands);++i){assert(fcu_commands[i].handle);for(j=0;j<i;++j)assert(strcmp(fcu_commands[i].name,fcu_commands[j].name));}
     for(i=0;i<ARRAY_LEN(fcu_outputs);++i)assert(r(fcu_outputs[i].handle)->registered&&!r(fcu_outputs[i].handle)->writable);
     command("speed_up");assert(guidance.selected_speed_knots==251);
@@ -342,8 +345,9 @@ static void test_clean_performance_boundary(void) {
     assert(pfd_clean_vls(NAN,10000)==0&&pfd_clean_vls(400000,NAN)==0);
     assert(pfd_guidance.clean_performance_valid&&guidance_inputs.vls_knots>0);
     assert(!pfd_guidance.envelope_valid&&!pfd_guidance.alpha_prot_knots&&
-           !pfd_guidance.alpha_limit_knots&&!pfd_guidance.stall_warning_knots&&
-           !pfd_guidance.f_speed_knots&&!pfd_guidance.s_speed_knots);
+           !pfd_guidance.alpha_limit_knots&&!pfd_guidance.f_speed_knots&&!pfd_guidance.s_speed_knots);
+    /* Port VSW without a provider (FBW VS1g tables, max(1.05 VS1g, VS1g + 5 kt) at 1 g): shown, below VLS. */
+    assert(pfd_guidance.stall_warning_knots>100&&pfd_guidance.stall_warning_knots<guidance_inputs.vls_knots);
     r(pfd_input_refs[PI_FLAP_HANDLE])->value=.01;tick(1);
     assert(!pfd_guidance.clean_performance_valid&&!pfd_guidance.vls_knots);
     r(pfd_input_refs[PI_FLAP_HANDLE])->value=0;r(pfd_input_refs[PI_FLAP_ACTUAL])->value=.001;tick(1);
@@ -415,9 +419,60 @@ static void test_override_lifecycles(void) {
     setup();assert(fcu_init());engage();r(fcu.override_roll)->value=0;tick(1);assert(!guidance.ap1&&!fcu.own_pitch&&!fcu.own_roll);
     command("athr_toggle");tick(1);assert(fcu.own_throttle);r(fcu.override_throttle)->value=0;tick(1);assert(!guidance.athr_armed&&!guidance.athr_active&&!fcu.own_throttle);
     r(fcu.override_throttle)->value=1;command("athr_toggle");assert(!guidance.athr_armed);
+    assert(strstr(mock_spoken,"A/THR not armed"));
     guidance.athr_armed=1;tick(1);assert(!guidance.athr_active&&XPLMGetDatai(fcu.override_throttle)==1);
     r(fcu.override_pitch)->value=1;command("ap1_toggle");assert(!guidance.ap1);
+    assert(strstr(mock_spoken,"AP1 not engaged: the flight controls are held by another add-on"));
     fcu_shutdown();assert(XPLMGetDatai(fcu.override_pitch)==1&&XPLMGetDatai(fcu.override_throttle)==1);
+}
+/* Rudder/nosewheel lease (a380x_autoland.inc ALIGN / ROLL OUT): same ownership and release rules. */
+static void land_rollout_state(void) {
+    guidance.land.land_active=guidance.land.flare_active=guidance.land.rollout_active=1;
+    guidance.land.rollout_confirm_s=guidance.land.flare_confirm_s=1;
+}
+/* LAND capability redundancy inputs and the annunciated D1/D2 message (a380x_autoland.inc). */
+static void test_land_capability_inputs(void) {
+    setup();assert(fcu_init());
+    r(fcu.hydraulic_pressure[0])->value=3000;r(fcu.hydraulic_pressure[1])->value=3000;read_guidance_inputs(.1f);
+    assert(guidance_inputs.hydraulics_valid&&guidance_inputs.rudder_valid&&guidance_inputs.yaw_channel_available);
+    assert(guidance_inputs.side_attitude_valid[0]&&guidance_inputs.side_attitude_valid[1]);
+    assert(guidance_inputs.side_airdata_valid[0]&&guidance_inputs.side_airdata_valid[1]);
+    assert(fabs(guidance_inputs.ils[0].frequency_mhz-110.30)<.001&&fabs(guidance_inputs.ils[1].frequency_mhz-110.30)<.001);
+    r(fcu.hydraulic_pressure[1])->value=500;read_guidance_inputs(.1f);assert(!guidance_inputs.hydraulics_valid);
+    r(fcu.rudder_failure[1])->value=6;read_guidance_inputs(.1f);assert(!guidance_inputs.rudder_valid);
+    r(fcu.rudder_failure[1])->value=0;r(fcu.override_heading)->value=1;read_guidance_inputs(.1f);
+    assert(guidance_inputs.rudder_valid&&!guidance_inputs.yaw_channel_available);
+    r(fcu.override_heading)->value=0;refs.side[1].radio_altitude_valid=0;read_guidance_inputs(.1f);
+    assert(guidance_inputs.side_radio_height_valid[0]&&!guidance_inputs.side_radio_height_valid[1]);
+    refs.side[1].radio_altitude_valid=1;
+    guidance.land.capability=A380X_LAND_CAPABILITY_LAND3_DUAL;publish_guidance();assert(published.fma_d1d2==A380X_D1D2_LAND_3_DUAL);
+    guidance.land.capability=A380X_LAND_CAPABILITY_LAND3_SINGLE;publish_guidance();assert(published.fma_d1d2==A380X_D1D2_LAND_3_SINGLE);
+    guidance.land.capability=A380X_LAND_CAPABILITY_LAND2;publish_guidance();assert(published.fma_d1d2==A380X_D1D2_LAND_2);
+    guidance.land.capability=A380X_LAND_CAPABILITY_NONE;guidance.approach_selected=1;publish_guidance();
+    assert(published.fma_d1d2==A380X_D1D2_APPR_1);
+    fcu_shutdown();
+}
+static void test_yaw_lease(void) {
+    setup();assert(fcu_init());engage();assert(!fcu.own_yaw);
+    land_rollout_state();tick(1);
+    assert(guidance.land.yaw_active&&fcu.own_yaw&&XPLMGetDatai(fcu.override_heading)==1);
+    assert(!pilot_override());   /* our own pedal output is not a pilot pedal input */
+    r(fcu.paused)->value=1;tick(1);assert(!fcu.own_yaw&&XPLMGetDatai(fcu.override_heading)==0);
+    r(fcu.paused)->value=0;tick(1);assert(fcu.own_yaw&&guidance.ap1);
+    r(fcu.replay)->value=1;tick(1);assert(!fcu.own_yaw);r(fcu.replay)->value=0;tick(1);assert(fcu.own_yaw);
+    command("ap_disconnect");assert(!fcu.own_yaw&&XPLMGetDatai(fcu.override_heading)==0&&XPLMGetDataf(fcu.pilot_rudder)==0);
+    command("ap1_toggle");tick(1);assert(guidance.ap1&&fcu.own_yaw);
+    r(fcu.override_heading)->value=0;tick(1);   /* lease taken away by someone else */
+    assert(!guidance.ap1&&!fcu.own_yaw&&!fcu.own_pitch);
+    r(fcu.override_heading)->value=1;command("ap1_toggle");tick(1);   /* foreign owner when yaw is needed */
+    assert(!guidance.ap1&&!fcu.own_yaw&&XPLMGetDatai(fcu.override_heading)==1);
+    fcu_shutdown();assert(XPLMGetDatai(fcu.override_heading)==1);   /* a foreign lease is never cleared */
+    setup();assert(fcu_init());engage();land_rollout_state();tick(1);assert(fcu.own_yaw);
+    r(fcu.axis_assignments)->array_i[2]=3;r(fcu.axis_minimum)->array_f[2]=0;r(fcu.axis_maximum)->array_f[2]=1;
+    r(fcu.axis_values)->array_f[2]=.95f;tick(1);   /* physical pedals pushed: pilot override */
+    assert(!guidance.ap1&&!fcu.own_yaw&&XPLMGetDatai(fcu.override_heading)==0);
+    r(fcu.axis_values)->array_f[2]=.5f;command("ap1_toggle");tick(1);assert(fcu.own_yaw);
+    fcu_shutdown();assert(XPLMGetDatai(fcu.override_heading)==0&&!fcu.own_yaw);
 }
 static void test_hardware_and_disconnect(void) {
     setup();assert(fcu_init());r(fcu.axis_assignments)->array_i[0]=1;
@@ -426,6 +481,21 @@ static void test_hardware_and_disconnect(void) {
     r(fcu.axis_values)->array_f[0]=.3f;command("ap1_toggle");tick(1);assert(guidance.ap1);
     XPLMCommandOnce(fcu.native_disconnect);assert(!guidance.ap1&&!fcu.own_pitch&&!fcu.own_roll);
     command("ap1_toggle");tick(1);r(refs.avionics_power)->value=0;tick(1);assert(!guidance.ap1&&!guidance.athr_armed&&!fcu.own_pitch);
+    fcu_shutdown();
+}
+/* AP pressed on the ground is kept and engages after liftoff above 100 ft; a second press cancels. */
+static void test_ap_after_liftoff(void) {
+    setup();assert(fcu_init());
+    r(refs.on_ground)->value=1;refs.side[0].radio_altitude_value=0;tick(10);
+    command("ap1_toggle");tick(1);assert(!guidance.ap1&&afs_ap_pending==1&&strstr(mock_spoken,"AP1 armed"));
+    r(refs.on_ground)->value=0;refs.side[0].radio_altitude_value=50;tick(2);assert(!guidance.ap1&&afs_ap_pending==1);
+    refs.side[0].radio_altitude_value=150;tick(2);
+    assert(guidance.ap1&&!afs_ap_pending&&fcu.own_pitch&&strstr(mock_spoken,"AP1 engaged"));
+    command("ap1_toggle");tick(1);assert(!guidance.ap1&&!fcu.own_pitch);
+    r(refs.on_ground)->value=1;refs.side[0].radio_altitude_value=0;tick(2);
+    command("ap1_toggle");assert(afs_ap_pending==1);command("ap1_toggle");assert(!afs_ap_pending&&!guidance.ap1);
+    command("ap1_toggle");assert(afs_ap_pending==1);command("ap_disconnect");assert(!afs_ap_pending);
+    refs.side[0].radio_altitude_value=8000;r(refs.on_ground)->value=0;
     fcu_shutdown();
 }
 static int calibration_text(const char *text,size_t length) {
@@ -532,11 +602,13 @@ int main(int argc,char **argv) {
         lighting_shutdown();fcu_shutdown();return 0;
     }
     test_registry_and_partial_init();test_raw_sensor_and_radio_contracts();test_override_lifecycles();test_hardware_and_disconnect();
+    test_yaw_lease();test_land_capability_inputs();
     test_glareshield_lighting();
     test_display_unit_controls();
     test_pfd_aircraft_inputs();
     test_clean_performance_boundary();
     test_thrust_calibration_parser();test_raw_pilot_thrust_boundary();test_stock_authority_bridge();
     test_individual_engine_lever_limits();
+    test_ap_after_liftoff();
     puts("a380x FCU XPLM adapter tests passed");return 0;
 }

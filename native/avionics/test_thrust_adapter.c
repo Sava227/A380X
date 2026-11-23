@@ -296,6 +296,8 @@ static void setup_sim(void)
     new_ref("a380x/xp12/fms/fmc_b_healthy", xplmType_Int);
     new_ref("a380x/xp12/fms/fmc_c_healthy", xplmType_Int);
     XPLMRegisterCommandHandler(XPLMCreateCommand(THR_FCU_DISCONNECT, "FCU A/THR disconnect"), fcu_disconnect, 1, NULL);
+    XPLMCreateCommand("sim/engines/throttle_up", "Throttle up a bit");
+    XPLMCreateCommand("sim/engines/throttle_down", "Throttle down a bit");
     fcu_thrust.calibrated = 1;
     fcu_thrust.idle = 0.01; fcu_thrust.cl = 25.0 / 45.0; fcu_thrust.mct = 35.0 / 45.0; fcu_thrust.toga = 1.0;
     fcu_thrust.tolerance = 0.02;
@@ -348,6 +350,45 @@ static void test_hardware_adoption(void)
     for (i = 0; i < 4; ++i) assert(pub(i == 0 ? T("tla_1") : i == 1 ? T("tla_2") : i == 2 ? T("tla_3") : T("tla_4")) == 25.0);
     assert(ratio()[2] == 0.565f);                  /* never written back: the axis is not fought */
     assert(plays == before + 1);                   /* four levers into CL together: one click */
+    for (i = 0; i < 4; ++i) ratio()[i] = 0.0f;
+    frame(0.05f);
+    run(0.1f);
+}
+
+/* Keyboard throttle steps stop in CL while the key is held; the detent commands set all levers. */
+static void test_keyboard_detents(void)
+{
+    MockCommand *up = (MockCommand *)XPLMFindCommand("sim/engines/throttle_up");
+    const float cl = (float)(25.0 / 45.0);
+    int i, step;
+    assert(up && up->handlers == 1 && XPLMFindCommand("sim/engines/throttle_down"));
+    for (i = 0; i < 4; ++i) ratio()[i] = 0.40f;
+    frame(0.05f);                                   /* adopted below CL, no key */
+    XPLMCommandBegin(up);
+    for (step = 0; step < 10; ++step) {             /* X-Plane moves its handle while the key is held */
+        for (i = 0; i < 4; ++i) ratio()[i] += 0.03f;
+        frame(0.05f);
+    }
+    for (i = 0; i < 4; ++i) assert(fabsf(ratio()[i] - cl) < 1e-6f);   /* stopped in CL, written back */
+    assert(pub(T("tla_1")) == 25.0 && pub(T("tla_4")) == 25.0);
+    XPLMCommandEnd(up);
+    run(0.2f);
+    XPLMCommandBegin(up);
+    for (i = 0; i < 4; ++i) ratio()[i] += 0.03f;    /* the next press leaves CL */
+    frame(0.05f);
+    XPLMCommandEnd(up);
+    run(0.2f);
+    assert(pub(T("tla_1")) > 25.5 && pub(T("tla_1")) < 35.0);
+    XPLMCommandOnce(XPLMFindCommand(T("levers_cl"))); frame(0.05f);
+    for (i = 0; i < 4; ++i) assert(fabsf(ratio()[i] - cl) < 1e-6f);
+    XPLMCommandOnce(XPLMFindCommand(T("levers_detent_up"))); frame(0.05f);
+    assert(pub(T("tla_2")) == 35.0);
+    XPLMCommandOnce(XPLMFindCommand(T("levers_detent_down"))); frame(0.05f);
+    assert(pub(T("tla_3")) == 25.0);
+    XPLMCommandOnce(XPLMFindCommand(T("levers_toga"))); frame(0.05f);
+    assert(pub(T("tla_1")) == 45.0 && ratio()[0] == 1.0f);
+    XPLMCommandOnce(XPLMFindCommand(T("levers_idle"))); frame(0.05f);
+    for (i = 0; i < 4; ++i) assert(ratio()[i] == 0.0f && pub(T("tla_1")) == 0.0);   /* IDLE writes a true 0 */
     for (i = 0; i < 4; ++i) ratio()[i] = 0.0f;
     frame(0.05f);
     run(0.1f);
@@ -516,11 +557,12 @@ int main(int argc, char **argv)
     test_registry();
     test_cockpit_drag_and_click();
     test_hardware_adoption();
+    test_keyboard_detents();
     test_reverse();
     test_flex_rating_and_engines();
     test_instinctive_disconnect();
     test_reload_and_shutdown();
     puts("Thrust-lever adapter: registry, sticky cockpit drags, click sound, hardware adoption, reverse interlocks, "
-         "FLEX rating and engine lease, instinctive disconnect, reload and shutdown passed");
+         "keyboard detents, FLEX rating and engine lease, instinctive disconnect, reload and shutdown passed");
     return 0;
 }

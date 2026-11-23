@@ -769,6 +769,7 @@ static void sys_update(double dt, int powered)
     sys_fpln_env.plans = fmsa_fpln;
     sys_fpln_env.aircraft_valid = 1;
     sys_fpln_env.aircraft = fmsa_aircraft;
+    sys_fpln_env.feed = fmsa_pred_valid ? &fmsa_pred_feed : NULL;   /* FMGC basic predictions */
     a380x_mfd_fpln_set_env(&sys_fpln_env);
     atis_update();
     a380x_mfd_atccom_update((double)XPLMGetElapsedTime(), fmsa_in.utc_seconds, &sys_atc_queue);

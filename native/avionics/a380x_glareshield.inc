@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Aircraft-local glareshield side-panel controls and alert indications.
- * LAND/ATC/stick-motion inputs are explicit until their FBW producers exist.
+ * ATC/stick-motion inputs are explicit until their FBW producers exist. land_mode is produced by
+ * the native guidance (a380x_autoland.inc): LAND engaged with an AP in it, before ROLL OUT.
  */
 #include "a380x_elec_power.h"
 /* Native FWS master lights (a380x_fws_adapter.inc, included later in the unity build). */
@@ -31,7 +32,7 @@ static GlareRef glare_refs[] = {
     GR("stick_left_moving", stick_motion[0], 1), GR("stick_right_moving", stick_motion[1], 1),
     GR("priority", priority, 0), GR("master_warning", warning, 0),
     GR("master_caution", caution, 0), GR("autoland_warning", autoland_warning, 0),
-    GR("land_mode", land_mode, 1), GR("atc_pending", atc_pending, 0),
+    GR("land_mode", land_mode, 0), GR("atc_pending", atc_pending, 0),
     GR("volume_left", volume[0], 1), GR("volume_right", volume[1], 1),
     GR("ptt_left", ptt[0], 0), GR("ptt_right", ptt[1], 0),
     GR("master_warning_lit", warning_lit, 0), GR("master_caution_lit", caution_lit, 0),
@@ -67,6 +68,7 @@ static GlareCommand glare_commands[] = {
 };
 #undef GC
 
+static int aurals_crc_covers(void);   /* a380x_aurals.inc: the FWS CRC sample plays this warning */
 static short glare_tone[22050];
 static FMOD_CHANNEL *glare_audio;
 typedef struct { short *data; uint32_t bytes; } GlareVoice;
@@ -237,7 +239,7 @@ static void glare_update(float dt)
     /* With the native FWS the lights are its masterWarningOutput / masterCautionOutput: the pbs
      * reach the FWS (pass-through tap) which keeps non-cancellable warnings lit, so no local ack. */
     i=fwsa_available() ? fwsa_master_warning() : XPLMGetDatai(glare.master_warning)!=0;
-    if (i && !glare.warning_source) { glare.warning_ack=0; glare_play_tone(640,3,-1); }
+    if (i && !glare.warning_source) { glare.warning_ack=0; if (!aurals_crc_covers()) glare_play_tone(640,3,-1); }
     if (!i) glare.warning_ack=0;
     glare.warning_source=i;
     glare.warning=i && (fwsa_available() || !glare.warning_ack);
@@ -246,6 +248,9 @@ static void glare_update(float dt)
     if (!i) glare.caution_ack=0;
     glare.caution_source=i;
     glare.caution=i && (fwsa_available() || !glare.caution_ack);
+    /* AUTOLAND warning window: an autoland (AP engaged in LAND at some point) until ROLL OUT. */
+    glare.land_mode=guidance.land.land_active && guidance.land.autoland && !guidance.land.rollout_active
+        && !guidance_inputs.on_ground;
     if (glare.land_mode && refs.side[0].radio_altitude_valid && ra<200.0f) {
         if (!guidance.ap1 && !guidance.ap2) mask|=1;
         if (ra>15.0f && (!refs.side[0].loc_valid || fabsf(refs.side[0].loc_dots)>0.25f)) mask|=2;

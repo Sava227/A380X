@@ -132,6 +132,10 @@ static void fcu_thrust_optional_refs(void)
     for (i=0;i<3;++i) if (!fcu_thrust.fmc_healthy[i]) fcu_thrust.fmc_healthy[i]=XPLMFindDataRef(healthy[i]);
 }
 
+/* The native flight-control laws (a380x_fctl.inc): α floor for the A/THR, high-AoA protection for the
+ * speed brake. ready = the laws run; the dataref provider path below takes precedence. */
+static struct { int ready, alpha_floor, alpha_prot; } fctl_link;
+
 static void fcu_thrust_read_into(A380XGuidanceInputs *in)
 {
     float levers[4]={0};
@@ -175,6 +179,9 @@ static void fcu_thrust_read_into(A380XGuidanceInputs *in)
         if (valid==1 && (request==0 || request==1)) {
             in->alpha_floor_valid=1; in->alpha_floor_request=request;
         }
+    }
+    if (!in->alpha_floor_valid && fctl_link.ready) {
+        in->alpha_floor_valid=1; in->alpha_floor_request=fctl_link.alpha_floor!=0;
     }
     for (i=0;i<3;++i) if (fcu_thrust.fmc_healthy[i]
         && (XPLMGetDataRefTypes(fcu_thrust.fmc_healthy[i])&xplmType_Int)

@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * Exercise production pointer routing and retained-texture cursor composition
- * without an X-Plane process, browser, or OpenGL context.
+ * without an X-Plane process, browser, or OpenGL context. Also the PFD devices'
+ * presentation rules (a380x_xpkit_pfd.inc): bound = active, held frame while a
+ * web renderer can run, native PFD redrawn every frame only without one.
  */
 #include <assert.h>
 #include <math.h>
@@ -13,14 +15,14 @@
 #include "XPLMDataAccess.h"
 #include "a380x_xpkit_shared.h"
 
-enum {DU_CHANNELS_PER_SIDE=3,DU_ND=1};
-static int plugin_enabled=1,xpkit_health[19];
+enum {DU_CHANNELS_PER_SIDE=3,DU_PFD=0,DU_ND=1};
+static int plugin_enabled=1,xpkit_health[26];
 static unsigned xpkit_uploaded[XPKIT_VIEWS];
 static struct {int powered,zoom;} efis[2]={{1,1},{1,1}};
 static struct {float level;} du_channels[6]={{1},{1},{1},{1},{1},{1}};
 static A380XXpKitShared memory;
 static A380XXpKitShared *xpkit_shared=&memory;
-typedef struct {int unused;} Side;
+typedef struct {int unused,display_valid;} Side;
 static struct {Side side[2];} refs;
 static int redraws,views,vertices,matrices,rotations,fallbacks;
 static float translation_x,translation_y;
@@ -38,6 +40,7 @@ static struct {
     void (*destroy)(XPLMAvionicsID);
     void (*get_geometry)(XPLMAvionicsID,int *,int *,int *,int *);
     void (*set_geometry)(XPLMAvionicsID,int,int,int,int);
+    void (*pop_out)(XPLMAvionicsID);
 } mfda_av={.loaded=1,.needs_drawing=redraw,.cursor_over=absent,.is_bound=bound};
 /* Pop-up window: X-Plane's default geometry is the whole 1512x982 screen. */
 static int popup_shown,geom[4]={0,982,1512,0};
@@ -47,11 +50,22 @@ static void get_geom(XPLMAvionicsID id,int *l,int *t,int *r,int *b){assert(id);*
 static void set_geom(XPLMAvionicsID id,int l,int t,int r,int b){assert(id);geom[0]=l;geom[1]=t;geom[2]=r;geom[3]=b;}
 void XPLMGetScreenBoundsGlobal(int *l,int *t,int *r,int *b){*l=0;*t=982;*r=1512;*b=0;}
 static int xpkit_draw_view(int side,float x,float y,float w,float h) {
-    assert(side==2||side==3);assert(x==0&&y==0&&w==768&&h==1024);++views;
+    assert(side>=0&&side<4);assert(x==0&&y==0&&w==768&&h==1024);++views;
     if(xpkit_health[side+4])xpkit_uploaded[side]=2;
     return xpkit_health[side+4];
 }
 static void draw_nd(const Side *s,float x,float y,const char *label){(void)s;(void)x;(void)y;(void)label;++fallbacks;}
+/* Adapter supervision state: 1 while a web renderer runs or a restart is pending. */
+static int web_possible=1;
+static int xpkit_web_possible(void){return web_possible;}
+static void xpkit_device_draw_begin(void){}
+static int pfd_natives;
+static void draw_pfd(const Side *s,float x,float y,const char *label){(void)s;(void)x;(void)y;(void)label;++pfd_natives;}
+static int cds_overlay(int du,float x,float y,float w,float h){(void)du;(void)x;(void)y;(void)w;(void)h;return 0;}
+static double xpkit_now(void){return 1.0;}
+static void mfda_av_load(void){}
+void XPLMDebugString(const char *text){(void)text;}
+#define glLineWidth(...) ((void)0)
 static void vertex(float x,float y){assert(isfinite(x)&&isfinite(y));assert(fabsf(x)<=44&&fabsf(y)<=44);++vertices;}
 static void translate(float x,float y,float z){assert(z==0);translation_x=x;translation_y=y;}
 static void rotate(float angle,float x,float y,float z){assert(angle==-90&&x==0&&y==0&&z==1);++rotations;}
@@ -73,6 +87,7 @@ static void rotate(float angle,float x,float y,float z){assert(angle==-90&&x==0&
 #define glClear(...) ((void)0)
 #define XPLMSetGraphicsState(...) ((void)0)
 #include "a380x_xpkit_nd_input.inc"
+#include "a380x_xpkit_pfd.inc"
 /* 768x1024 logical unit -> device texel on the A380X_ND_SCALE denser ND device. */
 #define DEV(v) ((int)((float)(v) * A380X_ND_SCALE + 0.5f))
 
@@ -116,8 +131,12 @@ int main(void) {
     xpkit_nd_renderer_lost();
     assert(redraws==count+2&&!xpkit_health[6]&&!xpkit_health[7]);
     for(int side=0;side<2;++side)assert(!xpkit_nd[side].inside&&!xpkit_nd[side].down&&!xpkit_nd[side].seen);
-    vertices=0;xpkit_nd_draw_device(d);assert(fallbacks==1&&vertices==0&&matrices==0);
+    /* Helper restart pending: the device holds its last frame (here none: black), never the native ND. */
+    vertices=0;xpkit_nd_draw_device(d);assert(fallbacks==0&&vertices==0&&matrices==0);
     assert(!d->presented_frame&&!xpkit_nd_frame_pending(d,4,0,1));
+    /* No web renderer can run (restarts used up): the native ND. */
+    web_possible=0;views=0;xpkit_nd_draw_device(d);assert(fallbacks==1&&views==0&&matrices==0);
+    web_possible=1;
     assert(!atomic_load(&memory.nd_profile[0].snapshot_count)&&!atomic_load(&memory.nd_profile[0].upload_count));
     assert(XPKIT_ND_ZOOM_DEFAULT==1&&XPKIT_ND_ZOOM_MAX==6);
     d->zoom=XPKIT_ND_ZOOM_DEFAULT;
@@ -134,6 +153,24 @@ int main(void) {
     d->command[0]=(XPLMCommandRef)10;xpkit_nd_command(d->command[0],xplm_CommandBegin,d);
     assert(popup_shown&&geom[1]-geom[3]==785&&geom[2]-geom[0]==785*768/1024);
     xpkit_nd_command(d->command[0],xplm_CommandBegin,d);assert(!popup_shown);
-    puts("Native ND input: ordered clicks, seven airport zoom levels, native cursor geometry, separate texture/presentation scheduling, no cursor uploads, immediate helper-exit fallback and 3:4 pop-up passed");
+    /* PFD devices: active = both bound (no library frame needed), so the atlas PFD never shows. */
+    XpKitPfd *f=&xpkit_pfd[0];
+    xpkit_pfd[0].side=0;xpkit_pfd[1].side=1;xpkit_pfd[0].device=(XPLMAvionicsID)20;xpkit_pfd[1].device=(XPLMAvionicsID)21;
+    refs.side[0].display_valid=refs.side[1].display_valid=1;
+    memset(&memory,0,sizeof(memory));memset(xpkit_health,0,sizeof(xpkit_health));memset(xpkit_uploaded,0,sizeof(xpkit_uploaded));
+    web_possible=1;xpkit_pfd_poll();assert(xpkit_health[19]==1&&xpkit_pfd[0].rendered_draws==0);
+    /* Web renderer starting (no frame yet): black, never the native PFD, no per-frame redraws. */
+    views=0;pfd_natives=0;xpkit_pfd_draw_device(f);assert(views==1&&pfd_natives==0&&f->presented_frame==0);
+    count=redraws;xpkit_pfd_poll();xpkit_pfd_poll();assert(redraws==count);
+    /* A new frame: one redraw request, presented, then quiet (held). */
+    atomic_store(&memory.frame_seq[0],2);xpkit_pfd_poll();assert(redraws==count+1);
+    xpkit_health[4]=1;xpkit_uploaded[0]=2;f->presented_frame=2;count=redraws;
+    xpkit_pfd_poll();xpkit_pfd_poll();assert(redraws==count);
+    /* No web renderer can run: native PFD, redrawn every frame. */
+    web_possible=0;count=redraws;xpkit_pfd_poll();xpkit_pfd_poll();xpkit_pfd_poll();assert(redraws==count+6);
+    views=0;xpkit_pfd_draw_device(f);assert(pfd_natives==1&&views==0);
+    web_possible=1;
+    puts("Native PFD devices: bound = active, held web frame (black before the first) while a web renderer can run, native PFD every frame only without one passed");
+    puts("Native ND input: ordered clicks, seven airport zoom levels, native cursor geometry, separate texture/presentation scheduling, no cursor uploads, held frame while the helper restarts, native ND only without a web renderer and 3:4 pop-up passed");
     return 0;
 }

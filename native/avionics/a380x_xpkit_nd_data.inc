@@ -3,6 +3,10 @@
  * actual sensor/EFIS state. Never imports X-Plane's stock FMS route/map.
  */
 static void xpkit_string(XpKitJson *j,const char *text) {
+    const unsigned char *c=(const unsigned char *)text;
+    while(*c && *c!='"' && *c!='\\' && *c>=32) ++c;
+    /* Nothing to escape (the usual ident): one append. The state is now published at up to 75 Hz. */
+    if(!*c) { xpkit_append(j,"\"%s\"",text); return; }
     xpkit_append(j,"\"");
     for(const unsigned char *p=(const unsigned char *)text;*p;++p) {
         if(*p=='"'||*p=='\\')xpkit_append(j,"\\%c",*p);
@@ -85,5 +89,11 @@ static void xpkit_nd_json(XpKitJson *j) {
     if(to&&!(to->flags&A380X_LEGF_DISCONTINUITY)&&isfinite(to->term_lat)&&isfinite(to->term_lon)) {
         xpkit_append(j,"{\"ident\":");xpkit_string(j,to->ident);xpkit_append(j,",\"lat\":%.10g,\"lon\":%.10g}",to->term_lat,to->term_lon);
     }else xpkit_append(j,"null");
-    xpkit_append(j,"}");
+    /* FMGC pseudo waypoints for the bundle's PseudoWaypointLayer (xp-kit-nd/fmgc-pwp-layer.js), see
+     * a380x_fmgc_nd_pwp_json: on the path (lat/lon) or along the track (dist only); dist + alt feed the VD. */
+    {
+        char pseudo[2048];
+        if(!a380x_fmgc_nd_pwp_json(fmsa_nd_pwp,fmsa_nd_pwp_count,pseudo,sizeof(pseudo)))snprintf(pseudo,sizeof(pseudo),"[]");
+        xpkit_append(j,",\"pseudo\":%s}",pseudo);
+    }
 }

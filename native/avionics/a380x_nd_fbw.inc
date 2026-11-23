@@ -11,7 +11,8 @@
  * converts them for the y-up cockpit device. Map layers (route, navaids, traffic, terrain)
  * reuse the native ND layers through an EfisNdCanvas sized for this canvas.
  *
- * Not yet ported: wind arrow, off-scale selected-heading readout, ROSE VOR/LS course pointers and
+ * TERRAIN on ND (a380x_terrain_render.inc): the swept EGPWS image under the map layers and the FBW
+ * TERR box. Not yet ported: wind arrow, off-scale selected-heading readout, ROSE VOR/LS course pointers and
  * deviation scales, the VD flight-path profile and the TCAS range-ring variants.
  */
 
@@ -409,6 +410,7 @@ static void draw_nd_fbw_arc(const Side *side, int index)
     ndf_header_left(side);
     ndf_header_to_waypoint(side);
     ndf_radio_info(index);
+    terrain_draw_box_fbw(index);
     if (!position_valid) ndf_text(384.0f, 320.0f, "MAP NOT AVAIL", ND_FONT_INTERMEDIATE, AMBER, 1);
     ndf_vertical_display(range_nm, index);
     ndf_line_width(1.0f);
@@ -506,6 +508,7 @@ static void draw_nd_fbw_rose(const Side *side, int index, int mode)
     ndf_header_left(side);
     ndf_header_to_waypoint(side);
     ndf_radio_info(index);
+    terrain_draw_box_fbw(index);
     if (!position_valid) ndf_text(384.0f, 320.0f, "MAP NOT AVAIL", ND_FONT_INTERMEDIATE, AMBER, 1);
     if (mode == 2) ndf_vertical_display(range_nm, index);
 }

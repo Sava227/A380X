@@ -69,7 +69,10 @@ class ReuseNativeViews(unittest.TestCase):
             self.assertEqual(self.sha((self.destination / name).read_bytes()),
                              manifest['asset_hashes'][name])
         self.assertFalse((self.destination / 'unrecorded.html').exists())
-        self.assertEqual(manifest['views'], self.manifest['views'])
+        # The web EFB page (views 7/8) is never reused: it is rebuilt from the repository sources.
+        self.assertEqual(manifest['views'], [*self.manifest['views'], 'captain_efb', 'first_officer_efb'])
+        self.assertEqual(manifest['asset_hashes']['efb.html'], manifest['efb_html_sha256'])
+        self.assertTrue((self.destination / 'Fonts/efb/OFL.txt').is_file())
         self.assertNotIn('helper_sha256', manifest)
         self.assertNotIn('architectures', manifest)
         self.assertEqual(manifest['reused_assets_from'], str(self.source.resolve()))

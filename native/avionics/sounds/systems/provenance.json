@@ -1,0 +1,14 @@
+{
+  "origin": "Supplied by the user (~/Downloads/airbus-ptu-sound.mp3). Packaged for the future PTU simulation; nothing plays it yet.",
+  "processing": "afconvert to mono 16-bit PCM, silence trimmed with 4 ms fades.",
+  "source_sha256": {
+    "airbus-ptu-sound.mp3": "fd023e882c2fd6d0bbb4a2c26991e34543bb5ebf72ec6073e3d08ca7df78e243"
+  },
+  "files": {
+    "ptu.wav": {
+      "seconds": 7.741,
+      "rate": 44100,
+      "sha256": "f6654d12df19ab5e3b5dce965e3c6262560522b41e2b1237e2515ecee4084a90"
+    }
+  }
+}

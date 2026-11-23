@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * xp-kit FlyByWire PFDs on dedicated 768x1024 X-Plane cockpit devices.
+ * xp-kit FlyByWire PFDs on dedicated X-Plane cockpit devices (768x1024 logical units,
+ * A380X_PFD_SCALE device pixels per unit: 1152x1536 at the default 3/2).
  *
- * The helper now captures the PFD at its full 768x1024 logical size; the device
- * presents that texture 1:1 at the authored SCREEN_DU_PFDL/R location, redraws
- * only when a new frame (or a power/health change) arrives, and offers the
- * standard X-Plane pop-up / pop-out window. Clicking the PFD in the 3D cockpit
- * toggles its pop-up. While a device is bound, the legacy 320x416 panel-atlas
- * PFD is not drawn at all (the device quad covers it), which removes that
- * per-frame atlas work. If the library feed is unavailable the device draws the
- * native PFD renderer instead, so the PFD never freezes.
+ * The helper captures the PFD at the device size; the device presents that frame 1:1 at the
+ * authored SCREEN_DU_PFDL/R location, redraws only when a new frame (or a power/renderer change)
+ * arrives, and offers the standard X-Plane pop-up / pop-out window. Clicking the PFD in the 3D
+ * cockpit toggles its pop-up. While both devices are bound (a380x/xp12/xpkit/pfd_devices_active)
+ * the legacy 320x416 panel-atlas PFD is neither drawn nor shown. A late web frame or a helper
+ * restart keeps the last frame (black before the first); the native PFD renderer draws only when
+ * no web renderer can run (xpkit_web_possible), and is then redrawn every frame.
  *
  * Unity-build include of a380x_xpkit_adapter.inc (needs xpkit_draw_view,
  * xpkit_uploaded, xpkit_health, mfda_av, refs, du_channels, draw_pfd).
@@ -16,7 +16,7 @@
 #include "a380x_du_scale.h"
 #include "a380x_avionics_popup.h"
 typedef struct {
-    int side, draw_live, draw_powered;
+    int side, draw_live, draw_powered, draw_web;
     unsigned presented_frame, draws, rendered_draws;
     XPLMAvionicsID device;
     XPLMCommandRef command[2];
@@ -31,16 +31,16 @@ static int xpkit_pfd_on(const XpKitPfd *d) {
 static int xpkit_pfd_bound(const XpKitPfd *d) {
     return d->device && mfda_av.loaded && mfda_av.is_bound(d->device);
 }
-/* The panel-atlas PFD stays drawn underneath the device quad, exactly like the ND:
- * it shares the same uploaded frame (no extra upload), and it keeps the PFD visible
- * if the device surface is ever not presented by the simulator. */
-static int xpkit_pfd_atlas_needed(int side) { (void)side; return 1; }
+/* Defined in a380x_pfd_render.inc (included later in the unity build); tentative definition here.
+ * The native fallback scales its line widths with the device density, as at A380X_PFD_SCALE 1. */
+static float pfd_line_scale;
 static double xpkit_pfd_started;
 static int xpkit_pfd_reported;
 
 static void xpkit_pfd_draw_device(void *refcon) {
     XpKitPfd *d = refcon;
     GLboolean cull = glIsEnabled(GL_CULL_FACE);
+    xpkit_device_draw_begin();
     glDisable(GL_CULL_FACE);
     XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
     glClearColor(0, 0, 0, 1);
@@ -58,14 +58,17 @@ static void xpkit_pfd_draw_device(void *refcon) {
         if (cull) glEnable(GL_CULL_FACE);
         return;
     }
-    int on = xpkit_pfd_on(d);
-    int rendered = on && xpkit_draw_view(d->side, 0, 0, 768, 1024);
-    if (on && !rendered) {
-        /* Native fallback: the translated PFD renders its 320x416 layout. */
+    int on = xpkit_pfd_on(d), web = xpkit_web_possible();
+    /* Web renderer possible: its last frame, whatever its age (black before the first). */
+    int rendered = on && web && xpkit_draw_view(d->side, 0, 0, 768, 1024);
+    if (on && !web) {
+        /* No web renderer can run: the translated PFD renders its 320x416 layout. */
         glPushMatrix();
         glScalef(768.0f / 320.0f, 1024.0f / 416.0f, 1);
         glLineWidth(A380X_PFD_SCALE);
+        pfd_line_scale = A380X_PFD_SCALE;
         draw_pfd(&refs.side[d->side], 0, 0, d->side ? "F/O" : "CAPT");
+        pfd_line_scale = 1.0f;
         glPopMatrix();
         glLineWidth(1.0f);
     }
@@ -116,8 +119,9 @@ static int xpkit_pfd_command(XPLMCommandRef cmd, XPLMCommandPhase phase, void *r
     return 1;
 }
 
-/* Called from xpkit_update(): request a device draw only when it can change. */
+/* Called every frame from xpkit_update(): request a device draw only when it can change. */
 static void xpkit_pfd_poll(void) {
+    int web = xpkit_web_possible();
     for (int s = 0; s < 2; ++s) {
         XpKitPfd *d = &xpkit_pfd[s];
         /* The CDS state (boot / self-test / on) also triggers a redraw of the device. */
@@ -126,18 +130,18 @@ static void xpkit_pfd_poll(void) {
         unsigned seq = xpkit_shared ? atomic_load(&xpkit_shared->frame_seq[s]) : 0;
         xpkit_health[20 + s] = xpkit_pfd_bound(d);
         if (!d->device || !mfda_av.loaded) continue;
-        /* New library frame, a live/power transition, or a continuously
-         * animating native fallback. A dark, unchanged device costs nothing. */
-        if ((live && seq != d->presented_frame) || live != d->draw_live ||
-            powered != d->draw_powered || (powered == 8 && !live))
+        /* A new (or not yet presented) web frame, a live/power/renderer transition, or the
+         * continuously animating native PFD. A held or dark, unchanged device costs nothing. */
+        if ((web && powered == 8 && !(seq & 1) && seq != d->presented_frame) || live != d->draw_live ||
+            powered != d->draw_powered || web != d->draw_web || (!web && powered == 8))
             mfda_av.needs_drawing(d->device);
         d->draw_live = live;
         d->draw_powered = powered;
+        d->draw_web = web;
     }
-    /* Show the device quads (a380x/xp12/xpkit/pfd_devices_active) only once both devices
-     * are bound and have presented a library frame; until then the atlas PFD shows. */
-    xpkit_health[19] = xpkit_pfd[0].device && xpkit_pfd[1].device && xpkit_health[20] && xpkit_health[21] &&
-                       xpkit_pfd[0].rendered_draws > 0 && xpkit_pfd[1].rendered_draws > 0;
+    /* a380x/xp12/xpkit/pfd_devices_active: both devices exist and are bound to their OBJ quads.
+     * The OBJs then show the device quads and hide the panel-atlas PFDs, which draw_panel skips. */
+    xpkit_health[19] = xpkit_pfd[0].device && xpkit_pfd[1].device && xpkit_health[20] && xpkit_health[21];
     /* One diagnostic line ~10 s after the helper starts: proves binding and presentation. */
     if (!xpkit_pfd_started) xpkit_pfd_started = xpkit_now();
     if (!xpkit_pfd_reported && xpkit_now() - xpkit_pfd_started > 10.0) {
@@ -191,7 +195,7 @@ static void xpkit_pfd_init(void) {
             d->device = mfda_av.create(&p);
         }
     }
-    xpkit_health[19] = 0; /* raised by xpkit_pfd_poll once both devices present frames */
+    xpkit_health[19] = 0; /* raised by xpkit_pfd_poll once both devices are bound */
 }
 
 static void xpkit_pfd_shutdown(void) {

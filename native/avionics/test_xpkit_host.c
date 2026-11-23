@@ -37,6 +37,25 @@ int main(int argc,char **argv) {
             if(read!=1)return 9;
         }
     }
+    /* Optional EFB tablet fixtures (A380X_EFB_JSON_0/1): native frames (test_efb_adapter --frame),
+     * several separated by a "---" line; one is published every 3 s, so touch events in a later
+     * frame drive the real page and its actions arrive in the tablet's action ring. */
+    static char efb_text[2][8*XPKIT_EFB_CAP];char *efb_frames[2][8];int efb_count[2]={0,0},efb_next[2]={0,0};
+    for(int t=0;t<2;++t) {
+        const char *path=getenv(t?"A380X_EFB_JSON_1":"A380X_EFB_JSON_0");
+        if(!path)continue;
+        FILE *f=fopen(path,"rb");if(!f)return 11;
+        size_t n=fread(efb_text[t],1,sizeof(efb_text[t])-1,f);fclose(f);efb_text[t][n]=0;
+        for(char *p=efb_text[t];p&&efb_count[t]<8;) {
+            efb_frames[t][efb_count[t]++]=p;
+            char *cut=strstr(p,"\n---\n");
+            if(cut){*cut=0;p=cut+5;}else p=NULL;
+        }
+    }
+    for(int t=0;t<2;++t) if(efb_count[t]) {
+        A380XXpKitEfb *e=&s->efb[t];size_t n=strlen(efb_frames[t][0]);if(n>=XPKIT_EFB_CAP)return 12;
+        memcpy(e->json,efb_frames[t][0],n+1);e->size=(uint32_t)n;atomic_store(&e->sequence,2);efb_next[t]=1;
+    }
     pid_t pid=0; char *args[]={argv[1],filename,argv[2],argv[5],NULL};
     if(posix_spawn(&pid,argv[1],NULL,NULL,args,environ)) return 7;
     double start=seconds();
@@ -44,6 +63,15 @@ int main(int argc,char **argv) {
     while(seconds()-start<20) {
         atomic_fetch_add(&s->state_seq,1); s->state_time=seconds(); atomic_fetch_add(&s->state_seq,1);
         double elapsed=seconds()-start;
+        /* Later fixture frames are paced from the tablet page's readiness: a page's first frame
+         * deliberately skips touch history, so touches must arrive after it. */
+        static double efb_ready_at[2]={-1,-1};
+        for(int t=0;t<2;++t) if(efb_ready_at[t]<0&&atomic_load(&s->ready[XPKIT_EFB_VIEW0+t])&&atomic_load(&s->frame_seq[XPKIT_EFB_VIEW0+t])>=2)efb_ready_at[t]=elapsed;
+        for(int t=0;t<2;++t) if(efb_next[t]<efb_count[t]&&efb_ready_at[t]>=0&&elapsed>efb_ready_at[t]+2.0*efb_next[t]) {
+            A380XXpKitEfb *e=&s->efb[t];const char *frame=efb_frames[t][efb_next[t]++];size_t n=strlen(frame);
+            if(n>=XPKIT_EFB_CAP)return 12;
+            atomic_fetch_add(&e->sequence,1);memcpy(e->json,frame,n+1);e->size=(uint32_t)n;atomic_fetch_add(&e->sequence,1);
+        }
         if(cycle) {
             int page=(int)elapsed%16;
             if(page!=last_page) {
@@ -73,6 +101,14 @@ int main(int argc,char **argv) {
         }
         fclose(image);
         printf("side=%d ready=%u frames=%u nonblack=%zu\n",side,ready,seq/2,colored);
+        if(side>=XPKIT_EFB_VIEW0) {
+            A380XXpKitEfb *e=&s->efb[side-XPKIT_EFB_VIEW0];
+            uint32_t head=atomic_load(&e->action_head);
+            printf("efb tablet=%d page-actions=%u dropped=%u\n",side-XPKIT_EFB_VIEW0,head,atomic_load(&e->actions_dropped));
+            for(uint32_t a=head>XPKIT_EFB_ACTIONS?head-XPKIT_EFB_ACTIONS:0;a<head;++a)printf("  action: %s\n",e->action[a%XPKIT_EFB_ACTIONS]);
+            if(efb_count[side-XPKIT_EFB_VIEW0]&&(!ready||seq<2||colored<2000))ok=0;
+            continue;
+        }
         if(!ready||seq<(side<2?10u:2u)||colored<2000) ok=0;
         if(side>=2 && side<4) {
             A380XXpKitNdProfile *p=&s->nd_profile[side-2];

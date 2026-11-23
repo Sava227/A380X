@@ -12,9 +12,10 @@
  *   ND:  the FlyByWire layout for ARC, ROSE and PLAN on the full 768x1024 canvas (a380x_nd_fbw.inc,
  *        including the vertical display and its terrain profile); the airport zoom keeps the native
  *        180x234 layout, scaled up.
- * The panel-atlas PFD/ND stay drawn underneath, as in the xp-kit builds, so a display never goes
- * blank if the simulator does not present the device surface. Devices are created from XPluginStart,
- * before the aircraft OBJs load, or X-Plane drops their click manipulators.
+ * While both devices of a kind are bound (the *_devices_active datarefs), the OBJs hide the
+ * panel-atlas PFD/ND quads and draw_panel no longer draws those atlas regions (du_atlas_*_needed).
+ * Devices are created from XPluginStart, before the aircraft OBJs load, or X-Plane drops their
+ * click manipulators.
  */
 #include "a380x_du_scale.h"
 
@@ -100,6 +101,7 @@ static void native_display_draw(void *refcon)
             draw_nd_fbw(&refs.side[d->side], d->side);   /* ARC, ROSE LS/VOR/NAV, PLAN */
             ndf_line_scale = 1.0f;
             text_use_atlas = 0;
+            terrain_draw_overlay(d->side);               /* TERRAIN on ND pointer elevation */
         } else {                                         /* airport zoom: native layout, scaled */
             const float scale = NATIVE_DU_W / NATIVE_ND_LAYOUT_W;
             text_use_atlas = 1;
@@ -204,9 +206,24 @@ static void native_displays_init(void)
                                  : "A380X native PFD/ND: device creation failed - panel-atlas displays only\n");
 }
 
+/* draw_panel: the atlas regions only while the devices are not active (the OBJ's own condition). */
+static int du_atlas_pfd_needed(void) { return !native_displays_active(0); }
+static int du_atlas_nd_needed(void) { return !native_displays_active(1); }
+/* TERRAIN on ND pointer readout (a380x_terrain_adapter.inc): the ND device of a side. */
+static XPLMAvionicsID terrain_nd_device(int side) { return native_displays[2 + (side ? 1 : 0)].device; }
+
 #else
 
 static void native_displays_init(void) {}
 static void native_displays_shutdown(void) {}
+#if APL || IBM
+static int du_atlas_pfd_needed(void) { return xpkit_pfd_atlas_needed(); }
+static int du_atlas_nd_needed(void) { return xpkit_nd_atlas_needed(); }
+static XPLMAvionicsID terrain_nd_device(int side) { return xpkit_nd[side ? 1 : 0].device; }
+#else
+static int du_atlas_pfd_needed(void) { return 1; }
+static int du_atlas_nd_needed(void) { return 1; }
+static XPLMAvionicsID terrain_nd_device(int side) { (void)side; return NULL; }
+#endif
 
 #endif

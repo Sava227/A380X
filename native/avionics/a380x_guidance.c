@@ -3,12 +3,14 @@
  * Source: pinned A380FcuComputer.cpp / A380PrimComputerFg.cpp; user-facing
  * controls: https://docs.flybywiresim.com/pilots-corner/a380x/a380x-briefing/flight-deck/glareshield/afs/
  * This adapter does not implement the three PRIMs, FMS, FADEC detent network,
- * takeoff/go-around guidance, autoland or the full flight-envelope protections.
- * A/THR and final pitch/roll actuator servos are explicitly port-specific.
+ * SRS takeoff guidance or the full flight-envelope protections. LAND/FLARE/ROLL OUT,
+ * RETARD and SRS GA / GA TRK: a380x_autoland.inc (FBW PRIM FG mode logic).
+ * A/THR and final pitch/roll/yaw actuator servos are explicitly port-specific.
  */
 #include "a380x_guidance.h"
 #include "a380x_fbw_laws.h"
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #define RAD (0.017453292519943295)
@@ -42,6 +44,12 @@ static double max_lever(const A380XGuidanceInputs *i) {
     return fmax(fmax(i->throttle_lever_ratio[0],i->throttle_lever_ratio[1]),
         fmax(i->throttle_lever_ratio[2],i->throttle_lever_ratio[3]));
 }
+/* A/THR active range (above IDLE): up to, not including, the FLX/MCT detent. The A380 stops at CL;
+ * this port lets A/THR regulate up to FLX/MCT with the lever's FADEC thrust as the ceiling (user
+ * decision 2026-11-09: no extra engagement limits). FLX/MCT and TOGA stay manual (takeoff, go-around). */
+static int athr_lever_range(const A380XGuidanceInputs *i,double lever) {
+    return lever<i->mct_detent_ratio-i->detent_tolerance_ratio;
+}
 static A380XA1A2Message manual_thrust_mode(const A380XGuidanceInputs *i) {
     double lever;
     if(!i->powered || !lever_inputs_valid(i)) return A380X_A1A2_NONE;
@@ -61,8 +69,9 @@ static void disconnect_athr(A380XGuidanceState *s,const A380XGuidanceInputs *i) 
     s->thrust_mode=manual_thrust_mode(i);
     s->throttle_command=isfinite(i->throttle_ratio)?clamp(i->throttle_ratio,0,1):0;
 }
-static int airborne_valid(const A380XGuidanceInputs *i) {
-    return i->powered && !i->paused && !i->on_ground && i->airdata_valid && i->attitude_valid &&
+/* The flight data the guidance laws need, in flight (pause aside). */
+static int flight_data_valid(const A380XGuidanceInputs *i) {
+    return i->powered && !i->on_ground && i->airdata_valid && i->attitude_valid &&
         isfinite(i->pitch_deg) && isfinite(i->roll_deg) && isfinite(i->heading_deg) &&
         isfinite(i->track_deg) && isfinite(i->altitude_ft) && isfinite(i->vertical_speed_fpm) &&
         isfinite(i->ias_knots) && isfinite(i->tas_knots) && isfinite(i->ground_speed_knots) &&
@@ -72,12 +81,31 @@ static int airborne_valid(const A380XGuidanceInputs *i) {
         isfinite(i->accel_x_m_s2) && isfinite(i->accel_y_m_s2) && isfinite(i->accel_z_m_s2) &&
         i->ias_knots>40 && i->tas_knots>40;
 }
+static int airborne_valid(const A380XGuidanceInputs *i) { return !i->paused && flight_data_valid(i); }
+/* AP engagement has no envelope, speed or time-since-liftoff limit (user decision 2026-11-09; the
+ * A380 manual's 5 s after liftoff, pitch -11..22.5, bank < 40 and VLS..VMAX are not applied): pressed
+ * in flight with the data the laws need, it engages. On the ground the FCU adapter keeps the press
+ * and engages after liftoff (a380x_fcu_adapter.inc). */
 static int can_engage(const A380XGuidanceState *s,const A380XGuidanceInputs *i) {
-    /* The manual permits engagement at five seconds after liftoff. Allow
-     * sub-nanosecond integration roundoff, never an earlier simulation frame. */
-    return airborne_valid(i) && s->airborne_seconds>=5-1e-9 && i->pitch_deg>=-11 && i->pitch_deg<=22.5 &&
-        fabs(i->roll_deg)<40 && (i->vls_knots<=0 || i->ias_knots>=i->vls_knots) &&
-        (i->vmax_knots<=0 || i->ias_knots<=i->vmax_knots);
+    (void)s;
+    return flight_data_valid(i);
+}
+int a380x_guidance_engage_problems(const A380XGuidanceState *s,const A380XGuidanceInputs *i,char *out,size_t size) {
+    int n=0; size_t len=0;
+    if(!out || !size) return can_engage(s,i)?0:1;
+    out[0]=0;
+#define WHY(cond,...) do { if(cond) { int w; \
+        if(n && len<size) { w=snprintf(out+len,size-len,"; "); if(w>0) len+=(size_t)w; } \
+        if(len<size) { w=snprintf(out+len,size-len,__VA_ARGS__); if(w>0) len+=(size_t)w; } \
+        len=len>=size?size-1:len; ++n; } } while(0)
+    WHY(!i->powered,"FCU/guidance not powered");
+    WHY(i->on_ground,"on the ground");
+    WHY(!i->airdata_valid,"air data invalid (ADR: check ADIRS)");
+    WHY(!i->attitude_valid,"attitude/heading/navigation invalid (IR: check ADIRS in NAV)");
+    WHY(!(isfinite(i->ias_knots) && i->ias_knots>40),"no valid airspeed");
+    if(!n && !can_engage(s,i)) WHY(1,"a flight-data input is not available");
+#undef WHY
+    return n;
 }
 static double speed_ratio(const A380XGuidanceInputs *i) {
     return i->mach>0.05 && isfinite(i->mach)?clamp(i->ias_knots/i->mach,100,900):661.47;
@@ -116,6 +144,9 @@ static void cancel_approach(A380XGuidanceState *s,const A380XGuidanceInputs *i) 
     if (gs_mode(s)) revert_vertical(s,i);
     if (s->ap1 && s->ap2) s->ap2=0;
 }
+/* Managed (FMS-coupled) NAV / SRS / CLB / DES / ALT CST logic. */
+#include "a380x_guidance_managed.inc"
+#include "a380x_autoland.inc"
 
 void a380x_guidance_init(A380XGuidanceState *s,const A380XGuidanceInputs *i) {
     memset(s,0,sizeof(*s));
@@ -148,6 +179,7 @@ void a380x_guidance_command(A380XGuidanceState *s,const A380XGuidanceInputs *i,A
     }
     if (c==A380X_FCU_ATHR_DISCONNECT) { disconnect_athr(s,i); return; }
     if (!i->powered) return;
+    if (landing_command_filter(s,c)) return;
     switch(c) {
     case A380X_FCU_SPD_ROTATE:
         if (s->speed_dashes) {
@@ -166,28 +198,18 @@ void a380x_guidance_command(A380XGuidanceState *s,const A380XGuidanceInputs *i,A
     case A380X_FCU_HDG_ROTATE:
         if(s->heading_dashes) s->selected_heading_deg=round(current_heading(s,i));
         s->selected_heading_deg=norm(s->selected_heading_deg+a); s->heading_preselect_seconds=45; s->heading_dashes=0; break;
-    case A380X_FCU_HDG_PUSH:
-        if(i->managed_route_valid) {
-            cancel_approach(s,i); s->heading_managed=1; s->lateral_mode=A380X_C1_NAV;
-            s->heading_preselect_seconds=0; s->heading_dashes=1;
-        } else reject_managed(s);
-        break;
+    case A380X_FCU_HDG_PUSH: managed_hdg_push(s,i); break;
     case A380X_FCU_HDG_PULL:
+        if(nav_mode(s)) managed_vertical_without_nav(s,i);
         cancel_approach(s,i); s->heading_managed=0; s->heading_dashes=0;
         s->lateral_mode=s->trk_fpa_mode?A380X_C1_TRACK:A380X_C1_HDG; break;
     case A380X_FCU_ALT_ROTATE:
         s->selected_altitude_ft=clamp(s->selected_altitude_ft+a*(s->altitude_increment_1000?1000:100),100,49000);
-        if(s->vertical_mode==A380X_B1_ALT_STAR) {
+        if(s->vertical_mode==A380X_B1_ALT_STAR && !s->alt_constraint) {
             revert_vertical(s,i);
         }
         break;
-    case A380X_FCU_ALT_PUSH:
-        if(i->managed_route_valid && i->managed_vertical_valid) {
-            s->altitude_managed=1; s->vertical_guidance_selected=1;
-            s->vertical_mode=s->selected_altitude_ft>=i->altitude_ft?A380X_B1_CLB:A380X_B1_DES;
-            s->gs_armed=0;
-        } else reject_managed(s);
-        break;
+    case A380X_FCU_ALT_PUSH: managed_alt_push(s,i); break;
     case A380X_FCU_ALT_PULL:
         s->vertical_guidance_selected=1;
         s->altitude_managed=0; s->gs_armed=0; s->capture_seconds=0;
@@ -220,7 +242,7 @@ void a380x_guidance_command(A380XGuidanceState *s,const A380XGuidanceInputs *i,A
         int *ap=c==A380X_FCU_AP1?&s->ap1:&s->ap2;
         if(*ap) { *ap=0; if(!s->ap1 && !s->ap2) s->disconnect_seconds=5; }
         else if(can_engage(s,i)) {
-            if(!s->approach_selected) { s->ap1=0; s->ap2=0; }
+            if(!s->approach_selected && !s->land.land_active && !s->land.go_around_active) { s->ap1=0; s->ap2=0; }
             if(!s->vertical_guidance_selected) {
                 s->vertical_guidance_selected=1; s->held_altitude_ft=i->altitude_ft;
                 s->vertical_mode=A380X_B1_ALT;
@@ -266,19 +288,21 @@ void a380x_guidance_command(A380XGuidanceState *s,const A380XGuidanceInputs *i,A
         s->true_heading=!s->true_heading; break;
     default: break;
     }
+    managed_after_command(s,c);
     if (s->vertical_mode!=previous_vertical) s->pitch_integral=0;
 }
 
 void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,double dt) {
     double alt_error, target_vs, capture_distance;
-    int valid;
+    int valid, was_managed;
+    A380XB1Message before_capture;
     const A380XIlsInputs *ils;
     if(!s || !i || !s->initialized) return;
     if(!isfinite(dt) || dt>1) {
         disconnect(s,1); s->athr_active=0; s->guidance_valid=0; return;
     }
     /* Freeze display/mode state on pause; simulator adapter releases controls. */
-    if(dt<=0 || i->paused) { s->pitch_servo=s->roll_servo=0; return; }
+    if(dt<=0 || i->paused) { s->pitch_servo=s->roll_servo=s->land.yaw_servo=0; return; }
     /* Substep slower frames so timers use elapsed simulation time and the
      * imported filters retain their maximum 100ms integration step. */
     if(dt>.1) {
@@ -295,7 +319,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         s->have_previous_ils=0; a380x_fbw_laws_reset(s->fbw_laws);
     }
     s->source_side=s->ap2 && !s->ap1?1:0; ils=&i->ils[s->source_side];
-    valid=airborne_valid(i);
+    valid=airborne_valid(i) || landing_ground_valid(s,i);
     s->ap_engagement_inhibited=!can_engage(s,i);
     s->speed_preselect_seconds=decay(s->speed_preselect_seconds,dt);
     s->heading_preselect_seconds=decay(s->heading_preselect_seconds,dt);
@@ -306,11 +330,12 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
     s->speed_dashes=s->speed_managed && s->speed_preselect_seconds<=0;
     s->heading_dashes=(s->heading_managed || loc_mode(s)) && s->heading_preselect_seconds<=0;
     s->vs_dashes=!vs_mode(s) && s->vs_preselect_seconds<=0;
-    if(!valid || i->pitch_deg < -13 || i->pitch_deg>25 || fabs(i->roll_deg)>45 ||
-        (i->vls_knots>0 && i->ias_knots<i->vls_knots) || (i->vmax_knots>0 && i->ias_knots>i->vmax_knots+15)) {
-        disconnect(s,1);
-    }
+    /* Only lost flight data disconnects; no attitude or speed envelope disconnect (user decision
+     * 2026-11-09): an AP engaged outside the normal attitudes flies back to its commands. */
+    if(!valid) disconnect(s,1);
     if(!i->powered) { s->athr_armed=0; s->loc_armed=s->gs_armed=s->approach_selected=0; }
+    if(valid && nav_mode(s) && !i->managed_route_valid) managed_nav_lost(s,i);
+    managed_update(s,i,valid);
     if(s->speed_managed && !i->managed_speed_valid) { s->speed_managed=0; reject_managed(s); }
     if(s->heading_managed && !i->managed_route_valid) {
         s->heading_managed=0; s->selected_heading_deg=norm(current_heading(s,i));
@@ -322,6 +347,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
     s->speed_target_knots=s->speed_managed?i->managed_speed_knots:
         (s->mach_mode?s->selected_mach*speed_ratio(i):s->selected_speed_knots);
     s->speed_target_knots=clamp(s->speed_target_knots,100,399);
+    managed_speed_adjust(s,i);
     /* The window remains the crew's selection; effective guidance observes
      * the FE limits shown on the PFD. Invalid/missing limits are not invented. */
     {
@@ -330,14 +356,11 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         if(lower<=upper) s->speed_target_knots=clamp(s->speed_target_knots,lower,upper);
     }
     s->altitude_target_ft=s->vertical_mode==A380X_B1_ALT?s->held_altitude_ft:s->selected_altitude_ft;
-    if(s->altitude_managed) {
-        s->altitude_target_ft=s->vertical_mode==A380X_B1_CLB?fmin(i->managed_altitude_ft,s->selected_altitude_ft):
-            fmax(i->managed_altitude_ft,s->selected_altitude_ft);
-    }
-    if(valid && loc_mode(s) && !ils_loc_valid(ils)) {
+    if(s->altitude_managed) s->altitude_target_ft=managed_altitude_target(s,i);
+    if(valid && loc_mode(s) && !ils_loc_valid(ils) && !s->land.land_active) {
         cancel_approach(s,i); s->reversion_seconds=5;
     }
-    if(valid && gs_mode(s) && !ils_gs_valid(ils)) {
+    if(valid && gs_mode(s) && !ils_gs_valid(ils) && !s->land.land_active) {
         s->gs_armed=0; s->approach_selected=0; revert_vertical(s,i);
         if(s->ap1 && s->ap2) s->ap2=0;
     }
@@ -361,19 +384,22 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         s->capture_seconds=fabs(ils->gs_deviation_dots)<.12?s->capture_seconds+dt:0;
         if(s->capture_seconds>=2) s->vertical_mode=A380X_B1_GS;
     }
-    /* No FLARE/ROLLOUT or LAND capability is imported by this adapter. */
-    if(gs_mode(s) && i->radio_height_ft<100 && (s->ap1 || s->ap2)) disconnect(s,1);
+    landing_modes(s,i,dt,ils,valid);
+    /* Without LAND engaged (e.g. no APPR, no RA, LOC/GS not in track) the AP still disconnects below 100 ft. */
+    if(gs_mode(s) && !s->land.land_active && i->radio_height_ft<100 && (s->ap1 || s->ap2)) disconnect(s,1);
     s->previous_loc_dots=ils->loc_deviation_dots; s->previous_gs_dots=ils->gs_deviation_dots;
     s->have_previous_ils=ils->valid;
     target_vs=s->trk_fpa_mode?tan(s->selected_fpa_deg*RAD)*fmax(i->ground_speed_knots,30)*101.2686:s->selected_vs_fpm;
-    if(s->altitude_managed) target_vs=i->managed_vs_fpm;
+    if(s->altitude_managed || s->vertical_mode==A380X_B1_SRS) target_vs=managed_vs_target(s,i);
     if(s->vertical_mode==A380X_B1_OP_CLB) target_vs=2000;
     if(s->vertical_mode==A380X_B1_OP_DES) target_vs=-1500;
+    if(s->vertical_mode==A380X_B1_SRS) target_vs=2000; /* GA: arms ALT* toward a higher FCU altitude */
     alt_error=s->altitude_target_ft-i->altitude_ft;
+    before_capture=s->vertical_mode; was_managed=s->altitude_managed;
     s->altitude_armed=!gs_mode(s) && s->vertical_mode!=A380X_B1_ALT && s->vertical_mode!=A380X_B1_ALT_STAR &&
         alt_error*target_vs>0;
     capture_distance=fmax(150,fabs(i->vertical_speed_fpm)/60*20);
-    if(valid && s->altitude_armed && fabs(alt_error)<=capture_distance) {
+    if(valid && s->altitude_armed && !s->cst_capture_inhibit && fabs(alt_error)<=capture_distance) {
         s->vertical_mode=A380X_B1_ALT_STAR; s->capture_seconds=0; s->altitude_armed=0;
     }
     if(s->vertical_mode==A380X_B1_ALT_STAR) {
@@ -384,6 +410,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         }
     }
     if(s->vertical_mode==A380X_B1_ALT) target_vs=0;
+    managed_after_capture(s,i,before_capture,was_managed);
     if(gs_mode(s)) target_vs=-tan((ils->gs_angle_deg>0?ils->gs_angle_deg:3)*RAD)*fmax(i->ground_speed_knots,30)*101.2686;
     s->vs_target_fpm=clamp(target_vs,-6000,6000);
     s->guidance_valid=valid && s->vertical_guidance_selected && (s->fd1 || s->fd2 || s->ap1 || s->ap2) &&
@@ -400,8 +427,13 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         s->pitch_servo=clamp(error*.2-i->pitch_rate_deg_s*.2+s->pitch_integral,-1,1);
         s->roll_servo=clamp((s->roll_command_deg-i->roll_deg)*.035-i->roll_rate_deg_s*.025,-1,1);
     } else { s->pitch_servo=s->roll_servo=0; s->pitch_integral=0; }
+    landing_actuators(s,i,dt);
     {
         int levers_valid=lever_inputs_valid(i), at_takeoff=takeoff_detent(i);
+        /* IAS trend for the speed regulator (1 s lag) */
+        if(isfinite(i->ias_knots) && isfinite(s->ias_prev) && s->ias_prev>0)
+            s->ias_rate+=(clamp((i->ias_knots-s->ias_prev)/dt,-10,10)-s->ias_rate)*fmin(1,dt);
+        s->ias_prev=isfinite(i->ias_knots)?i->ias_knots:0;
         /* A/THR consumes ADR speed data. An independent IR/heading/navigation
          * failure invalidates AP/FD guidance without invalidating this loop. */
         int athr_valid=i->powered && !i->paused && !i->on_ground && i->athr_speed_valid &&
@@ -430,8 +462,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
         }
         s->all_levers_idle=all_idle;
         s->athr_active=s->athr_armed && athr_valid && (s->alpha_floor_latched ||
-            (levers_valid && !all_idle && !inner_reverse &&
-             lever<=i->cl_detent_ratio+i->detent_tolerance_ratio));
+            (levers_valid && !all_idle && !inner_reverse && athr_lever_range(i,lever)));
         s->thrust_mode=A380X_A1A2_NONE;
         if(s->athr_active) {
             double speed_error=s->speed_target_knots-i->ias_knots;
@@ -449,24 +480,31 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
                     ceiling=clamp(i->athr_ceiling,0,1);
                     lever_below_cl=lever<i->cl_detent_ratio-i->detent_tolerance_ratio;
                 }
-                if(s->guidance_valid && (s->vertical_mode==A380X_B1_OP_CLB || s->vertical_mode==A380X_B1_CLB)) {
+                if(s->guidance_valid && managed_thrust_kind(s)==1) {
                     throttle=ceiling; s->thrust_mode=lever_below_cl?A380X_A1A2_THR_LVR:A380X_A1A2_THR_CLB;
-                } else if(s->guidance_valid && s->vertical_mode==A380X_B1_OP_DES) {
+                } else if(s->guidance_valid && managed_thrust_kind(s)==2) {
                     throttle=.04; s->thrust_mode=A380X_A1A2_THR_IDLE;
                 } else {
-                    double demand=.5+s->athr_integral+speed_error*.008;
+                    /* Port speed regulator (needs in-sim tuning). Bumpless entry from THR CLB / THR IDLE:
+                     * the integrator starts at the current engine command. */
+                    double demand, trend=-.25*s->ias_rate;   /* speed-trend anticipation, kt/s */
+                    if(!s->athr_speed_prev) s->athr_integral=clamp(s->throttle_command-.5-speed_error*.04-trend,-.48,.48);
+                    demand=.5+s->athr_integral+speed_error*.04+trend;
                     if((demand<ceiling || speed_error<0) && (demand>0 || speed_error>0))
-                        s->athr_integral=clamp(s->athr_integral+speed_error*.0005*dt,-.48,.48);
-                    throttle=.5+s->athr_integral+speed_error*.008;
-                    s->thrust_mode=s->mach_mode?A380X_A1A2_MACH:A380X_A1A2_SPEED;
+                        s->athr_integral=clamp(s->athr_integral+speed_error*.003*dt,-.48,.48);
+                    throttle=demand;
+                    s->thrust_mode=speed_is_mach(s,i)?A380X_A1A2_MACH:A380X_A1A2_SPEED;
                 }
+                s->athr_speed_prev=s->thrust_mode==A380X_A1A2_SPEED || s->thrust_mode==A380X_A1A2_MACH;
                 s->throttle_command=fmin(ceiling,s->throttle_command+
                     clamp(clamp(throttle,0,ceiling)-s->throttle_command,-.12*dt,.12*dt));
             }
         } else {
             s->throttle_command=isfinite(i->throttle_ratio)?clamp(i->throttle_ratio,0,1):0;
             s->thrust_mode=manual_thrust_mode(i);
+            s->athr_speed_prev=0;
         }
+        landing_athr(s,i,dt);
     }
     s->disconnect_warning=s->disconnect_seconds>0;
 }

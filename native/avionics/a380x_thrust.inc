@@ -49,13 +49,28 @@ static const char *const thr_fms_names[4] = {
 };
 #define THR_FCU_DISCONNECT "a380x/xp12/fcu/athr_disconnect"
 
-enum { THR_C_DISC_LEFT, THR_C_DISC_RIGHT, THR_C_COUNT };
+enum { THR_C_DISC_LEFT, THR_C_DISC_RIGHT, THR_C_LEVERS_IDLE, THR_C_LEVERS_CL, THR_C_LEVERS_FLX,
+       THR_C_LEVERS_TOGA, THR_C_LEVERS_UP, THR_C_LEVERS_DOWN, THR_C_COUNT };
 static const char *const thr_command_names[THR_C_COUNT] = {
     THR_NAME("athr_disconnect_left"), THR_NAME("athr_disconnect_right"),
+    THR_NAME("levers_idle"), THR_NAME("levers_cl"), THR_NAME("levers_flx_mct"), THR_NAME("levers_toga"),
+    THR_NAME("levers_detent_up"), THR_NAME("levers_detent_down"),
 };
 static const char *const thr_command_descriptions[THR_C_COUNT] = {
     "A/THR instinctive disconnect (left of thrust lever 1): hold > 15 s disables A/THR",
     "A/THR instinctive disconnect (right of thrust lever 4): hold > 15 s disables A/THR",
+    "Thrust levers: all to IDLE", "Thrust levers: all to CL (A/THR active range top)",
+    "Thrust levers: all to FLX/MCT", "Thrust levers: all to TOGA",
+    "Thrust levers: all to the next detent up (IDLE, CL, FLX/MCT, TOGA)",
+    "Thrust levers: all to the next detent down (TOGA, FLX/MCT, CL, IDLE)",
+};
+/* X-Plane's own throttle step commands (keyboard / joystick buttons): tapped for the detents. */
+#define THR_KEY_COUNT 10
+static const char *const thr_key_names[THR_KEY_COUNT] = {
+    "sim/engines/throttle_up", "sim/engines/throttle_down",
+    "sim/engines/throttle_up_1", "sim/engines/throttle_up_2", "sim/engines/throttle_up_3", "sim/engines/throttle_up_4",
+    "sim/engines/throttle_down_1", "sim/engines/throttle_down_2", "sim/engines/throttle_down_3",
+    "sim/engines/throttle_down_4",
 };
 
 /* Manipulator inputs (writable, CockpitLeverInput) first, then fadec_mode (writable int), the
@@ -109,6 +124,9 @@ static struct {
     int disc_tapped, disc_held, disc_forwarded[2];
     double engine_command[A380X_THRUST_ENGINES];
     int lease, ready, replay;
+    XPLMCommandRef key[THR_KEY_COUNT];
+    int key_held, key_grace;
+    double key_hold[A380X_THRUST_ENGINES];   /* detent ratio a held key command stopped at, < 0 none */
     float bind_timer;
     CockpitSound click;
     unsigned clicks_played;
@@ -308,8 +326,19 @@ static void thrust_levers_update(float wall_dt)
     if (!thr.replay && thr.raw[THR_RAW_RATIO] && thr.raw[THR_RAW_PROP_MODE]
         && XPLMGetDatavf(thr.raw[THR_RAW_RATIO], ratio, 0, 4) == 4
         && XPLMGetDatavi(thr.raw[THR_RAW_PROP_MODE], mode, 0, 4) == 4) {
-        for (i = 0; i < A380X_THRUST_ENGINES; ++i) { read[i].reverse = mode[i] == 3; read[i].ratio = ratio[i]; }
+        int snapped[A380X_THRUST_ENGINES] = {0}, keys = thr.key_held > 0 || thr.key_grace > 0;
+        if (thr.key_held <= 0 && thr.key_grace > 0) --thr.key_grace;
+        for (i = 0; i < A380X_THRUST_ENGINES; ++i) {
+            read[i].reverse = mode[i] == 3; read[i].ratio = ratio[i];
+            if (!keys) thr.key_hold[i] = -1.0;
+            else if (thr.core.written_valid && !read[i].reverse && !thr.core.written[i].reverse && isfinite(read[i].ratio)) {
+                double adopted = a380x_thrust_key_detent(&thr.core.cal, thr.core.written[i].ratio, read[i].ratio,
+                                                         &thr.key_hold[i]);
+                if (fabs(adopted - read[i].ratio) > 1e-5) { read[i].ratio = adopted; snapped[i] = 1; }
+            }
+        }
         a380x_thrust_sync_external(&thr.core, read);
+        for (i = 0; i < A380X_THRUST_ENGINES; ++i) if (snapped[i]) thr.core.dirty[i] = 1;  /* X-Plane back to the detent */
     }
     thr_read_inputs();
     thr_limits(&thr.in.limits, a380x_thrust_latch_flex_temp(&thr.core, &thr.in));
@@ -391,10 +420,47 @@ static int thr_disconnect_tap(XPLMCommandRef command, XPLMCommandPhase phase, vo
     return 1;   /* never consume: the FCU disconnects and the FWS counts the press */
 }
 
+/* Keyboard throttle steps: X-Plane moves its handle; thrust_levers_update applies the detents. */
+static int thr_key_tap(XPLMCommandRef command, XPLMCommandPhase phase, void *refcon)
+{
+    (void)command; (void)refcon;
+    if (phase == xplm_CommandBegin) ++thr.key_held;
+    else if (phase == xplm_CommandEnd && thr.key_held > 0 && --thr.key_held == 0) thr.key_grace = 3;
+    return 1;   /* X-Plane still moves the handle */
+}
+
+/* levers_idle / cl / flx_mct / toga / detent_up / detent_down: all four levers to that detent. */
+static void thr_levers_to_detent(int k)
+{
+    static const double detent[4] = {A380X_TLA_IDLE, A380X_TLA_CL, A380X_TLA_FLX, A380X_TLA_TOGA};
+    double now = -1.0, target;
+    int i, d;
+    for (i = 0; i < A380X_THRUST_ENGINES; ++i)
+        now = fmax(now, thr.core.reverse[i].value > 0.0 ? -1.0 : thr.core.lever[i].value);
+    if (k >= THR_C_LEVERS_IDLE && k <= THR_C_LEVERS_TOGA) target = detent[k - THR_C_LEVERS_IDLE];
+    else if (k == THR_C_LEVERS_UP) {
+        target = A380X_TLA_TOGA;
+        for (d = 0; d < 4; ++d) if (detent[d] > now + 0.5) { target = detent[d]; break; }
+    } else {
+        target = A380X_TLA_IDLE;
+        for (d = 3; d >= 0; --d) if (detent[d] < now - 0.5) { target = detent[d]; break; }
+    }
+    for (i = 0; i < A380X_THRUST_ENGINES; ++i) {
+        if (thr.core.reverse[i].value > 0.0) a380x_detent_lever_set(&thr.core.reverse[i], 0.0);
+        a380x_detent_lever_set(&thr.core.lever[i], target);
+        thr.core.dirty[i] = 1;
+    }
+    if (cockpit_sound_play(&thr.click, thr_click_from_eye[0], THR_CLICK_VOLUME)) ++thr.clicks_played;
+}
+
 static int thr_command_handler(XPLMCommandRef command, XPLMCommandPhase phase, void *refcon)
 {
     int k = (int)(intptr_t)refcon;
     (void)command;
+    if (k >= THR_C_LEVERS_IDLE && k < THR_C_COUNT) {
+        if (phase == xplm_CommandBegin && plugin_enabled && thr.ready && !thr.replay) thr_levers_to_detent(k);
+        return 0;
+    }
     if (k < 0 || k > 1) return 1;
     if (phase == xplm_CommandBegin) {
         if (!plugin_enabled || !thr.ready) return 1;
@@ -448,6 +514,11 @@ static void thrust_shutdown(void)
     thr.ready = 0;
     if (thr.disc_tapped && thr.fcu_disconnect) XPLMUnregisterCommandHandler(thr.fcu_disconnect, thr_disconnect_tap, 1, NULL);
     thr.disc_tapped = 0;
+    for (i = 0; i < THR_KEY_COUNT; ++i) if (thr.key[i]) {
+        XPLMUnregisterCommandHandler(thr.key[i], thr_key_tap, 1, NULL);
+        thr.key[i] = NULL;
+    }
+    thr.key_held = thr.key_grace = 0;
     for (i = 0; i < THR_C_COUNT; ++i) if (thr.command[i]) {
         XPLMUnregisterCommandHandler(thr.command[i], thr_command_handler, 1, (void *)(intptr_t)i);
         thr.command[i] = NULL;
@@ -495,6 +566,9 @@ static int thrust_init(void)
         if (!thr.command[i]) { thrust_shutdown(); return 0; }
         XPLMRegisterCommandHandler(thr.command[i], thr_command_handler, 1, (void *)(intptr_t)i);
     }
+    for (i = 0; i < A380X_THRUST_ENGINES; ++i) thr.key_hold[i] = -1.0;
+    for (i = 0; i < THR_KEY_COUNT; ++i)
+        if ((thr.key[i] = XPLMFindCommand(thr_key_names[i]))) XPLMRegisterCommandHandler(thr.key[i], thr_key_tap, 1, NULL);
     thr.fcu_disconnect = XPLMFindCommand(THR_FCU_DISCONNECT);
     if (thr.fcu_disconnect) {
         XPLMRegisterCommandHandler(thr.fcu_disconnect, thr_disconnect_tap, 1, NULL);

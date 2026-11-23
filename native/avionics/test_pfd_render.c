@@ -77,8 +77,12 @@ static void xf_apply(float *x,float *y) {
 static void glColor3f(float r,float g,float b) { current_color=(Color){r,g,b}; }
 static void glLineWidth(float width) { line_width=width; }
 static void glBegin(int kind) { primitive=kind; primitive_start=vertex_count; }
+/* textured-quad capture (TERRAIN on ND), set by glTexCoord2f below */
+static float mock_tex_u[4],mock_tex_v[4],mock_quad_x[4],mock_quad_y[4];
+static int mock_quad_vertex=-1;
 static void glVertex2f(float x,float y) {
     assert(isfinite(x) && isfinite(y));
+    if(mock_quad_vertex>=0) { mock_quad_x[mock_quad_vertex]=x; mock_quad_y[mock_quad_vertex]=y; if(mock_quad_vertex==3) mock_quad_vertex=-1; }
     assert(vertex_count<ARRAY_LEN(vertices));
     xf_apply(&x,&y);
     vertices[vertex_count++]=(CapturedVertex){x,y,current_color};
@@ -101,6 +105,42 @@ static void glEnd(void) {
     }
 }
 static void XPLMSetGraphicsState(int a,int b,int c,int d,int e,int f,int g) { (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g; }
+/* Texture mock for the TERRAIN on ND image (a380x_terrain_render.inc): RGBA storage per texture,
+ * textured quads recorded with their bounds and texture coordinates. */
+typedef unsigned int GLuint;
+#define GL_TEXTURE_2D 0x0DE1
+#define GL_TEXTURE_MIN_FILTER 0x2801
+#define GL_TEXTURE_MAG_FILTER 0x2800
+#define GL_TEXTURE_WRAP_S 0x2802
+#define GL_TEXTURE_WRAP_T 0x2803
+#define GL_NEAREST 0x2600
+#define GL_CLAMP_TO_EDGE 0x812F
+#define GL_RGBA 0x1908
+#define GL_UNSIGNED_BYTE 0x1401
+static struct { int width,height; unsigned char *rgba; } mock_textures[8];
+static int mock_texture_count,mock_bound,mock_textured_quads,mock_sub_uploads;
+static void XPLMGenerateTextureNumbers(int *ids,int count) { int i;for(i=0;i<count;++i) ids[i]=++mock_texture_count; assert(mock_texture_count<8); }
+static void XPLMBindTexture2d(int id,int unit) { (void)unit; mock_bound=id; }
+static void glTexParameteri(int target,int name,int value) { (void)target;(void)name;(void)value; }
+static void glTexImage2D(int target,int level,int internal,int width,int height,int border,int format,int type,const void *data) {
+    (void)target;(void)level;(void)internal;(void)border;(void)format;(void)type;
+    assert(mock_bound>0 && !data);
+    free(mock_textures[mock_bound].rgba);
+    mock_textures[mock_bound].rgba=calloc((size_t)width*height,4);
+    mock_textures[mock_bound].width=width;mock_textures[mock_bound].height=height;
+}
+static void glTexSubImage2D(int target,int level,int x,int y,int width,int height,int format,int type,const void *data) {
+    int row;(void)target;(void)level;(void)format;(void)type;
+    assert(mock_bound>0 && x==0 && width==mock_textures[mock_bound].width && y+height<=mock_textures[mock_bound].height);
+    for(row=0;row<height;++row) memcpy(mock_textures[mock_bound].rgba+((size_t)(y+row)*width)*4,(const unsigned char *)data+(size_t)row*width*4,(size_t)width*4);
+    ++mock_sub_uploads;
+}
+static void glDeleteTextures(int count,const GLuint *ids) { (void)count;(void)ids; }
+static void glColor4f(float r,float g,float b,float a) { (void)a; current_color=(Color){r,g,b}; }
+static void glTexCoord2f(float u,float v) {
+    mock_quad_vertex=(mock_quad_vertex+1)%4; mock_tex_u[mock_quad_vertex]=u; mock_tex_v[mock_quad_vertex]=v;
+    if(mock_quad_vertex==3) ++mock_textured_quads;
+}
 static float XPLMGetElapsedTime(void) { return clock_seconds; }
 static void XPLMDrawString(float *rgb,int x,int y,const char *text,void *wrap,int font) {
     Color c={rgb[0],rgb[1],rgb[2]}; (void)wrap;(void)font;
@@ -137,8 +177,11 @@ static struct {
 /* Minimal native flight-plan store for the ND route tests: plan 0 ACTIVE, 1 TMPY, straight legs
  * between consecutive termination points, the same rules as a380x_fms_fpln.c for disco/missed. */
 #include "a380x_fms_fpln.h"
+#include "a380x_fmgc_guidance.h"
 static A380XFlightPlans *fmsa_fpln;
 static A380XFplnPlan test_plans[2];
+static A380XFmgcNdPwp fmsa_nd_pwp[A380X_FMGC_MAX_ND_PWP];   /* FMGC pseudo waypoints (a380x_nd_pwp.inc) */
+static int fmsa_nd_pwp_count;
 const A380XFplnPlan *a380x_fpln_plan(const A380XFlightPlans *fp, int plan_index)
 {
     (void)fp;
@@ -398,17 +441,46 @@ static void test_nd(void) {
     nd_data.traffic_altitude_m[3]=304.8f;
     clear_capture();draw_nd(&refs.side[0],0,0,"CAPT");assert(has_label("+10"));
     clear_capture();draw_nd(&refs.side[1],0,0,"F/O");assert(!has_label("+10"));
-    /* A failed/missing terrain sample leaves the map uncoloured. The small
-     * elevation raster only appears from valid scenery-probe samples. */
+    /* TERRAIN on ND (a380x_terrain_render.inc): nothing until the side's raster is on; then one
+     * textured quad at the raster's place on this map (legacy 180 x 234 ROSE: radius 76 = 80 NM), the
+     * pattern pixels uploaded row by row, the FBW TERR box values in the status line. */
     nd_test_state();efis[0].terr=1;
-    clear_capture();draw_nd(&refs.side[0],0,0,"CAPT");
-    assert(has_label("TERR N/A")&&count_color((Color){.44f,.25f,.01f})==0);
-    nd_data.terrain[0].span_nm=40;nd_data.terrain[0].valid_count=1;
-    nd_data.terrain[0].points[0]=(EfisNdTerrainPoint){.25,.25,5500,1,0};
-    clear_capture();draw_nd(&refs.side[0],0,0,"CAPT");
-    assert(has_label("TERR LOCAL")&&count_color((Color){.44f,.25f,.01f})==4);
-    clear_capture();draw_nd(&refs.side[1],0,0,"F/O");
-    assert(!has_label("TERR LOCAL")&&count_color((Color){.44f,.25f,.01f})==0);
+    clear_capture();mock_textured_quads=0;draw_nd(&refs.side[0],0,0,"CAPT");
+    assert(has_label("TERR N/A")&&mock_textured_quads==0);
+    terr_display_reset(&nd_data.terrain[0]);
+    nd_data.terrain[0].on=1;assert(terr_geometry(2,80,&nd_data.terrain[0].geo));
+    nd_data.terrain[0].cls[20][42]=TERR_RED_HIGH;nd_data.terrain[0].cls[20][43]=TERR_GREEN_SOLID;
+    nd_data.terrain[0].shown=(TerrThresholds){3000,TERR_LEVEL_GREEN,9100,TERR_LEVEL_RED,0};
+    clear_capture();mock_textured_quads=mock_sub_uploads=0;draw_nd(&refs.side[0],0,0,"CAPT");
+    assert(has_label("TERR 92/ 30")&&mock_textured_quads==1&&mock_sub_uploads==nd_data.terrain[0].geo.rows);
+    {   /* the image's aircraft reference (384, 384) at the legacy ROSE centre, 76/80 units per NM */
+        const float k=(76.0f/80.0f)/nd_data.terrain[0].geo.px_per_nm;
+        const unsigned char *rgba=mock_textures[mock_bound].rgba;
+        const int w=mock_textures[mock_bound].width;
+        assert(fabsf(mock_quad_x[0]-fmaxf(90+(45-384)*k,5))<.01f && fabsf(mock_quad_y[0]-fminf(104+(384-128)*k,183))<.01f);
+        assert(w==85*8 && mock_textures[mock_bound].height==32*8);
+        /* row 20 col 43 solid green, col 42 high-density red: pixel (336, 160) tile (0, 4) on */
+        assert(rgba[((size_t)(20*8)*w+43*8)*4+1]==255&&rgba[((size_t)(20*8)*w+43*8)*4+3]==255);
+        assert(rgba[((size_t)(20*8)*w+42*8)*4+0]==255&&rgba[((size_t)(20*8)*w+42*8)*4+1]==0);
+    }
+    clear_capture();mock_sub_uploads=0;draw_nd(&refs.side[0],0,0,"CAPT");assert(mock_sub_uploads==0);   /* unchanged rows */
+    nd_data.terrain[0].cls[5][5]=TERR_WATER;
+    clear_capture();mock_sub_uploads=0;draw_nd(&refs.side[0],0,0,"CAPT");assert(mock_sub_uploads==1);   /* one changed row */
+    clear_capture();mock_textured_quads=0;draw_nd(&refs.side[1],0,0,"F/O");
+    assert(!has_label("TERR 92/ 30")&&mock_textured_quads==0);
+    /* Pointer elevation readout (simulator aid) beside the pointer, flipped left near the right edge. */
+    memset(&nd_data.terrain_pointer[0],0,sizeof(nd_data.terrain_pointer[0]));
+    clear_capture();terrain_draw_overlay(0);assert(label_count==0&&vertex_count==0);
+    nd_data.terrain_pointer[0].inside=nd_data.terrain_pointer[0].shown=1;
+    nd_data.terrain_pointer[0].x=400;nd_data.terrain_pointer[0].y=300;
+    snprintf(nd_data.terrain_pointer[0].text,sizeof(nd_data.terrain_pointer[0].text),"SIM ELEV 4250 FT");
+    clear_capture();terrain_draw_overlay(0);
+    label=find_label("SIM ELEV 4250 FT");
+    assert(label&&label->x>400&&label->y<1024-300&&count_color((Color){.10f,.11f,.13f})==4);
+    nd_data.terrain_pointer[0].x=740;
+    clear_capture();terrain_draw_overlay(0);
+    label=find_label("SIM ELEV 4250 FT");assert(label&&label->x<740);
+    terrain_gl_shutdown();assert(!terrain_gl[0].texture);
     efis[0].zoom=1;clear_capture();draw_nd(&refs.side[0],0,0,"CAPT");
     assert(has_label("AIRPORT MAP N/A")&&count_color((Color){.44f,.25f,.01f})==0);
     nd_test_state();efis[0].zoom=1;refs.side[0].nd_range_nm=1;
@@ -567,6 +639,85 @@ static void nd_fbw_arc_state(void) {
         }
     }
 }
+/* TERRAIN on ND in the FBW-layout native ND (a380x_nd_fbw.inc): the raster quad placed about the ARC
+ * aircraft reference (384, 620) at 498 px per range, under the map; the FBW TERR box values. */
+static void test_nd_fbw_terrain(void) {
+    TerrDisplay *d = &nd_data.terrain[0];
+    nd_fbw_arc_state();
+    efis[0].terr = 1;
+    clear_capture(); mock_textured_quads = 0; draw_nd_fbw_arc(&refs.side[0], 0);
+    assert(mock_textured_quads == 0 && !has_label("TERR"));
+    terr_display_reset(d);
+    d->on = 1; assert(terr_geometry(3, 40, &d->geo));
+    d->cls[30][40] = TERR_RED_HIGH;
+    d->shown = (TerrThresholds){3000, TERR_LEVEL_YELLOW, 9100, TERR_LEVEL_RED, 0};
+    clear_capture(); mock_textured_quads = 0; draw_nd_fbw_arc(&refs.side[0], 0);
+    assert(mock_textured_quads == 1 && has_label("TERR") && has_label(" 92") && has_label(" 30"));
+    /* 498 px per range on both layouts: the image keeps its pixel size, its top edge 498 px above the
+     * aircraft line minus the FBW offset (626 - 128), clipped by the map box at y 80 */
+    assert(fabsf(mock_quad_x[0] - 6.0f) < .01f && fabsf(mock_quad_y[0] - fminf(NDY(620) + (626 - 128), NDY(80))) < .01f);
+    assert(fabsf(mock_tex_u[0]) < 1e-6f && fabsf(mock_tex_u[1] - 756.0f / 760.0f) < 1e-5f);   /* clipped at x 762 */
+    d->shown = (TerrThresholds){-1, 0, -1, 0, 0};
+    clear_capture(); draw_nd_fbw_arc(&refs.side[0], 0);
+    assert(!has_label("TERR"));   /* no terrain in view: box hidden */
+    terr_display_reset(d); efis[0].terr = 0;
+    fmsa_fpln = NULL;
+}
+/* FMGC pseudo waypoints over the route (a380x_nd_pwp.inc): T/D (white, start of descent), DECEL
+ * (magenta circle + D), speed change dot, and a cyan level-off arrow along the track (HDG). */
+static void nd_pwp_set(int i, const char *id, unsigned symbol, A380XPwpColour colour, A380XPwpNdPlacement nd,
+                       double lat, double lon, double ahead) {
+    A380XFmgcNdPwp *w = &fmsa_nd_pwp[i];
+    memset(w, 0, sizeof(*w));
+    snprintf(w->ident, sizeof(w->ident), "%s", id);
+    w->symbol = symbol; w->colour = colour; w->nd = nd; w->lat = lat; w->lon = lon; w->dist_ahead_nm = ahead;
+    w->alt_ft = w->speed_kt = NAN; w->leg_index = -1;
+}
+static void nd_pwp_state(void) {
+    nd_fbw_arc_state();
+    nd_pwp_set(0, "(SPDLIM)", A380X_PWP_SPEED_CHANGE, A380X_PWP_MAGENTA, A380X_PWP_ND_PATH, .10, 0, 6);
+    nd_pwp_set(1, "LEVEL", A380X_PWP_CLIMB_LEVEL_OFF, A380X_PWP_CYAN, A380X_PWP_ND_TRACK, NAN, NAN, 10);
+    nd_pwp_set(2, "(T/D)", A380X_PWP_START_OF_DESCENT, A380X_PWP_WHITE, A380X_PWP_ND_PATH, .30, 0, 18);
+    nd_pwp_set(3, "(DECEL)", A380X_PWP_DECEL, A380X_PWP_MAGENTA, A380X_PWP_ND_PATH, .55, .0167, 33);
+    fmsa_nd_pwp_count = 4;
+}
+static void test_nd_fbw_pwps(void) {
+    int base_magenta, base_cyan, base_white, i, td = 0, dot = 0, level = 0, decel = 0;
+    const float px_nm = ND_FBW_ARC_MAP_RADIUS / 40.0f;   /* 40 NM range */
+    nd_fbw_arc_state();
+    fmsa_nd_pwp_count = 0;
+    clear_capture(); draw_nd_fbw_arc(&refs.side[0], 0);
+    base_magenta = vertices_in(MAGENTA); base_cyan = vertices_in(CYAN); base_white = vertices_in(WHITE);
+    nd_pwp_state();
+    clear_capture(); draw_nd_fbw_arc(&refs.side[0], 0);
+    /* speed-change fan 18 + DECEL ring 33 + D 7; level-off line 3 + arrow head 3 */
+    assert(vertices_in(MAGENTA) == base_magenta + 58 && vertices_in(CYAN) == base_cyan + 6);
+    for (i = 0; i < vertex_count; ++i) {
+        const CapturedVertex *v = &vertices[i];
+        /* T/D: starts at its path point 18 NM ahead (heading north), 22.2 px level then 19.8 px down-right */
+        if (color_is(v->color, WHITE) && fabsf(v->x - ND_FBW_CX) < .5f && fabsf(v->y - (NDY(ND_FBW_CY) + 18.0f * px_nm)) < .5f) td++;
+        /* speed change: a magenta fan centred 6 NM ahead */
+        if (color_is(v->color, MAGENTA) && fabsf(v->x - ND_FBW_CX) < .5f && fabsf(v->y - (NDY(ND_FBW_CY) + 6.0f * px_nm)) < .5f) dot++;
+        /* DECEL: the D is inside the ring of radius 14.5 px about its point */
+        if (color_is(v->color, MAGENTA) && fabsf(v->x - (ND_FBW_CX + 1.0f * px_nm + 2.3625f)) < .6f
+            && fabsf(v->y - (NDY(ND_FBW_CY) + 33.0f * px_nm + 9.7875f)) < .6f) decel++;
+        /* along-track level-off (track 4 deg right of the heading): arrow tip 10 NM out on the track line */
+        if (color_is(v->color, CYAN) && fabsf(v->x - (ND_FBW_CX + 10.0f * px_nm * sinf(4.0f * (float)M_PI / 180)))< .6f
+            && fabsf(v->y - (NDY(ND_FBW_CY) + 10.0f * px_nm * cosf(4.0f * (float)M_PI / 180))) < .6f) level++;
+    }
+    assert(td >= 1 && dot >= 1 && decel >= 1 && level >= 2);
+    assert(vertices_in(WHITE) == base_white + 6);   /* the T/D: two 3-point polylines */
+    /* beyond the map: not drawn */
+    fmsa_nd_pwp[2].lat = 2.0;
+    clear_capture(); draw_nd_fbw_arc(&refs.side[0], 0);
+    assert(vertices_in(WHITE) == base_white);
+    /* the native-layout ND draws the same list at its symbol scale */
+    nd_pwp_state();
+    clear_capture(); draw_nd(&refs.side[0], 0, 0, "CAPT");
+    assert(vertices_in(MAGENTA) > 0);
+    fmsa_nd_pwp_count = 0;
+    fmsa_fpln = NULL;
+}
 static void test_vd_terrain(void) {
     static const Color VD_TERRAIN = {0.48f, 0.24f, 0.09f};
     nd_fbw_arc_state();
@@ -653,6 +804,9 @@ static void export_nd_fbw_one(const char *nd_path, const char *name, int mode) {
 }
 static void export_nd_fbw_svg(const char *nd_path) {
     export_nd_fbw_one(nd_path, "nd-fbw-arc.svg", 3);
+    nd_pwp_state();   /* pseudo waypoints: (SPDLIM), along-track LEVEL, (T/D), (DECEL) */
+    export_nd_fbw_one(nd_path, "nd-fbw-pwp.svg", 3);
+    fmsa_nd_pwp_count = 0;
     export_nd_fbw_one(nd_path, "nd-fbw-rose.svg", 2);
     export_nd_fbw_one(nd_path, "nd-fbw-plan.svg", 4);
 }
@@ -826,6 +980,18 @@ static void test_pfd_boundaries(void) {
     clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(has_label("STALL"));
     pfd_guidance.on_ground=1;
     clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(!has_label("STALL"));
+    /* TAWS / GPWS (FBW AttitudeIndicatorWarningsA380): PULL UP for the TAWS warning or GPWS modes 1/2,
+     * TERRAIN for the TAWS caution, both below the stall warning. */
+    normal_state();nd_data.taws_caution=1;
+    clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(has_label("TERRAIN")&&!has_label("PULL UP"));
+    nd_data.taws_warning=1;
+    clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(has_label("PULL UP")&&!has_label("TERRAIN"));
+    nd_data.taws_warning=nd_data.taws_caution=0;nd_data.gpws_pull_up=1;
+    clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(has_label("PULL UP"));
+    pfd_guidance.stall_warning=1;pfd_guidance.on_ground=0;
+    clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(has_label("STALL")&&!has_label("PULL UP"));
+    nd_data.gpws_pull_up=0;pfd_guidance.stall_warning=0;
+    clear_capture();draw_pfd(&refs.side[0],0,32,"CAPT");assert(!has_label("PULL UP")&&!has_label("TERRAIN"));
 }
 static void test_fms_flap_speeds(void) {
     /* FBW PRIM rule: S in CONF 1 and 1+F, F in CONF 2 and 3, neither clean or FULL. */
@@ -858,6 +1024,8 @@ int main(int argc,char **argv) {
     test_nd_fbw_arc();
     test_nd_fbw_rose_plan();
     test_vd_terrain();
+    test_nd_fbw_terrain();
+    test_nd_fbw_pwps();
     test_altitude_drums();
     test_rising_ground();
     test_pfd_bank_direction();
@@ -880,6 +1048,26 @@ int main(int argc,char **argv) {
     normal_state();draw_pfd(&refs.side[0],0,32,"CAPT");
     assert(has_label("AP1") && has_label("1FD2") && has_label("A/THR") && has_label("OP CLB") && has_label("ALT"));
     assert(!has_label("APPR 1") && !has_label("LAND 3"));
+    /* LAND / FLARE / ROLL OUT span B1+C1 (FMA.tsx BC1Cell) and replace G/S and LOC (a380x_autoland.inc). */
+    published.fma_b1=A380X_B1_GS;published.fma_c1=A380X_C1_LOC;published.fma_d1d2=A380X_D1D2_LAND_2;
+    pfd_guidance.fma_bc1=A380X_BC1_LAND;clear_capture();draw_fma(&canvas,&refs.side[0]);
+    assert(has_label("LAND") && !has_label("G/S") && !has_label("LOC") && has_label("LAND 2"));
+    pfd_guidance.fma_bc1=A380X_BC1_ROLL_OUT;clear_capture();draw_fma(&canvas,&refs.side[0]);
+    assert(has_label("ROLL OUT") && !has_label("LAND"));
+    pfd_guidance.fma_bc1=A380X_BC1_NONE;clear_capture();draw_fma(&canvas,&refs.side[0]);
+    assert(has_label("G/S") && has_label("LOC") && !has_label("ROLL OUT"));
+    /* LAND 3 capability on two lines (FBW D1D2Cell), D3 minimums (D3Cell). */
+    published.fma_d1d2=A380X_D1D2_LAND_3_DUAL;pfd_guidance.fma_minimum_mode=3;clear_capture();draw_fma(&canvas,&refs.side[0]);
+    assert(has_label("LAND 3") && has_label("DUAL") && !has_label("SINGLE") && !has_label("LAND 2") && has_label("NO DH"));
+    published.fma_d1d2=A380X_D1D2_LAND_3_SINGLE;pfd_guidance.fma_minimum_mode=1;pfd_guidance.fma_minimum_ft=50;
+    clear_capture();draw_fma(&canvas,&refs.side[0]);
+    assert(has_label("LAND 3") && has_label("SINGLE") && has_label("RADIO") && has_label("50") && !has_label("NO DH"));
+    assert(find_label("50")->color.b == CYAN.b);
+    published.fma_d1d2=A380X_D1D2_APPR_1;pfd_guidance.fma_minimum_mode=2;pfd_guidance.fma_minimum_ft=720;
+    clear_capture();draw_fma(&canvas,&refs.side[0]);
+    assert(has_label("APPR 1") && !has_label("LAND 3") && has_label("BARO") && has_label("720"));
+    pfd_guidance.fma_minimum_mode=0;pfd_guidance.fma_minimum_ft=0;
+    published.fma_b1=A380X_B1_ALT;published.fma_c1=A380X_C1_HDG;published.fma_d1d2=0;
     pfd_guidance.guidance_valid=0;pfd_guidance.athr_active=0;clear_capture();draw_fma(&canvas,&refs.side[0]);
     assert(!has_label("OP CLB") && !has_label("HDG") && !has_label("THR CLB") && !has_label("ALT"));
     center_right.rto_arm=1;clear_capture();draw_fma(&canvas,&refs.side[0]);

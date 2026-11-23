@@ -111,3 +111,41 @@ Future builds also translate legacy cached exterior bindings during scoped
 packaging. This was checked against all 20 installed objects byte-for-byte;
 cached source exports and their material directives are unchanged. Package
 validation reports zero errors.
+
+## Native driver (A380XAileronDatarefs) — 2026-11-05
+
+The FlyWithLua drivers only run for an aircraft folder named exactly `A380X-XP12` (their
+`AIRCRAFT_PATH` gate), so a copy in any other folder (for example `A380X-XP12 Latest`) had frozen
+elevators, rudder, ailerons and spoilers: the early-registration plugin owned the 22 datarefs but
+nothing wrote them. The plugin now drives them itself.
+
+* `native/aileron_datarefs/a380x_surface_motion.c` is a C port of both FlyWithLua drivers and both
+  modules (`a380x_aileron_dance.lua`, `a380x_hydraulic_surfaces.lua`), in their FlyWithLua order
+  (aileron dance, then the hydraulic settling that reads the published aileron values back). It runs
+  from a flight loop (after the flight model, every frame) created in `XPluginEnable`, whatever the
+  folder is called and without FlyWithLua.
+* Visual only: it reads the same simulator datarefs as the Lua drivers and writes only its own 22
+  Floats. No flight control, override or flight-model dataref is written (the mock test links no
+  `XPLMSetData*` at all).
+* Pause holds the pose (both cores); a frame period of 0, < 0, > 1 s or non-finite resets the aileron
+  core and holds the hydraulic one, exactly as in Lua. `XPLM_MSG_PLANE_LOADED` (user aircraft) and
+  `XPLM_MSG_AIRPORT_LOADED` re-seed both cores on the next frame, like FlyWithLua's script reload.
+  Replay follows the replayed controls (nothing is written to the simulator, the frame-period guards
+  cover discontinuities). Disable clears the 22 values and stops the loop; Stop unregisters them.
+* `a380x/xp12/hydraulics/native_driver` (Int, read-only) is 1 while the native driver runs. The global
+  FlyWithLua drivers look it up at load and read it every frame: while it is 1 they stand down without
+  writing (`tests/native_driver_standdown_test.lua`), so there are never two writers. Their path gate is
+  unchanged for the development aircraft, whose older plugin has no flag.
+* Equivalence: `tests/surface_golden_lua.lua` runs the real, unmodified FlyWithLua scripts and modules
+  under a FlyWithLua host model on 8 scripted scenarios (ground and air full deflections, roll doublets
+  with spoilers, pressure loss and recovery through the 450/900 PSI hysteresis, cold aircraft with
+  wind gusts / heading changes / the 0.25 m/s threshold, unpowered ground roll and lift-off, pause /
+  invalid inputs / frame-period anomalies, random stress with mixed frame rates, reloads mid-flight).
+  `test_surface_golden.c` replays the same inputs through the real plugin (mock XPLM, real flight
+  loop and accessors) and requires every one of the 22 published values to be identical, frame by
+  frame (10 470 frames, 230 340 values: bit-exact). Both are compiled with `-ffp-contract=off`.
+  The reference interpreter is Lua 5.4; FlyWithLua NG uses LuaJIT, whose float `%` is
+  `a - floor(a/b)*b` rather than 5.4's fmod form: an ulp-level difference in the wind angle that does
+  not survive the float32 dataref (a mutation of that branch is not observable in the golden run).
+* `native/aileron_datarefs/build.py` runs the mock test, the golden comparison and the MinGW check;
+  its build report records the golden result and the sha256 of the four Lua sources it was run against.

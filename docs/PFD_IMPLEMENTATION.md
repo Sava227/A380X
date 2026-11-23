@@ -111,3 +111,22 @@ Sources: pinned [FlyByWire A380 PFD](https://github.com/flybywiresim/aircraft/tr
 [A380 PFD overview](https://docs.flybywiresim.com/pilots-corner/a380x/a380x-briefing/flight-deck/main-panel/pfd/),
 Airbus [speed envelope](https://safetyfirst.airbus.com/control-your-speed-in-cruise/)
 and [configuration limits](https://safetyfirst.airbus.com/control-your-speed-during-descent-approach-and-landing/).
+
+## Speed scale envelope (VMAX, VSW)
+
+Without an aircraft-systems envelope provider (`a380x/xp12/systems/pfd/*`), the plugin computes the
+speed-scale limits itself (`a380x_pfd_inputs.inc`) and sends them to the FBW PFD as PRIM words:
+
+* **VMAX** (`L:A32NX_PRIM_n_V_MAX`, red/black overspeed barber pole): VMO/MMO, the VFE of the
+  current configuration (FBW SFCC) and the landing-gear limits (250 kt / M.55). Always valid when
+  known; it no longer depends on the provider.
+* **VSW** (`L:A32NX_PRIM_n_V_STALL_WARN`, red/black stall-warning barber pole). This port has no
+  Airbus normal-law alpha protection, so the PFD shows VSW (as in the laws without protection)
+  instead of the alpha prot / alpha max strips (those stay provider-only). VS1g comes from the FBW
+  A380 operating-speed tables at the aircraft's actual mass and flap lever (CG 30 %MAC);
+  VSW = max(1.05 VS1g, VS1g + 5 kt) x sqrt(nz), the CS 25.207(c) stall-warning margin raised with
+  the load factor (nz 0.5-2.5, 1 on the ground). Examples (1 g): 450 t CONF FULL VS1g 120 / VSW 126 /
+  VLS 148 kt; 450 t clean VS1g 163 / VSW 171 kt.
+* The stall-warning aural uses the same VSW (docs/COCKPIT_AURALS.md).
+
+The native (Windows) PFD draws the same VSW strip from `pfd_guidance.stall_warning_knots`.

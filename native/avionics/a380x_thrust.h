@@ -280,6 +280,32 @@ static inline void a380x_thrust_sync_external(A380XThrust *t, const A380XXpLever
     }
 }
 
+/* Keyboard / joystick-button throttle commands (sim/engines/throttle_up, throttle_down and their
+ * per-engine forms) step X-Plane's handle without the cockpit lever's magnetic detents, so CL (the top
+ * of the A/THR active range) and FLX/MCT were hard to hit. While such a command is held, a lever that
+ * reaches (within the calibration tolerance) or crosses CL or FLX/MCT stops there and stays (*hold,
+ * < 0 = none) until the command is released; the next press moves it on. previous = the ratio last
+ * written or adopted, next = X-Plane's new ratio. Returns the ratio to adopt. */
+static inline double a380x_thrust_key_detent(const A380XThrustCalibration *c, double previous, double next,
+                                             double *hold)
+{
+    double d[2], band;
+    int k, up;
+    if (*hold >= 0.0) return *hold;
+    if (!isfinite(previous) || !isfinite(next) || next == previous) return next;
+    band = c->tolerance > 0.0 ? c->tolerance : 0.0;
+    up = next > previous;
+    d[0] = up ? c->cl : c->mct;
+    d[1] = up ? c->mct : c->cl;
+    for (k = 0; k < 2; ++k)
+        if ((up && previous < d[k] - band && next >= d[k] - band)
+            || (!up && previous > d[k] + band && next <= d[k] + band)) {
+            *hold = d[k];
+            return d[k];
+        }
+    return next;
+}
+
 /* Called by the adapter after it wrote engine i's actuators to X-Plane. */
 static inline void a380x_thrust_mark_written(A380XThrust *t, int i, A380XXpLever written)
 {

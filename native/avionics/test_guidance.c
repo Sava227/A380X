@@ -43,7 +43,7 @@ static void test_controls_and_gating(void) {
     A380XGuidanceInputs i=fixture(); A380XGuidanceState s;
     a380x_guidance_init(&s,&i);
     assert(s.fbw_laws);
-    cmd(&s,&i,A380X_FCU_AP1,0); assert(!s.ap1);
+    { A380XGuidanceInputs g=i; g.on_ground=1; cmd(&s,&g,A380X_FCU_AP1,0); assert(!s.ap1); }   /* not on the ground */
     cmd(&s,&i,A380X_FCU_SPD_ROTATE,1000); assert(s.selected_speed_knots==399);
     cmd(&s,&i,A380X_FCU_SPD_ROTATE,-1000); assert(s.selected_speed_knots==100);
     cmd(&s,&i,A380X_FCU_HDG_ROTATE,-1); assert(s.selected_heading_deg==359);
@@ -93,9 +93,22 @@ static void test_manual_ap_timing_and_fd_powerup(void) {
     i.on_ground=1; i.radio_height_ft=0;
     a380x_guidance_init(&s,&i);
     run(&s,&i,10); cmd(&s,&i,A380X_FCU_AP1,0); assert(!s.ap1 && s.airborne_seconds==0);
-    i.on_ground=0; i.radio_height_ft=1000;
-    run(&s,&i,4.98); cmd(&s,&i,A380X_FCU_AP1,0); assert(!s.ap1);
-    run(&s,&i,.02); cmd(&s,&i,A380X_FCU_AP1,0); assert(s.ap1);
+    { /* The cockpit diagnostics name the refusal (docs/AUTOPILOT_DEVELOPMENT.md). */
+        char why[220]; A380XGuidanceInputs bad=i;
+        assert(a380x_guidance_engage_problems(&s,&i,why,sizeof(why))==1 && strstr(why,"on the ground"));
+        bad.attitude_valid=0;
+        assert(a380x_guidance_engage_problems(&s,&bad,why,sizeof(why))==2 && strstr(why,"IR: check ADIRS"));
+        assert(a380x_guidance_engage_problems(&s,&bad,why,8)==2 && strlen(why)==7);
+    }
+    /* No engagement limits (user decision 2026-11-09): right after liftoff, below VLS, above VMAX,
+     * steep bank or pitch, the AP engages and stays engaged. */
+    i.on_ground=0; i.radio_height_ft=20;
+    run(&s,&i,.1); i.vls_knots=i.ias_knots+30; i.roll_deg=50; i.pitch_deg=24;
+    cmd(&s,&i,A380X_FCU_AP1,0); assert(s.ap1);
+    { char why[64]; assert(a380x_guidance_engage_problems(&s,&i,why,sizeof(why))==0 && !why[0]); }
+    run(&s,&i,.5); assert(s.ap1);
+    i.vls_knots=140; i.vmax_knots=i.ias_knots-30; run(&s,&i,.5); assert(s.ap1);
+    i.vmax_knots=340; i.roll_deg=0; i.pitch_deg=3; i.radio_height_ft=1000;
     cmd(&s,&i,A380X_FCU_AP2,0); assert(!s.ap1 && s.ap2);
     cmd(&s,&i,A380X_FCU_AP1,0); assert(s.ap1 && !s.ap2);
     cmd(&s,&i,A380X_FCU_APPR,0); cmd(&s,&i,A380X_FCU_AP2,0); assert(s.ap1 && s.ap2);
@@ -125,6 +138,10 @@ static void test_manual_athr_detents_and_disconnects(void) {
     pilot_levers(&i,i.cl_detent_ratio); run(&s,&i,.1); assert(!s.athr_armed);
     pilot_levers(&i,i.toga_detent_ratio); run(&s,&i,.1); assert(s.athr_armed);
     i.on_ground=0; run(&s,&i,.1); assert(s.athr_armed && !s.athr_active);
+    /* FLX/MCT detent: manual; between CL and FLX/MCT: A/THR active (port range, user decision). */
+    pilot_levers(&i,i.mct_detent_ratio); run(&s,&i,.1); assert(s.athr_armed && !s.athr_active);
+    pilot_levers(&i,(i.cl_detent_ratio+i.mct_detent_ratio)/2); run(&s,&i,.1);
+    assert(s.athr_armed && s.athr_active && s.thrust_mode==A380X_A1A2_SPEED);
     pilot_levers(&i,i.cl_detent_ratio); run(&s,&i,.1);
     assert(s.athr_armed && s.athr_active && s.thrust_mode==A380X_A1A2_SPEED);
     pilot_levers(&i,0); run(&s,&i,.1); assert(!s.athr_armed && !s.athr_active);
@@ -240,8 +257,8 @@ static void test_capture_and_failures(void) {
     assert(s.vertical_mode==A380X_B1_ALT && s.held_altitude_ft==12000);
     cmd(&s,&i,A380X_FCU_ALT_ROTATE,10); run(&s,&i,.1); assert(s.altitude_target_ft==12000);
     i.attitude_valid=0; run(&s,&i,.1); assert(!s.ap1 && !s.guidance_valid && s.disconnect_warning);
-    i.attitude_valid=1; i.roll_deg=41; cmd(&s,&i,A380X_FCU_AP1,0); assert(!s.ap1);
-    i.roll_deg=0; cmd(&s,&i,A380X_FCU_AP1,0); assert(s.ap1);
+    i.attitude_valid=1; i.roll_deg=41; cmd(&s,&i,A380X_FCU_AP1,0); assert(s.ap1);   /* no bank limit */
+    i.roll_deg=0;
     i.paused=1; run(&s,&i,.1); assert(s.pitch_servo==0 && s.roll_servo==0);
     i.paused=0; i.pitch_deg=NAN; run(&s,&i,.1); assert(!s.ap1 && !s.guidance_valid);
     a380x_guidance_destroy(&s);
@@ -401,12 +418,127 @@ static void test_gs_sign(void) {
     printf("FBW GS needle up/down pitch: %.3f / %.3f\n",pitch[0],pitch[1]);
     assert(pitch[0]>pitch[1]);
 }
+/* Managed (FMGC-coupled) modes: NAV arm/capture/loss, takeoff SRS, CLB/ALT CST, DES submodes, A/THR. */
+static void managed_route(A380XGuidanceInputs *i, int capture) {
+    i->managed_route_valid=1; i->managed_nav_capture=capture; i->managed_vertical_valid=1;
+    i->managed_speed_valid=1; i->managed_speed_knots=250;
+    i->fms_phase_valid=1;
+}
+static void test_managed_nav(void) {
+    A380XGuidanceInputs i=fixture(); A380XGuidanceState s;
+    a380x_guidance_init(&s,&i); engage(&s,&i);
+    managed_route(&i,0); i.fms_phase=3;
+    cmd(&s,&i,A380X_FCU_HDG_PUSH,0);
+    assert(s.nav_armed && s.lateral_mode==A380X_C1_HDG && !s.managed_unavailable);
+    run(&s,&i,1); assert(s.nav_armed && s.lateral_mode==A380X_C1_HDG);
+    i.managed_nav_capture=1; run(&s,&i,.1);
+    assert(!s.nav_armed && s.lateral_mode==A380X_C1_NAV && s.heading_managed);
+    /* FBW HPATH convention: path to the right (xtk>0) and desired track to the right (tae>0) bank right */
+    i.route_xtk_nm=.5; i.route_track_error_deg=5; run(&s,&i,3);
+    assert(s.roll_command_deg>5);
+    i.route_xtk_nm=-.5; i.route_track_error_deg=-5; run(&s,&i,6);
+    assert(s.roll_command_deg<-5);
+    /* bank feed-forward: the AP roll command is phi + K(phi_c - phi), so it settles at phi_c when the
+     * aircraft holds the commanded bank */
+    i.route_xtk_nm=0; i.route_track_error_deg=0; i.route_bank_deg=15; i.roll_deg=15; run(&s,&i,12);
+    assert(fabs(s.roll_command_deg-15)<1 && fabs(s.fd_roll_error_deg)<1);   /* 5 deg/s command rate limit */
+    i.route_bank_deg=0; i.roll_deg=0;
+    /* managed climb, then NAV lost (discontinuity): CLB -> OP CLB, HDG on the current heading */
+    s.selected_altitude_ft=20000; i.managed_altitude_ft=20000; i.fms_phase=2;
+    cmd(&s,&i,A380X_FCU_ALT_PUSH,0); assert(s.vertical_mode==A380X_B1_CLB && s.altitude_managed);
+    run(&s,&i,1);
+    i.managed_route_valid=0; i.managed_vertical_valid=0; run(&s,&i,.1);
+    assert(s.lateral_mode==A380X_C1_HDG && s.vertical_mode==A380X_B1_OP_CLB && !s.altitude_managed && s.mode_reversion);
+    a380x_guidance_destroy(&s);
+    /* HDG pull disarms NAV; ALT push without NAV engaged opens the climb and arms CLB with NAV armed */
+    i=fixture(); a380x_guidance_init(&s,&i); engage(&s,&i); managed_route(&i,0); i.fms_phase=2;
+    cmd(&s,&i,A380X_FCU_HDG_PUSH,0); assert(s.nav_armed);
+    s.selected_altitude_ft=15000; i.managed_altitude_ft=15000;
+    cmd(&s,&i,A380X_FCU_ALT_PUSH,0); assert(s.vertical_mode==A380X_B1_OP_CLB && s.clb_armed);
+    i.managed_nav_capture=1; run(&s,&i,.2);
+    assert(s.lateral_mode==A380X_C1_NAV && s.vertical_mode==A380X_B1_CLB && !s.clb_armed);
+    cmd(&s,&i,A380X_FCU_HDG_PULL,0);
+    assert(s.lateral_mode==A380X_C1_HDG && s.vertical_mode==A380X_B1_OP_CLB && !s.nav_armed);
+    a380x_guidance_destroy(&s);
+}
+static void test_managed_takeoff(void) {
+    A380XGuidanceInputs i=fixture(); A380XGuidanceState s;
+    i.on_ground=1; i.altitude_ft=i.pressure_altitude_ft=100; i.radio_height_ft=0; i.ias_knots=0; i.tas_knots=0;
+    a380x_guidance_init(&s,&i);
+    managed_route(&i,0); i.fms_phase=0; i.fms_v2_knots=160;
+    s.selected_altitude_ft=6000;
+    run(&s,&i,.2);
+    assert(s.nav_armed && s.clb_armed && s.vertical_mode==A380X_B1_NONE);   /* armed on the ground */
+    for(int n=0;n<4;n++) i.throttle_lever_ratio[n]=i.toga_detent_ratio;
+    run(&s,&i,.2);
+    assert(s.vertical_mode==A380X_B1_SRS && s.speed_managed && s.speed_target_knots==160);
+    assert(s.lateral_mode==A380X_C1_HDG && s.nav_armed);
+    /* liftoff: NAV engages at 30 ft RA, SRS guides V2+10 */
+    i.on_ground=0; i.ias_knots=i.tas_knots=170; i.radio_height_ft=20; i.fms_phase=1; run(&s,&i,.2);
+    assert(s.nav_armed && s.lateral_mode==A380X_C1_HDG);
+    i.radio_height_ft=40; run(&s,&i,.2);
+    assert(s.lateral_mode==A380X_C1_NAV && s.vertical_mode==A380X_B1_SRS && s.speed_target_knots==170);
+    assert(s.guidance_valid);
+    /* acceleration altitude (FMGC CLIMB phase): SRS -> CLB with NAV */
+    i.altitude_ft=i.pressure_altitude_ft=1600; i.radio_height_ft=1500; i.managed_altitude_ft=6000; i.fms_phase=2; run(&s,&i,.2);
+    assert(s.vertical_mode==A380X_B1_CLB && s.altitude_managed && !s.clb_armed);
+    a380x_guidance_destroy(&s);
+}
+static void test_managed_constraint_and_descent(void) {
+    A380XGuidanceInputs i=fixture(); A380XGuidanceState s;
+    a380x_guidance_init(&s,&i); engage(&s,&i);
+    managed_route(&i,1); i.fms_phase=2;
+    cmd(&s,&i,A380X_FCU_HDG_PUSH,0); assert(s.lateral_mode==A380X_C1_NAV);
+    s.selected_altitude_ft=20000; i.managed_altitude_ft=11000; i.managed_altitude_is_constraint=1;
+    cmd(&s,&i,A380X_FCU_ALT_PUSH,0); run(&s,&i,.1);
+    assert(s.vertical_mode==A380X_B1_CLB && s.alt_constraint && s.altitude_target_ft==11000 && s.altitude_armed);
+    assert(a380x_guidance_fma_vertical(&s)==A380X_B1_CLB);
+    /* capture of the constraint: ALT CST* then ALT CST with CLB armed */
+    i.altitude_ft=i.pressure_altitude_ft=10900; i.vertical_speed_fpm=1500; run(&s,&i,.1);
+    assert(s.vertical_mode==A380X_B1_ALT_STAR && a380x_guidance_fma_vertical(&s)==A380X_B1_ALT_CST_STAR);
+    i.altitude_ft=i.pressure_altitude_ft=11000; i.vertical_speed_fpm=0; run(&s,&i,1.5);
+    assert(s.vertical_mode==A380X_B1_ALT && a380x_guidance_fma_vertical(&s)==A380X_B1_ALT_CST);
+    assert(s.altitude_managed && s.clb_armed && s.held_altitude_ft==11000);
+    /* constraint sequenced: CLB resumes towards the FCU altitude */
+    i.managed_altitude_ft=20000; i.managed_altitude_is_constraint=0; run(&s,&i,.1);
+    assert(s.vertical_mode==A380X_B1_CLB && !s.clb_armed && s.altitude_target_ft==20000 && !s.alt_constraint);
+    /* A/THR THR CLB in CLB */
+    cmd(&s,&i,A380X_FCU_ATHR,0); run(&s,&i,.5);
+    assert(s.athr_active && s.thrust_mode==A380X_A1A2_THR_CLB);
+    /* level at the cruise altitude: ALT CRZ */
+    i.managed_cruise_altitude_ft=20000;
+    i.altitude_ft=i.pressure_altitude_ft=19950; i.vertical_speed_fpm=500; run(&s,&i,.1);
+    i.altitude_ft=i.pressure_altitude_ft=20000; i.vertical_speed_fpm=0; run(&s,&i,1.5);
+    assert(s.vertical_mode==A380X_B1_ALT && a380x_guidance_fma_vertical(&s)==A380X_B1_ALT_CRZ);
+    assert(s.thrust_mode==A380X_A1A2_SPEED);
+    i.managed_speed_is_mach=1; s.speed_managed=1; run(&s,&i,.1); assert(s.thrust_mode==A380X_A1A2_MACH);
+    i.managed_speed_is_mach=0;
+    /* DES: early descent before T/D (V/S -1000, SPEED), path capture (VPATH law, THR IDLE), above path */
+    i.fms_phase=4; s.selected_altitude_ft=6000; i.managed_altitude_ft=6000;
+    i.managed_path_valid=1; i.managed_path_altitude_ft=20300; i.managed_path_vs_fpm=-2200; i.managed_vdev_ft=-300;
+    i.managed_before_tod=1; i.managed_path_idle=1;
+    cmd(&s,&i,A380X_FCU_ALT_PUSH,0); run(&s,&i,.1);
+    assert(s.vertical_mode==A380X_B1_DES && s.des_submode==2 && s.vertical_law_override==4 && s.vs_target_fpm==-1000);
+    assert(s.thrust_mode==A380X_A1A2_SPEED && s.altitude_managed);
+    i.managed_before_tod=0; i.managed_vdev_ft=-50; i.managed_path_altitude_ft=20050; run(&s,&i,.1);
+    assert(s.des_submode==0 && s.vertical_law_override==9 && s.vpath_valid && s.vpath_altitude_ft==20050);
+    assert(s.thrust_mode==A380X_A1A2_THR_IDLE);
+    i.managed_path_idle=0; run(&s,&i,.1); assert(s.thrust_mode==A380X_A1A2_SPEED);   /* geometric segment */
+    i.managed_path_idle=1; i.managed_vdev_ft=800; run(&s,&i,.1);
+    assert(s.des_submode==1 && s.vertical_law_override==3 && s.thrust_mode==A380X_A1A2_THR_IDLE);
+    assert(s.speed_target_knots==260);                                            /* upper end of the range */
+    i.managed_vdev_ft=50; run(&s,&i,.1); assert(s.des_submode==0);
+    /* DES without NAV: V/S */
+    cmd(&s,&i,A380X_FCU_HDG_PULL,0); assert(s.vertical_mode==A380X_B1_VS && !s.altitude_managed);
+    a380x_guidance_destroy(&s);
+}
 int main(void) {
     test_controls_and_gating(); test_actual_fbw_demands(); test_capture_and_failures(); test_ils(); test_gs_sign(); test_vertical_and_fpa_signs(); test_ils_magnetic_reference();
     test_closed_loop_plant(); test_frame_timing_and_invalid_data(); test_ground_initialization_standby(); test_manual_ap_timing_and_fd_powerup();
     test_manual_athr_detents_and_disconnects(); test_athr_validation_envelope_and_alpha_floor();
     test_athr_inhibit_and_fadec_ceiling();
     test_open_altitude_capture_paths();
-    puts("A380 guidance: controls, imported FBW laws, captures, sensor guards, manual AP/FD and A/THR detents/envelope/disconnects passed");
+    test_managed_nav(); test_managed_takeoff(); test_managed_constraint_and_descent();
+    puts("A380 guidance: controls, imported FBW laws, captures, sensor guards, manual AP/FD and A/THR detents/envelope/disconnects, managed NAV/SRS/CLB/ALT CST/DES passed");
     return 0;
 }

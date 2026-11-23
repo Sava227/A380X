@@ -65,12 +65,36 @@ FLAPS_ADAPTER_TEST = HERE / "test_flaps_adapter.c"
 SPEEDBRAKE_TEST = HERE / "test_speedbrake.c"
 SPEEDBRAKE_ADAPTER_TEST = HERE / "test_speedbrake_adapter.c"
 SPEEDBRAKE_SOURCES = [HERE / "a380x_speedbrake.h", HERE / "a380x_speedbrake.inc"]
+FCTL_TEST = HERE / "test_fctl.c"
+FCTL_ADAPTER_TEST = HERE / "test_fctl_adapter.c"
+FCTL_SOURCES = [HERE / "a380x_fctl.h", HERE / "a380x_fctl.inc"]
 DETENT_CLICK_GENERATOR = HERE.parent.parent / "tools/build_detent_click.py"
 EFB = HERE / "a380x_efb.c"
 EFB_HEADER = HERE / "a380x_efb.h"
+# Web EFB (docs/EFB_DEVELOPMENT.md): XPLM-free core a380x_efb_core.c, adapter a380x_efb_web.inc +
+# a380x_efb_device.inc (tested against a mock XPLM with the cockpit-device API), xp-kit transport
+# a380x_xpkit_efb.inc, page sources xp-kit-efb/ (checked with JavaScriptCore on native frames).
+EFB_CORE = HERE / "a380x_efb_core.c"
+EFB_CORE_TEST = HERE / "test_efb_core.c"
+EFB_ADAPTER_TEST = HERE / "test_efb_adapter.c"
+EFB_PAGE_SOURCES = [HERE / "xp-kit-efb" / name for name in ("efb.html", "efb.css", "efb.js")] + [
+    HERE / "xp-kit-efb/Fonts/efb" / name for name in ("Manrope-Regular.ttf", "Manrope-Medium.ttf", "Manrope-SemiBold.ttf",
+                                                      "Manrope-Bold.ttf", "JetBrainsMono-Regular.ttf", "OFL.txt")]
+EFB_PAGE_CHECK = HERE.parent.parent / "tools/efb_page_check.js"
+JSC = Path("/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc")
 TEST = HERE / "test_avionics_core.c"
 GUIDANCE = HERE / "a380x_guidance.c"
+AURALS = HERE / "a380x_aurals.c"
+XPKIT_SURFACE = HERE / "a380x_xpkit_surface.c"   # macOS zero-copy display frames (xp-kit protocol v9)
+AURALS_TEST = HERE / "test_aurals.c"
 GUIDANCE_TEST = HERE / "test_guidance.c"
+# Closed-loop managed flight (FMS + FMGC + guidance + FBW laws + point-mass aircraft) on the installed
+# simulator's CIFP; the X-Plane root is derived from --datarefs, else the test reports SKIPPED.
+FMGC_FLIGHT_TEST = HERE / "test_fmgc_flight.c"
+# LAND/FLARE/ROLL OUT, RETARD, SRS GA, yaw lease (unity include of a380x_guidance.c) and its tests.
+AUTOLAND_SOURCES = [HERE / "a380x_autoland.h", HERE / "a380x_autoland.inc", HERE / "a380x_autoland_adapter.inc"]
+AUTOLAND_TEST = HERE / "test_autoland.c"
+AUTOLAND_SIM_TEST = HERE / "test_autoland_sim.c"
 PFD_TEST = HERE / "test_pfd_render.c"
 EFB_TEST = HERE / "test_efb_render.c"
 ADAPTER_TEST = HERE / "test_fcu_adapter.c"
@@ -81,6 +105,28 @@ CLOCK_RENDER_TEST = HERE / "test_clock_render.c"
 EFIS_TEST = HERE / "test_efis.c"
 EFIS_ND_TEST = HERE / "test_efis_nd.c"
 EFIS_AIRPORT_TEST = HERE / "test_efis_airport.c"
+# TERRAIN on ND (docs/ND_TERRAIN.md): XPLM-free core a380x_terrain.h, adapter a380x_terrain_adapter.inc (mock XPLM
+# probes + software GL: native image / TERR box / pointer readout), web layer xp-kit-nd/terrain-layer.js checked
+# with JavaScriptCore on the adapter's own states, nd.html patch tools/patch_xp_kit_nd.py.
+TERRAIN_TEST = HERE / "test_terrain.c"
+TERRAIN_ADAPTER_TEST = HERE / "test_terrain_adapter.c"
+TERRAIN_LAYER = HERE / "xp-kit-nd/terrain-layer.js"
+TERRAIN_LAYER_CHECK = HERE.parent.parent / "tools/terrain_layer_check.js"
+TERRAIN_PATCH = HERE.parent.parent / "tools/patch_xp_kit_nd.py"
+TERRAIN_PATCH_TEST = HERE.parent.parent / "tools/test_patch_xp_kit_nd.py"
+TERRAIN_SCENARIOS = ("arc", "rose", "peaks", "approach", "taws")
+# TAWS look-ahead alerting (docs/ND_TERRAIN.md "Terrain alerts"): XPLM-free a380x_taws.h on synthetic terrain.
+TAWS_TEST = HERE / "test_taws.c"
+# The FBW PFD's blinking warnings (PULL UP / TERRAIN ...) need CSS animations on the native frame clock:
+# xp-kit/animation-clock.js, inserted into the reused pfd.html by tools/patch_xp_kit_pfd.py.
+PFD_ANIMATION_CLOCK = HERE / "xp-kit/animation-clock.js"
+PFD_PATCH = HERE.parent.parent / "tools/patch_xp_kit_pfd.py"
+PFD_PATCH_TEST = HERE.parent.parent / "tools/test_patch_xp_kit_pfd.py"
+# FMGC pseudo waypoints on the web ND: layer xp-kit-nd/fmgc-pwp-layer.js (inserted by tools/patch_xp_kit_nd.py),
+# checked with JavaScriptCore on the closed-loop flight's ND states (test_fmgc_flight writes nav.route +
+# nav.pseudo with the plugin's serializer); the native NDs draw the same list (a380x_nd_pwp.inc).
+PWP_LAYER = HERE / "xp-kit-nd/fmgc-pwp-layer.js"
+PWP_LAYER_CHECK = HERE.parent.parent / "tools/pwp_layer_check.js"
 EWD_DATA_TEST = HERE / "test_ewd_data.c"
 EWD_RENDER_TEST = HERE / "test_ewd_render.c"
 EWD_FONT = HERE / "fonts/FBW-Display-EIS-A380.ttf"
@@ -108,8 +154,8 @@ CXX_SOURCES = [*EWD_FADEC_SOURCES, HERE / "a380x_fbw_laws.cpp", *[
 # X-Plane boundary is a380x_mfd_adapter.inc + a380x_fms_adapter.inc (+ a380x_mfd_systems_host.inc).
 MFD_CORE_SOURCES = [HERE / name for name in (
     "a380x_mfd_draw.c", "a380x_mfd_ui.c", "a380x_mfd.c", "a380x_mfd_formats.c", "a380x_fms_messages.c",
-    "a380x_fms_speeds.c", "a380x_fms.c", "a380x_navdata.c", "a380x_fms_fpln.c", "a380x_mfd_pages.c",
-    "a380x_sd.c")]
+    "a380x_fms_speeds.c", "a380x_fms.c", "a380x_navdata.c", "a380x_fms_fpln.c", "a380x_fmgc_guidance.c",
+    "a380x_mfd_pages.c", "a380x_sd.c")]
 MFD_PAGE_MODULES = ("data", "init", "fuel", "sec", "perf", "fpln", "fpln_rev", "position", "surv",
                     "atccom", "fcubkup")
 MFD_ADAPTER_TEST = HERE / "test_mfd_adapter.c"
@@ -122,10 +168,12 @@ MFD_FONT_GENERATOR = HERE.parent.parent / "tools/build_mfd_font.py"
 # (test source, kind): "core" = pure C unit test, "navdata" = gets the fixture directory,
 # "render" = writes PPM previews into its own directory. Optional page tests run when present.
 MFD_TESTS = (("test_mfd_formats", "core"), ("test_fms_core", "core"), ("test_navdata", "navdata"),
+             ("test_fmgc_guidance", "core"),
              ("test_mfd_ui", "core"), ("test_mfd_render", "render"), ("test_sd", "render"))
 MFD_OPTIONAL_TESTS = (("test_mfd_pages_a", "render"), ("test_mfd_page_perf", "render"),
                       ("test_mfd_page_fpln", "render"), ("test_mfd_pages_h", "render"))
-EXTRA_INPUTS = [*FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, GUIDANCE, GUIDANCE_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
+EXTRA_INPUTS = [TERRAIN_TEST, TERRAIN_ADAPTER_TEST, TAWS_TEST, PFD_ANIMATION_CLOCK, TERRAIN_LAYER, PWP_LAYER, HERE / "xp-kit/bridge.js", HERE / "xp-kit-nd/native-bridge.js",
+    FMGC_FLIGHT_TEST, EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", HERE / "test_xpkit_zero_copy.c", XPKIT_SURFACE, ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, FCTL_TEST, FCTL_ADAPTER_TEST, *FCTL_SOURCES, GUIDANCE, GUIDANCE_TEST, *AUTOLAND_SOURCES, AUTOLAND_TEST, AUTOLAND_SIM_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
     EWD_DATA_TEST, EWD_RENDER_TEST, FCU_MOTION_TEST, FCU_LIGHT_TEST, ISIS_TEST, CONTROL_MOTION_TEST,
     *CXX_SOURCES, *[p for p in HERE.glob("*.h") if not p.name.startswith("._")],
     *[p for p in HERE.glob("*.inc") if not p.name.startswith("._")],
@@ -199,7 +247,8 @@ def main() -> None:
                     "XPLMUtilities.h", "XPLMMenus.h", "XPLMSound.h", "XPLMNavigation.h", "XPLMScenery.h", "XPLMPlanes.h")
     inputs = [headers / name for name in header_names]
     for path in [*inputs, framework, import_library, PLUGIN, CORE, CORE_HEADER, EFB, EFB_HEADER, TEST,
-                 EWD_FONT, EWD_FONT_HEADER, EWD_FONT_GENERATOR, DETENT_CLICK_GENERATOR, ISIS_FONT, ISIS_FONT_HEADER, ISIS_FONT_GENERATOR, *FCU_FONTS, FCU_FONT_HEADER, FCU_FONT_GENERATOR, FCU_RENDER_TEST, MFD_FONT_HEADER, MFD_FONT_GENERATOR, *MFD_SOURCES, *EXTRA_INPUTS]:
+                 EWD_FONT, EWD_FONT_HEADER, EWD_FONT_GENERATOR, DETENT_CLICK_GENERATOR, ISIS_FONT, ISIS_FONT_HEADER, ISIS_FONT_GENERATOR, *FCU_FONTS, FCU_FONT_HEADER, FCU_FONT_GENERATOR, FCU_RENDER_TEST, MFD_FONT_HEADER, MFD_FONT_GENERATOR, *MFD_SOURCES, *EXTRA_INPUTS,
+                 TERRAIN_LAYER_CHECK, TERRAIN_PATCH, TERRAIN_PATCH_TEST, PFD_PATCH, PFD_PATCH_TEST]:
         if not path.is_file():
             parser.error(f"Missing build input: {path}")
     clang = shutil.which(args.clang)
@@ -341,6 +390,16 @@ def main() -> None:
     speedbrake_adapter_result = run([str(speedbrake_adapter_binary)]).strip()
     speedbrake_contracts = run([str(speedbrake_adapter_binary), "--contracts"]).splitlines()
     speedbrake_stock_commands = [line[2:] for line in speedbrake_contracts if line.startswith("X ")]
+    # Flight-control laws and steering (docs/FLIGHT_CONTROLS.md): core closed-loop bench + adapter.
+    fctl_binary = output / "test_fctl"
+    run([clang, *warnings, str(FCTL_TEST), "-lm", "-o", str(fctl_binary)])
+    fctl_result = run([str(fctl_binary)]).strip().splitlines()[-1]
+    run([mingw, *warnings, "-c", str(FCTL_TEST), "-o", str(output / "test_fctl_win_check.o")])
+    fctl_adapter_binary = output / "test_fctl_adapter"
+    run([clang, *warnings, "-Wno-deprecated-declarations", "-DAPL=1", "-DXPLM200=1", "-DXPLM210=1", "-DXPLM300=1",
+         "-DXPLM301=1", "-DXPLM400=1", "-I", str(headers), str(FCTL_ADAPTER_TEST), "-lm", "-o", str(fctl_adapter_binary)])
+    fctl_adapter_result = run([str(fctl_adapter_binary)]).strip()
+    fctl_contracts = run([str(fctl_adapter_binary), "--contracts"]).splitlines()
 
     def compile_laws(compiler, flags, suffix):
         objects = []
@@ -378,6 +437,21 @@ def main() -> None:
     run([clang, *warnings, str(CORE), str(GUIDANCE), str(GUIDANCE_TEST),
          *mac_laws, "-lc++", "-lm", "-o", str(guidance_test_binary)])
     guidance_result = run([str(guidance_test_binary)]).strip()
+    autoland_test_binary = output / "test_autoland"
+    run([clang, *warnings, str(CORE), str(GUIDANCE), str(AUTOLAND_TEST),
+         *mac_laws, "-lc++", "-lm", "-o", str(autoland_test_binary)])
+    autoland_result = run([str(autoland_test_binary)]).strip().splitlines()[-1]
+    # Closed-loop LFBO 14R approach-to-stop bench on a simplified airframe (not X-Plane's flight model).
+    autoland_sim_binary = output / "test_autoland_sim"
+    run([clang, *warnings, str(CORE), str(GUIDANCE), str(AUTOLAND_SIM_TEST),
+         *mac_laws, "-lc++", "-lm", "-o", str(autoland_sim_binary)])
+    autoland_sim_report = run([str(autoland_sim_binary)]).strip()
+    (output / "autoland-bench.txt").write_text(autoland_sim_report + "\n")
+    for source in (AUTOLAND_TEST, AUTOLAND_SIM_TEST):   # gcc-only warnings must not first appear at the Windows link
+        run([mingw, *warnings, "-c", str(source), "-o", str(output / (source.stem + "_win_check.o"))])
+    aurals_test_binary = output / "test_aurals"
+    run([clang, *warnings, str(AURALS), str(AURALS_TEST), "-lm", "-o", str(aurals_test_binary)])
+    aurals_result = run([str(aurals_test_binary)]).strip().splitlines()[-1]
     pfd_test_binary = output / "test_pfd_render"
     run([clang, *warnings, str(CORE), str(PFD_TEST), "-lm", "-o", str(pfd_test_binary)])
     pfd_result = run([str(pfd_test_binary), str(output / "pfd-climb.svg"),
@@ -387,7 +461,7 @@ def main() -> None:
     run([clang, *warnings, str(FCU_RENDER_TEST), "-lm", "-o", str(fcu_render_binary)])
     fcu_render_result = run([str(fcu_render_binary), str(output)]).strip()
     for preview in (output / "pfd-climb.svg", output / "pfd-approach.svg", output / "nd-fbw-arc.svg",
-                    output / "nd-fbw-rose.svg", output / "nd-fbw-plan.svg"):
+                    output / "nd-fbw-rose.svg", output / "nd-fbw-plan.svg", output / "nd-fbw-pwp.svg"):
         preview.write_text(preview.read_text().replace("PFD_FONT_DATA_URI",font_data_uri))
     isis_binary = output / "test_isis"
     isis_preview_dir = output / "isis-previews"
@@ -405,10 +479,34 @@ def main() -> None:
                      for path in sorted(isis_preview_dir.iterdir()) if not path.name.startswith("._")]
     efb_test_binary = output / "test_efb_render"
     run([clang, *warnings, "-Wno-deprecated-declarations", "-DAPL=1", "-I", str(headers),
-         str(EFB_TEST), str(CORE), "-lm", "-o", str(efb_test_binary)])
+         str(EFB_TEST), str(CORE), str(EFB_CORE), "-lm", "-o", str(efb_test_binary)])
     efb_result = run([str(efb_test_binary), str(output)]).strip()
+    # Web EFB: XPLM-free core, then the production adapter against a mock XPLM with cockpit devices.
+    efb_core_binary = output / "test_efb_core"
+    run([clang, *warnings, str(EFB_CORE_TEST), str(EFB_CORE), "-lm", "-o", str(efb_core_binary)])
+    efb_core_result = run([str(efb_core_binary)]).strip()
+    for source in (EFB_CORE, EFB_CORE_TEST):   # gcc-only warnings must not first appear at the Windows link
+        run([mingw, *warnings, "-c", str(source), "-o", str(output / (source.stem + "_win_check.o"))])
+    run([mingw, *warnings, "-Wno-deprecated-declarations", "-DIBM=1", "-DXPLM200=1", "-DXPLM210=1", "-DXPLM300=1",
+         "-DXPLM400=1", "-DXPLM410=1", "-I", str(headers), "-c", str(EFB), "-o", str(output / "a380x_efb_win_check.o")])
+    efb_adapter_binary = output / "test_efb_adapter"
+    run([clang, *warnings, "-Wno-deprecated-declarations", "-DAPL=1", "-I", str(headers), str(EFB_ADAPTER_TEST),
+         str(CORE), str(EFB_CORE), "-lm", "-o", str(efb_adapter_binary)])
+    efb_adapter_result = run([str(efb_adapter_binary)]).strip()
+    efb_contracts = run([str(efb_adapter_binary), "--contracts"]).splitlines()
+    efb_views = ("home", "ofp", "ground/doors", "ground/services", "ground/push", "loading/payload", "loading/fuel",
+                 "loading/wb", "cabin", "flight/perf", "flight/nav", "flight/comms", "ops/checklists", "ops/presets",
+                 "failures", "aircraft", "settings/general", "settings/sounds")
+    efb_frames = {view: json.loads(run([str(efb_adapter_binary), "--frame", *view.split("/")])) for view in efb_views}
+    (output / "efb-frames.json").write_text(json.dumps(efb_frames))
+    efb_page_result = None
+    if JSC.exists():
+        efb_page_result = run([str(JSC), str(EFB_PAGE_CHECK), "--", str(HERE / "xp-kit-efb/efb.js"),
+                               str(output / "efb-frames.json")]).strip().splitlines()[-1]
+        if not efb_page_result.startswith("EFB PAGE OK"):
+            raise RuntimeError("EFB page check failed: " + efb_page_result)
     adapter_test_binary = output / "test_fcu_adapter"
-    run([clang, *warnings, "-DAPL=1", "-DXPLM200=1", "-DXPLM300=1", "-I", str(headers), str(ADAPTER_TEST), str(GUIDANCE), str(CORE),
+    run([clang, *warnings, "-DAPL=1", "-DXPLM200=1", "-DXPLM300=1", "-I", str(headers), str(ADAPTER_TEST), str(GUIDANCE), str(HERE / "a380x_fms_speeds.c"), str(CORE),
          *mac_laws, "-lc++", "-lm", "-o", str(adapter_test_binary)])
     adapter_result = run([str(adapter_test_binary)]).strip()
     fcu_mechanical_results = {}
@@ -434,6 +532,61 @@ def main() -> None:
     airport_test_binary = output / "test_efis_airport"
     run([clang, *warnings, str(EFIS_AIRPORT_TEST), "-lm", "-o", str(airport_test_binary)])
     airport_result = run([str(airport_test_binary)]).strip()
+    # TERRAIN on ND: core (also gcc -Werror), adapter + native drawing, web states/previews, JS layer, page patch.
+    terrain_binary = output / "test_terrain"
+    run([clang, *warnings, str(TERRAIN_TEST), "-lm", "-o", str(terrain_binary)])
+    terrain_lines = run([str(terrain_binary)]).strip().splitlines()
+    run([mingw, *warnings, "-c", str(TERRAIN_TEST), "-o", str(output / "test_terrain_win_check.o")])
+    taws_binary = output / "test_taws"
+    run([clang, *warnings, str(TAWS_TEST), "-lm", "-o", str(taws_binary)])
+    taws_lines = run([str(taws_binary)]).strip().splitlines()
+    run([mingw, *warnings, "-c", str(TAWS_TEST), "-o", str(output / "test_taws_win_check.o")])
+    terrain_adapter_binary = output / "test_terrain_adapter"
+    run([clang, *warnings, "-Wno-deprecated-declarations", "-DAPL=1", "-DXPLM200=1", "-DXPLM210=1", "-DXPLM300=1",
+         "-DXPLM301=1", "-DXPLM400=1", "-DXPLM410=1", "-I", str(headers), str(TERRAIN_ADAPTER_TEST), "-lm",
+         "-o", str(terrain_adapter_binary)])
+    terrain_adapter_lines = run([str(terrain_adapter_binary)]).strip().splitlines()
+    terrain_dir = output / "nd-terrain"
+    terrain_dir.mkdir()
+    for scenario in TERRAIN_SCENARIOS:
+        run([str(terrain_adapter_binary), "--json", scenario, str(terrain_dir / f"{scenario}.json")])
+        pam = terrain_dir / f"{scenario}-native.pam"
+        run([str(terrain_adapter_binary), "--capture", scenario, str(pam)])
+        try:
+            from PIL import Image
+            raw = pam.read_bytes()
+            end = raw.index(b"ENDHDR\n") + 7
+            header = dict(line.split(b" ", 1) for line in raw[:end].split(b"\n")[1:-2])
+            size = (int(header[b"WIDTH"]), int(header[b"HEIGHT"]))
+            image = Image.frombytes("RGBA", size, raw[end:end + size[0] * size[1] * 4])
+            flat = Image.new("RGBA", size, (0, 0, 0, 255)); flat.alpha_composite(image)
+            flat.convert("RGB").save(pam.with_suffix(".png"), optimize=True)
+            pam.unlink()
+        except ImportError:
+            pass
+    terrain_previews = [{"file": f"nd-terrain/{p.name}", "sha256": digest(p)}
+                        for p in sorted(terrain_dir.iterdir()) if p.is_file() and not p.name.startswith("._")]
+    terrain_layer_result = None
+    if JSC.exists():
+        terrain_layer_result = run([str(JSC), str(TERRAIN_LAYER_CHECK), "--", str(HERE / "xp-kit/bridge.js"),
+                                    str(HERE / "xp-kit-nd/native-bridge.js"), str(TERRAIN_LAYER),
+                                    *[str(terrain_dir / f"{s}.json") for s in TERRAIN_SCENARIOS]]).strip().splitlines()[-1]
+        if not terrain_layer_result.startswith("TERRAIN LAYER OK"):
+            raise RuntimeError("ND terrain layer check failed: " + terrain_layer_result)
+    patch_test = subprocess.run([_sys.executable, "-m", "unittest", "discover", "-s", str(TERRAIN_PATCH_TEST.parent),
+                                 "-p", TERRAIN_PATCH_TEST.name], text=True, capture_output=True)
+    commands.append({"argv": patch_test.args, "stdout": patch_test.stdout, "stderr": patch_test.stderr,
+                     "returncode": patch_test.returncode})
+    if patch_test.returncode:
+        raise RuntimeError("ND page terrain patch tests failed:\n" + patch_test.stdout + patch_test.stderr)
+    terrain_patch_result = patch_test.stderr.strip().splitlines()[-1]
+    pfd_patch_test = subprocess.run([_sys.executable, "-m", "unittest", "discover", "-s", str(PFD_PATCH_TEST.parent),
+                                     "-p", PFD_PATCH_TEST.name], text=True, capture_output=True)
+    commands.append({"argv": pfd_patch_test.args, "stdout": pfd_patch_test.stdout, "stderr": pfd_patch_test.stderr,
+                     "returncode": pfd_patch_test.returncode})
+    if pfd_patch_test.returncode:
+        raise RuntimeError("PFD page animation clock patch tests failed:\n" + pfd_patch_test.stdout + pfd_patch_test.stderr)
+    pfd_patch_result = pfd_patch_test.stderr.strip().splitlines()[-1]
     contracts = run([str(adapter_test_binary), "--contracts"]).splitlines()
 
     # ---- MFD / FMS core: objects once (host arch, no XPLM include path = proves XPLM-free) ----
@@ -464,6 +617,26 @@ def main() -> None:
         if kind == "render":
             mfd_previews.extend({"file": f"{name}/{p.name}", "sha256": digest(p)}
                                 for p in sorted(preview_dir.iterdir()) if p.is_file() and not p.name.startswith("._"))
+    fmgc_flight_binary = output / "test_fmgc_flight"
+    fmgc_core_objects = [obj for obj in mfd_objects if Path(obj).stem in (
+        "a380x_fms", "a380x_fms_speeds", "a380x_fms_messages", "a380x_mfd_formats", "a380x_fms_fpln",
+        "a380x_navdata", "a380x_fmgc_guidance")]
+    run([clang, *warnings, str(FMGC_FLIGHT_TEST), str(CORE), str(GUIDANCE), *fmgc_core_objects, *mac_laws,
+         "-lc++", "-lm", "-o", str(fmgc_flight_binary)])
+    xplane_root = args.datarefs.resolve().parents[2] if args.datarefs else Path("/nonexistent")
+    pwp_fixture_dir = output / "nd-pwp"
+    pwp_fixture_dir.mkdir()
+    fmgc_flight_output = run([str(fmgc_flight_binary), str(xplane_root), str(output / "fmgc-flight.csv"), str(pwp_fixture_dir)])
+    (output / "fmgc-flight.txt").write_text(fmgc_flight_output)
+    fmgc_flight_result = fmgc_flight_output.strip().splitlines()[-1]
+    pwp_fixtures = sorted(pwp_fixture_dir.glob("pwp-*.json"))
+    pwp_layer_result = None
+    if JSC.exists() and pwp_fixtures:
+        pwp_layer_result = run([str(JSC), str(PWP_LAYER_CHECK), "--", str(HERE / "xp-kit/bridge.js"),
+                                str(HERE / "xp-kit-nd/native-bridge.js"), str(TERRAIN_LAYER), str(PWP_LAYER),
+                                *[str(p) for p in pwp_fixtures]]).strip().splitlines()[-1]
+        if not pwp_layer_result.startswith("PWP LAYER OK"):
+            raise RuntimeError("ND pseudo-waypoint layer check failed: " + pwp_layer_result)
     mfd_adapter_binary = output / "test_mfd_adapter"
     run([clang, *warnings, "-Wno-deprecated-declarations", "-DAPL=1", "-DXPLM200=1", "-DXPLM210=1",
          "-DXPLM300=1", "-DXPLM301=1", "-DXPLM400=1", "-DXPLM410=1", *mfd_page_flags, "-I", str(headers),
@@ -516,7 +689,8 @@ def main() -> None:
                         | {line[2:] for line in flaps_contracts if line.startswith("R ")}
                         | {line[2:] for line in speedbrake_contracts if line.startswith("R ")}
                         | {line[2:] for line in sd_contracts if line.startswith("R ")}
-                        | {line[2:] for line in sd_data_contracts if line.startswith("R ")})
+                        | {line[2:] for line in sd_data_contracts if line.startswith("R ")}
+                        | {line[2:] for line in efb_contracts if line.startswith("R ")})
     if args.datarefs:
         raw_catalog = {line.split()[0] for line in args.datarefs.read_text().splitlines() if line.strip()}
         missing_raw = set(raw_inputs) - raw_catalog
@@ -601,6 +775,10 @@ def main() -> None:
     if ([line[2:] for line in speedbrake_contracts if line.startswith("C ")] != list(SPEEDBRAKE_COMMANDS)
             or [line[2:] for line in speedbrake_contracts if line.startswith("D ")] != list(SPEEDBRAKE_DATAREFS)):
         raise RuntimeError("SPEED BRAKE native registry disagrees with tools/avionics_provider.py")
+    from avionics_provider import FCTL_COMMANDS, FCTL_DATAREFS
+    if ([line[2:] for line in fctl_contracts if line.startswith("C ")] != list(FCTL_COMMANDS)
+            or [line[2:] for line in fctl_contracts if line.startswith("D ")] != list(FCTL_DATAREFS)):
+        raise RuntimeError("Flight-control native registry disagrees with tools/avionics_provider.py")
     from elec_panel_contract import COMMANDS as ELEC_COMMANDS, DATAREFS as ELEC_DATAREFS, SOUND_FILES as ELEC_SOUNDS
     if ({line[2:] for line in elec_contracts if line.startswith("C ")} != set(ELEC_COMMANDS)
             or {line[2:] for line in elec_contracts if line.startswith("D ")} != set(ELEC_DATAREFS)
@@ -689,17 +867,27 @@ def main() -> None:
             or fms_dataref_names != set(FMS_DATAREFS) or len(FMS_DATAREFS) != len(set(FMS_DATAREFS))
             or surv_dataref_names != set(SURV_DATAREFS)):
         raise RuntimeError("MFD native registry disagrees with cockpit provider contract")
+    from avionics_provider import EFB_COMMANDS
+    from efb_cockpit_devices import (EFB_CHANNELS, EFB_COMMANDS as EFB_DEVICE_COMMANDS, EFB_DATAREFS as EFB_DEVICE_DATAREFS,
+                                     EFB_DEVICES, EFB_DEVICE_SIZE)
+    if ({line[2:] for line in efb_contracts if line.startswith("C ")} != set(EFB_COMMANDS) | set(EFB_DEVICE_COMMANDS)
+            or {line[2:] for line in efb_contracts if line.startswith("D ")}
+            != set(EFB_DEVICE_DATAREFS) | {"a380x/xp12/efb/native_available"}
+            or [line[2:] for line in efb_contracts if line.startswith("V ")] != list(EFB_DEVICES)):
+        raise RuntimeError("EFB native registry disagrees with tools/efb_cockpit_devices.py / avionics_provider")
 
     common = [*warnings, "-Wno-deprecated-declarations", "-fvisibility=hidden",
               "-DXPLM200=1", "-DXPLM210=1", "-DXPLM300=1", "-DXPLM400=1", "-DXPLM410=1",
               *mfd_page_flags, "-I", str(headers)]
     mac = output / "mac.xpl"
     run([clang, *common, *(["-DA380X_XPKIT=1"] if args.xpkit else []), "-DAPL=1", "-arch", "arm64", "-arch", "x86_64",
-         "-mmacosx-version-min=11.0", "-dynamiclib", str(PLUGIN), str(CORE), str(EFB), str(GUIDANCE), str(ADIRS),
+         "-mmacosx-version-min=11.0", "-dynamiclib", str(PLUGIN), str(CORE), str(EFB), str(EFB_CORE), str(GUIDANCE), str(AURALS), str(ADIRS),
+         *([str(XPKIT_SURFACE)] if args.xpkit else []),
          *map(str, ELEC_NETWORK_SOURCES), *map(str, FWS_SOURCES),
          *map(str, MFD_SOURCES), *mac_laws, "-lc++",
          "-F", str(sdk / "Libraries/Mac"), "-framework", "XPLM",
-         "-framework", "OpenGL", "-Wl,-install_name,A380XAvionics.xpl",
+         "-framework", "OpenGL", "-framework", "IOSurface", "-framework", "CoreFoundation",
+         "-Wl,-install_name,A380XAvionics.xpl",
          "-o", str(mac)])
     run(["codesign", "--force", "--sign", "-", str(mac)])
     run(["codesign", "--verify", "--strict", str(mac)])
@@ -713,6 +901,7 @@ def main() -> None:
 
     xpkit_manifest = None
     nd_input_result = None
+    zero_copy_result = None
     if args.xpkit:
         nd_input_binary=output / "test_xpkit_nd_input"
         run([clang,*warnings,"-Wno-unused-function","-Wno-deprecated-declarations","-DAPL=1",
@@ -725,15 +914,22 @@ def main() -> None:
         host = output / "A380XDisplayHost"
         run([clang, *warnings, "-fobjc-arc", "-arch", "arm64", "-arch", "x86_64",
              "-mmacosx-version-min=11.0", str(HERE / "a380x_xpkit_host.m"),
-             "-framework", "Cocoa", "-framework", "WebKit", "-framework", "CoreGraphics", "-o", str(host)])
+             "-framework", "Cocoa", "-framework", "WebKit", "-framework", "CoreGraphics", "-framework", "Accelerate",
+             "-framework", "IOSurface", "-o", str(host)])
         run(["codesign", "--force", "--sign", "-", str(host)])
         run(["codesign", "--verify", "--strict", str(host)])
+        # Protocol v9 zero-copy frames: the plugin's GL capability probe (a380x_xpkit_surface.h) in a legacy
+        # CGL context, success and forced failure. The full helper run is test_xpkit_zero_copy <helper> ...
+        zero_copy_binary = output / "test_xpkit_zero_copy"
+        run([clang, *warnings, "-I", str(HERE), str(HERE / "test_xpkit_zero_copy.c"), str(XPKIT_SURFACE), "-framework", "OpenGL",
+             "-framework", "IOSurface", "-framework", "CoreFoundation", "-o", str(zero_copy_binary)])
+        zero_copy_result = run([str(zero_copy_binary), "--probe"]).strip()
         xpkit_manifest = json.loads((output / "xp-kit/manifest.json").read_text())
         xpkit_manifest["helper_sha256"] = digest(host)
         xpkit_manifest["architectures"] = run(["lipo", "-archs", str(host)]).split()
 
     windows = output / "win.xpl"
-    run([mingw, *common, *(["-DA380X_XPKIT=1"] if args.xpkit_windows else []), "-DIBM=1", "-shared", str(PLUGIN), str(CORE), str(EFB), str(GUIDANCE), str(ADIRS),
+    run([mingw, *common, *(["-DA380X_XPKIT=1"] if args.xpkit_windows else []), "-DIBM=1", "-shared", str(PLUGIN), str(CORE), str(EFB), str(EFB_CORE), str(GUIDANCE), str(AURALS), str(ADIRS),
          *map(str, ELEC_NETWORK_SOURCES), *map(str, FWS_SOURCES),
          *map(str, MFD_SOURCES), *windows_laws, "-static", "-lstdc++", "-lwinpthread",
          str(import_library), "-lopengl32", "-static-libgcc", "-lm",
@@ -769,7 +965,10 @@ def main() -> None:
                # number formats). Same Universal CRT (ucrtbase.dll) as the API sets above; present on
                # Windows 10+ and with the UCRT redistributable. No new runtime library.
                "api-ms-win-crt-utility-l1-1-0.dll",
-               "api-ms-win-crt-locale-l1-1-0.dll"}
+               "api-ms-win-crt-locale-l1-1-0.dll",
+               # AFS diagnostics log (2026-11-09): rename/remove rotate Output/A380X-XP12_AFS.log. Same
+               # Universal CRT (ucrtbase.dll), no new runtime library.
+               "api-ms-win-crt-filesystem-l1-1-0.dll"}
     if not {name.lower() for name in dlls} <= allowed:
         raise RuntimeError(f"Unexpected Windows dependencies: {dlls}")
 
@@ -781,6 +980,7 @@ def main() -> None:
     report = {
         "format": 1,
         "xp_kit_nd_input_test_result": nd_input_result,
+        "xp_kit_zero_copy_probe_test_result": zero_copy_result,
         "source_revision": "2baa2b35eadaf4c78e172ce41bbe6b40b4aeafb2",
         "logic_sources": [
             "fbw-a380x/src/systems/instruments/src/PFD/FMADefinitions.ts",
@@ -918,6 +1118,13 @@ def main() -> None:
                         "xplane_flap_mapping": "flap_handle_request_ratio = FBW FlapsConf / 6 on the seven-detent "
                                                "ACF (tools/flaps_lever_cockpit.py ACF_CHANGES)",
                         "behaviour": "docs/FLAPS_LEVER.md", "simulator_tested": False},
+        "flight_controls_test_result": fctl_result,
+        "flight_controls_adapter_test_result": fctl_adapter_result,
+        "flight_controls": {"commands": list(FCTL_COMMANDS), "datarefs": list(FCTL_DATAREFS),
+                            "raw_inputs": [line[2:] for line in fctl_contracts if line.startswith("R ")],
+                            "law_source": "original port law from the published Airbus normal-law description "
+                                          "(docs/FLIGHT_CONTROLS.md); not FBW PRIM code",
+                            "behaviour": "docs/FLIGHT_CONTROLS.md", "simulator_tested": False},
         "speedbrake_test_result": speedbrake_result,
         "speedbrake_adapter_test_result": speedbrake_adapter_result,
         "speed_brake": {"commands": list(SPEEDBRAKE_COMMANDS), "datarefs": list(SPEEDBRAKE_DATAREFS),
@@ -945,9 +1152,23 @@ def main() -> None:
         "elec_panel": {"commands": list(ELEC_COMMANDS), "datarefs": list(ELEC_DATAREFS), "sounds": list(ELEC_SOUNDS),
                        "sound_provenance": json.loads((HERE / "sounds/elec_sounds_provenance.json").read_text())},
         "guidance_test_result": guidance_result,
+        "autoland_test_result": autoland_result,
+        "autoland_bench": {"result": autoland_sim_report.splitlines()[-1], "report": "autoland-bench.txt",
+                           "airframe": "simplified bench model, not the X-Plane flight model",
+                           "runway": "LFBO 14R, X-Plane 12 default navdata", "simulator_tested": False},
+        "aurals_test_result": aurals_result,
         "pfd_render_test_result": pfd_result,
         "fcu_render_test_result": fcu_render_result,
         "efb_render_test_result": efb_result,
+        "efb": {"cockpit_devices": [line[2:] for line in efb_contracts if line.startswith("V ")],
+                "commands": list(EFB_DEVICE_COMMANDS), "datarefs": list(EFB_DEVICE_DATAREFS),
+                "device_texels": list(EFB_DEVICE_SIZE), "lighting_channels": list(EFB_CHANNELS),
+                "core_test_result": efb_core_result, "adapter_test_result": efb_adapter_result,
+                "page_check_result": efb_page_result, "page_check_engine": str(JSC) if efb_page_result else None,
+                "raw_inputs": [line[2:] for line in efb_contracts if line.startswith("R ")],
+                "geometry": "tools/efb_cockpit_devices.py (applied by tools/install_xp_kit_cockpit.py)",
+                "design": "docs/efb-design/EFB_MOCKUP.dc.html", "behaviour": "docs/EFB_DEVELOPMENT.md",
+                "phase": 1, "simulator_tested": False},
         "fcu_adapter_test_result": adapter_result,
         "fcu_mechanical_test_results": fcu_mechanical_results,
         "control_lifecycle_test_result": control_lifecycle_result,
@@ -955,6 +1176,26 @@ def main() -> None:
         "efis_test_result": efis_result,
         "efis_nd_test_result": nd_result,
         "efis_airport_test_result": airport_result,
+        "nd_terrain": {"core_test_result": terrain_lines[-1], "core_measurements": terrain_lines[:-1],
+                       "adapter_test_result": terrain_adapter_lines[-1], "adapter_measurements": terrain_adapter_lines[:-1],
+                       "web_layer_check_result": terrain_layer_result, "page_patch_test_result": terrain_patch_result,
+                       "previews": terrain_previews, "behaviour": "docs/ND_TERRAIN.md",
+                       "fbw_source": ["flybywiresim/simbridge@f5932323 apps/server/src/terrain/processing/gpu/rendering/navigationdisplay.ts",
+                                      "flybywiresim/simbridge@f5932323 apps/server/src/terrain/processing/navigationdisplayrenderer.ts",
+                                      "flybywiresim/simbridge@f5932323 apps/server/src/terrain/processing/gpu/patterns/scanlinemode.ts",
+                                      "flybywiresim/aircraft@2b2612f9 fbw-common/src/systems/instruments/src/ND/TerrainMapThresholds.tsx",
+                                      "flybywiresim/aircraft@2b2612f9 fbw-a380x/src/wasm/fbw_a380/src/model/A380FcuComputer.cpp (WX/TERR overlay)",
+                                      "flybywiresim/aircraft@2b2612f9 fbw-a380x/src/systems/systems-host/Misc/EfisTawsBridge.ts (terrOnNd)"],
+                       "colour_reference": "Honeywell MK V/MK VII EGPWS Pilot's Guide 060-4241-000 Rev H, TAD colour table",
+                       "taws_lookahead": {"test_result": taws_lines[-1], "measurements": taws_lines[:-1],
+                                          "references": ["Honeywell MK V/MK VII EGPWS Pilot's Guide 060-4241-000 Rev H, Terrain Look Ahead Alerting",
+                                                         "EASA CS ACNS.E.TAWS.015 Table 1 / FAA TSO-C151 required terrain clearance"],
+                                          "outputs": ["PULL UP loop (taws_warning), optional terrain_ahead.wav (taws_caution)",
+                                                      "L:A32NX_EGPWS_ALERT_1/2_DISCRETE_WORD_1 bits 12 PULL UP / 13 TERRAIN",
+                                                      "solid yellow / red threat cells on both NDs, TERR pop-up"],
+                                          "pfd_animation_clock_patch_test_result": pfd_patch_result,
+                                          "simulator_tested": False},
+                       "simulator_tested": False},
         "ewd_data_test_result": ewd_data_result,
         "ewd_render_test_result": ewd_render_result,
         "sd_render_test_result": mfd_test_results["test_sd"],
@@ -986,6 +1227,14 @@ def main() -> None:
         "mfd_ui_test_result": mfd_test_results["test_mfd_ui"],
         "mfd_formats_test_result": mfd_test_results["test_mfd_formats"],
         "fms_core_test_result": mfd_test_results["test_fms_core"],
+        "fmgc_guidance_test_result": mfd_test_results["test_fmgc_guidance"],
+        "fmgc_closed_loop_flight_result": fmgc_flight_result,
+        "fmgc_nd_pseudo_waypoints": {
+            "web_layer": {"file": "xp-kit-nd/fmgc-pwp-layer.js", "sha256": digest(PWP_LAYER)},
+            "web_layer_check_result": pwp_layer_result,
+            "flight_states": [{"file": f"nd-pwp/{p.name}", "sha256": digest(p)} for p in pwp_fixtures],
+            "native_preview": "nd-fbw-pwp.svg",
+        },
         "navdata_test_result": mfd_test_results["test_navdata"],
         "mfd_render_test_result": mfd_test_results["test_mfd_render"],
         "mfd_page_test_results": {name: mfd_test_results[name] for name, _ in mfd_optional_tests},

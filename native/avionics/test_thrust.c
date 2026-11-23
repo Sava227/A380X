@@ -444,6 +444,34 @@ static void test_disconnect_buttons(void)
     CHECK(t.disc_anim[0] == 0.0f, "released");
 }
 
+/* Keyboard throttle steps stop at CL and FLX/MCT while the key is held; the next press moves on. */
+static void test_key_detents(void)
+{
+    A380XThrustCalibration c = a380x_thrust_default_calibration();
+    double hold = -1.0, r;
+    r = a380x_thrust_key_detent(&c, c.cl - 0.10, c.cl + 0.03, &hold);
+    CHECK(fabs(r - c.cl) < 1e-12 && fabs(hold - c.cl) < 1e-12, "step up across CL stops at CL");
+    r = a380x_thrust_key_detent(&c, c.cl, c.cl + 0.05, &hold);
+    CHECK(fabs(r - c.cl) < 1e-12, "held at CL while the key stays down");
+    hold = -1.0;
+    r = a380x_thrust_key_detent(&c, c.cl, c.cl + 0.05, &hold);
+    CHECK(fabs(r - (c.cl + 0.05)) < 1e-12 && hold < 0.0, "next press leaves CL");
+    r = a380x_thrust_key_detent(&c, c.cl - 0.10, c.cl - c.tolerance + 0.001, &hold);
+    CHECK(fabs(r - c.cl) < 1e-12, "reaching the CL tolerance band snaps to CL");
+    hold = -1.0;
+    r = a380x_thrust_key_detent(&c, c.cl - 0.10, c.mct + 0.05, &hold);
+    CHECK(fabs(r - c.cl) < 1e-12, "a big step up stops at the first detent (CL)");
+    hold = -1.0;
+    r = a380x_thrust_key_detent(&c, c.toga, c.mct - 0.01, &hold);
+    CHECK(fabs(r - c.mct) < 1e-12, "step down from TOGA stops at FLX/MCT");
+    hold = -1.0;
+    r = a380x_thrust_key_detent(&c, c.mct, c.cl - 0.05, &hold);
+    CHECK(fabs(r - c.cl) < 1e-12, "step down from FLX/MCT stops at CL");
+    hold = -1.0;
+    r = a380x_thrust_key_detent(&c, c.cl - 0.20, c.cl - 0.15, &hold);
+    CHECK(fabs(r - (c.cl - 0.15)) < 1e-12 && hold < 0.0, "below CL the steps are free");
+}
+
 int main(void)
 {
     test_detent_lever_stickiness();
@@ -458,6 +486,7 @@ int main(void)
     test_flex_temperature_latch_and_transition();
     test_instinctive_disconnect_inhibit();
     test_disconnect_buttons();
+    test_key_detents();
     if (failures) {
         printf("%d of %d checks failed\n", failures, checks);
         return 1;

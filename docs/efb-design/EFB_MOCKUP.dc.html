@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A380 EFB prototype</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#4FC3E6}a:hover{color:#8ADAF0}
+.card{background:#151B23;border:1px solid #232C38;border-radius:14px;padding:16px;box-sizing:border-box;min-width:0}
+.lbl{font:600 12px/1.2 Barlow,system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#93A2B2}
+.val{font:500 22px/1.15 'IBM Plex Mono',ui-monospace,monospace;color:#E6EDF3}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.muted{color:#A3B1BF}
+.btn{height:44px;padding:0 18px;border-radius:10px;border:1px solid #2A3442;background:#1C2430;color:#E6EDF3;font:600 14px/1 Barlow,system-ui,sans-serif;cursor:pointer;white-space:nowrap}
+.btn:hover{background:#243040}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.seg{display:flex;gap:4px;padding:4px;border-radius:12px;background:#0F141B;border:1px solid #232C38}
+.track{height:8px;border-radius:4px;background:#232C38;overflow:hidden}
+.hr{height:1px;background:#232C38}
+.inp{height:44px;width:100%;box-sizing:border-box;padding:0 12px;border-radius:10px;border:1px solid #2A3442;background:#0F141B;color:#E6EDF3;font:500 16px 'IBM Plex Mono',ui-monospace,monospace}
+.inp:focus{outline:2px solid #4FC3E6;outline-offset:1px}
+.chip{font:600 11px/1 Barlow,system-ui,sans-serif;letter-spacing:.08em;padding:5px 8px;border-radius:6px;border:1px solid #3A4656;color:#A3B1BF;white-space:nowrap}
+</style>
+</helmet>
+<div style="width:1240px;height:880px;box-sizing:border-box;padding:36px 40px;background:#06080B;border-radius:56px;display:flex;font-family:Barlow,system-ui,sans-serif;color:#E6EDF3">
+<div style="flex:1;min-width:0;border-radius:20px;overflow:hidden;background:#0D1117;display:flex;flex-direction:column;border:1px solid #1A212B">
+
+<header style="height:56px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:0 20px 0 18px;border-bottom:1px solid #1E2631;background:#0F141B">
+<div style="display:flex;align-items:center;gap:12px">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"></path></svg>
+<div style="font:700 17px/1 Barlow,system-ui,sans-serif;letter-spacing:.08em">A380 EFB</div>
+<span class="chip">SAMPLE DATA</span>
+</div>
+<div style="display:flex;align-items:center;gap:10px;font:600 15px/1 Barlow,system-ui,sans-serif">
+<span class="mono">EGLL</span>
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A3B1BF" stroke-width="1.8" aria-hidden="true"><path d="M4 12h16M14 6l6 6-6 6"></path></svg>
+<span class="mono">WSSS</span>
+<span class="muted" style="font-weight:500">{{variant}} · Preflight</span>
+</div>
+<div style="display:flex;align-items:center;gap:18px;font:600 15px/1 Barlow,system-ui,sans-serif">
+<span class="mono" aria-label="Clock">{{clock}}</span>
+<span style="display:flex;align-items:center;gap:6px" class="muted">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A3B1BF" stroke-width="1.6" aria-hidden="true"><rect x="2" y="7" width="18" height="10" rx="2"></rect><path d="M22 11v2"></path><rect x="4" y="9" width="12" height="6" rx="1" fill="#A3B1BF" stroke="none"></rect></svg>
+{{battery}}
+</span>
+</div>
+</header>
+
+<div style="flex:1;min-height:0;display:flex">
+
+<nav aria-label="EFB sections" style="width:111px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 0;border-right:1px solid #1E2631;background:#0F141B">
+<button type="button" style="{{nav.home}}" onClick="{{go.home}}">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"></path><path d="M5 10v10h14V10"></path><path d="M10 20v-5h4v5"></path></svg>
+Home
+</button>
+<button type="button" style="{{nav.ofp}}" onClick="{{go.ofp}}">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"></path><path d="M9 10h6M9 14h6M9 18h4"></path></svg>
+OFP
+</button>
+<button type="button" style="{{nav.ground}}" onClick="{{go.ground}}">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="1.5"></rect><circle cx="14.5" cy="12" r="1"></circle></svg>
+Ground
+</button>
+<button type="button" style="{{nav.loading}}" onClick="{{go.loading}}">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M6 9h12l2 11H4z"></path><circle cx="12" cy="5.5" r="2.5"></circle></svg>
+Loading
+</button>
+<button type="button" style="{{nav.cabin}}" onClick="{{go.cabin}}">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10h8"></path><path d="M8 13l-2 8M16 13l2 8M6 17h12"></path></svg>
+Cabin
+</button>
+<button type="button" style="{{nav.flight}}" onClick="{{go.flight}}">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"></path></svg>
+Flight
+</button>
+<button type="button" style="{{nav.ops}}" onClick="{{go.ops}}">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"></rect><path d="M9 8h6M9 12h6M9 16h4"></path></svg>
+Ops
+</button>
+<button type="button" style="{{nav.failures}}" onClick="{{go.failures}}">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v5M12 18v.5"></path></svg>
+Failures
+</button>
+<button type="button" style="{{nav.aircraft}}" onClick="{{go.aircraft}}">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="2.5"></circle><path d="M12 4v5.5M12 14.5V20M4 12h5.5M14.5 12H20"></path></svg>
+Aircraft
+</button>
+<div style="flex:1"></div>
+<button type="button" style="{{nav.settings}}" onClick="{{go.settings}}">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"></path><circle cx="16" cy="6" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="18" cy="18" r="2"></circle></svg>
+Settings
+</button>
+</nav>
+
+<main style="flex:1;min-width:0;display:flex;flex-direction:column;gap:16px;padding:20px 24px;overflow:hidden">
+
+<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:44px">
+<h1 style="margin:0;font:700 26px/1 Barlow,system-ui,sans-serif;letter-spacing:.02em">{{sectionTitle}}</h1>
+<sc-if value="{{hasTabs}}" hint-placeholder-val="{{false}}">
+<div role="tablist" aria-label="Section pages" style="display:flex;gap:8px">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="3">
+<button type="button" role="tab" aria-selected="{{t.selected}}" style="{{t.style}}" onClick="{{t.pick}}">{{t.label}}</button>
+</sc-for>
+</div>
+</sc-if>
+</div>
+
+<sc-if value="{{isHome}}" hint-placeholder-val="{{true}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-content:start">
+<section class="card" style="grid-column:span 2;display:flex;flex-direction:column;gap:18px">
+<div class="lbl">Flight</div>
+<div style="display:flex;align-items:center;gap:28px">
+<div><div class="mono" style="font-size:40px;font-weight:600;line-height:1">EGLL</div><div class="muted" style="font-size:15px;margin-top:6px">London Heathrow</div></div>
+<svg width="64" height="24" viewBox="0 0 64 24" fill="none" stroke="{{accent}}" stroke-width="2" aria-hidden="true"><path d="M2 12h58M52 5l8 7-8 7"></path></svg>
+<div><div class="mono" style="font-size:40px;font-weight:600;line-height:1">WSSS</div><div class="muted" style="font-size:15px;margin-top:6px">Singapore Changi</div></div>
+</div>
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">
+<div><div class="lbl">Distance</div><div class="val">5,880 nm</div></div>
+<div><div class="lbl">Cruise</div><div class="val">FL390</div></div>
+<div><div class="lbl">Seats</div><div class="val">{{cabinTotal}}</div></div>
+<div><div class="lbl">Engines</div><div class="val" style="color:{{accent}}">{{engineShort}}</div></div>
+</div>
+</section>
+<section class="card" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 12px;align-content:start">
+<div class="lbl" style="grid-column:span 2">Aircraft</div>
+<div><div class="lbl">Gross wt</div><div class="val">{{w.gw}}</div></div>
+<div><div class="lbl">Fuel on board</div><div class="val">{{w.fob}}</div></div>
+<div><div class="lbl">Zero-fuel wt</div><div class="val">{{w.zfw}}</div></div>
+<div><div class="lbl">CG</div><div class="val">{{cg.tow}} %</div></div>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:12px">
+<div class="lbl">Doors &amp; slides</div>
+<div style="display:flex;align-items:baseline;gap:10px"><span class="mono" style="font-size:34px;font-weight:600;color:#F2A93B">{{openDoors}}</span><span class="muted">of 20 doors open</span></div>
+<div style="display:flex;align-items:baseline;gap:10px"><span class="mono" style="font-size:34px;font-weight:600;color:{{accent}}">{{armedSlides}}</span><span class="muted">of 16 slides armed</span></div>
+<button type="button" class="btn" style="align-self:flex-start" onClick="{{go.ground}}">Open Ground</button>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:12px">
+<div class="lbl">Next checklist</div>
+<div style="font:700 20px/1.2 Barlow,system-ui,sans-serif">{{nextGroup.name}}</div>
+<div style="display:flex;align-items:center;gap:12px"><div class="track" style="flex:1"><div style="{{nextGroup.bar}}"></div></div><span class="mono muted">{{nextGroup.progress}}</span></div>
+<button type="button" class="btn" style="align-self:flex-start" onClick="{{nextGroup.open}}">Open checklist</button>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:12px">
+<div class="lbl">Weight limits</div>
+<sc-for list="{{limits}}" as="l" hint-placeholder-count="3">
+<div style="display:flex;flex-direction:column;gap:6px">
+<div style="display:flex;justify-content:space-between;font-size:14px"><span style="font-weight:600">{{l.label}}</span><span class="mono muted">{{l.value}} / {{l.limit}}</span></div>
+<div class="track"><div style="{{l.style}}"></div></div>
+</div>
+</sc-for>
+</section>
+<section class="card" style="grid-column:span 3;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;justify-content:space-between;align-items:center"><div class="lbl">Quick presets</div><span class="muted" style="font-size:13px">Ground only, engines off</span></div>
+<div style="display:flex;gap:10px;flex-wrap:wrap">
+<sc-for list="{{presets}}" as="p" hint-placeholder-count="5">
+<button type="button" class="btn" onClick="{{p.apply}}">{{p.name}}</button>
+</sc-for>
+</div>
+<sc-if value="{{hasPresetMsg}}" hint-placeholder-val="{{false}}"><div style="font-size:14px;color:#7FD8A9">{{presetMsg}}</div></sc-if>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isOfp}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-content:start">
+<section class="card" style="grid-column:span 3;display:flex;align-items:flex-end;gap:12px">
+<label style="flex:1;display:flex;flex-direction:column;gap:6px"><span class="lbl">SimBrief pilot ID</span><input class="inp" type="text" placeholder="e.g. 123456" disabled="disabled"></label>
+<button type="button" class="btn" disabled="disabled">Fetch latest OFP</button>
+<span class="chip" style="height:44px;box-sizing:border-box;display:flex;align-items:center;border-color:#F2A93B;color:#F7C77A">PLANNED · NOT ACTIVE YET</span>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:10px">
+<div class="lbl">Summary</div>
+<div style="display:flex;justify-content:space-between"><span>Route</span><span class="mono">EGLL – WSSS</span></div>
+<div style="display:flex;justify-content:space-between"><span>Alternate</span><span class="mono">WMKK</span></div>
+<div style="display:flex;justify-content:space-between"><span>Cruise / CI</span><span class="mono">FL390 / 45</span></div>
+<div style="display:flex;justify-content:space-between"><span>Air distance</span><span class="mono">5,912 nm</span></div>
+<div style="display:flex;justify-content:space-between"><span>Trip time</span><span class="mono">12:31</span></div>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:10px">
+<div class="lbl">Fuel plan</div>
+<sc-for list="{{ofpFuel}}" as="r" hint-placeholder-count="7">
+<div style="display:flex;justify-content:space-between"><span>{{r.label}}</span><span class="mono">{{r.value}}</span></div>
+</sc-for>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:10px">
+<div class="lbl">Planned weights</div>
+<div style="display:flex;justify-content:space-between"><span>ZFW</span><span class="mono">{{w.zfw}}</span></div>
+<div style="display:flex;justify-content:space-between"><span>TOW</span><span class="mono">{{w.tow}}</span></div>
+<div style="display:flex;justify-content:space-between"><span>LW</span><span class="mono">{{w.lw}}</span></div>
+<div style="display:flex;justify-content:space-between"><span>Passengers</span><span class="mono">{{paxTotal}}</span></div>
+<div style="display:flex;gap:8px;margin-top:6px"><button type="button" class="btn" disabled="disabled">Load into FMS</button><button type="button" class="btn" disabled="disabled">Load payload &amp; fuel</button></div>
+</section>
+<section class="card" style="grid-column:span 3;display:flex;flex-direction:column;gap:8px">
+<div class="lbl">Route string</div>
+<div class="mono" style="font-size:14px;line-height:1.6;color:#C9D4DF">DET L6 DVR UL9 KONAN UL607 KOK … (full OFP route appears here once import is enabled)</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isDoors}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);gap:16px">
+<section class="card" style="display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+<div class="seg" style="width:260px"><sc-for list="{{doorModeSeg}}" as="o" hint-placeholder-count="2"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div>
+<span class="muted" style="font-size:13px">{{doorModeHint}}</span>
+</div>
+<div class="muted" style="font-size:13px;font-weight:600;letter-spacing:.06em">MAIN DECK</div>
+<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px">
+<sc-for list="{{doors.main}}" as="d" hint-placeholder-count="10">
+<button type="button" aria-label="{{d.aria}}" style="{{d.style}}" onClick="{{d.pick}}"><span>{{d.label}}</span><span style="font-size:11px;letter-spacing:.08em">{{d.state}}</span><span style="{{d.slideStyle}}">{{d.slide}}</span></button>
+</sc-for>
+</div>
+<div class="muted" style="font-size:13px;font-weight:600;letter-spacing:.06em">UPPER DECK</div>
+<div style="display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px">
+<sc-for list="{{doors.upper}}" as="d" hint-placeholder-count="6">
+<button type="button" aria-label="{{d.aria}}" style="{{d.style}}" onClick="{{d.pick}}"><span>{{d.label}}</span><span style="font-size:11px;letter-spacing:.08em">{{d.state}}</span><span style="{{d.slideStyle}}">{{d.slide}}</span></button>
+</sc-for>
+</div>
+<div class="muted" style="font-size:13px;font-weight:600;letter-spacing:.06em">CARGO &amp; COCKPIT</div>
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
+<sc-for list="{{doors.other}}" as="d" hint-placeholder-count="4">
+<button type="button" aria-label="{{d.aria}}" style="{{d.style}}" onClick="{{d.pick}}"><span>{{d.label}}</span><span style="font-size:11px;letter-spacing:.08em">{{d.state}}</span><span style="{{d.slideStyle}}">{{d.slide}}</span></button>
+</sc-for>
+</div>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:12px">
+<div class="lbl">Doors</div>
+<div style="display:flex;justify-content:space-between"><span>Open</span><span class="mono" style="color:#F2A93B">{{openDoors}} / 20</span></div>
+<div style="display:flex;gap:8px"><button type="button" class="btn" onClick="{{openAll}}">Open all</button><button type="button" class="btn" onClick="{{closeAll}}">Close all</button></div>
+<div class="hr"></div>
+<div class="lbl">Escape slides</div>
+<div style="display:flex;justify-content:space-between"><span>Armed</span><span class="mono" style="color:{{accent}}">{{armedSlides}} / 16</span></div>
+<div style="display:flex;gap:8px"><button type="button" class="btn" style="border-color:{{accent}};color:{{accent}}" onClick="{{armAll}}">Arm all slides</button><button type="button" class="btn" onClick="{{disarmAll}}">Disarm all</button></div>
+<div style="font-size:14px;color:#F7C77A;min-height:20px">{{doorMsg}}</div>
+<div class="muted" style="font-size:13px">A door must be closed to arm its slide, and disarmed before it can be opened. Cargo and cockpit doors have no slides.</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isServices}}" hint-placeholder-val="{{false}}">
+<section class="card" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 32px;align-content:start">
+<div class="lbl" style="grid-column:span 2;margin-bottom:8px">Ground services · {{activeServices}} connected</div>
+<sc-for list="{{services}}" as="s" hint-placeholder-count="8">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;border-bottom:1px solid #1E2631">
+<span style="font-size:15px;font-weight:500">{{s.label}}</span>
+<button type="button" role="switch" aria-checked="{{s.on}}" aria-label="{{s.label}}" style="{{s.style}}" onClick="{{s.pick}}"><span style="{{s.knob}}"></span></button>
+</div>
+</sc-for>
+</section>
+</sc-if>
+
+<sc-if value="{{isPush}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-content:start">
+<section class="card" style="display:flex;flex-direction:column;gap:18px">
+<div class="lbl">Pushback</div>
+<div style="display:flex;align-items:center;gap:12px"><span style="width:10px;height:10px;border-radius:5px;background:{{accent}}"></span><span style="font:600 18px/1.2 Barlow,system-ui,sans-serif">{{pushState}}</span></div>
+<div style="display:flex;flex-direction:column;gap:8px"><span class="lbl">Steering</span>
+<div class="seg"><sc-for list="{{steerSeg}}" as="o" hint-placeholder-count="3"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div></div>
+<div style="display:flex;flex-direction:column;gap:8px"><label for="push-speed" class="lbl">Tug speed · {{pushSpeed}} kt</label>
+<input id="push-speed" type="range" min="1" max="5" step="1" value="{{pushSpeed}}" onChange="{{setPushSpeed}}" style="width:100%;accent-color:{{accent}}"></div>
+<div style="display:flex;gap:10px"><button type="button" class="btn" onClick="{{callTug}}">Call tug</button><button type="button" class="btn" style="border-color:{{accent}};color:{{accent}}" onClick="{{startPush}}">Start pushback</button><button type="button" class="btn" onClick="{{stopPush}}">Stop</button></div>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:12px">
+<div class="lbl">Before pushback</div>
+<div style="display:flex;justify-content:space-between;min-height:40px;align-items:center;border-bottom:1px solid #1E2631"><span>Doors closed</span><span class="mono" style="color:{{doorsColor}}">{{doorsClosedLabel}}</span></div>
+<div style="display:flex;justify-content:space-between;min-height:40px;align-items:center;border-bottom:1px solid #1E2631"><span>Slides armed</span><span class="mono" style="color:{{slidesColor}}">{{slidesLabel}}</span></div>
+<div style="display:flex;justify-content:space-between;min-height:40px;align-items:center;border-bottom:1px solid #1E2631"><span>Jet bridges</span><span class="mono muted">{{jetwayLabel}}</span></div>
+<div style="display:flex;justify-content:space-between;min-height:40px;align-items:center"><span>Nose-wheel steering</span><span class="mono muted">disconnect pin</span></div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isPayload}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;align-content:start">
+<section class="card" style="display:flex;flex-direction:column;gap:6px">
+<div style="display:grid;grid-template-columns:minmax(0,1.5fr) 80px 140px minmax(0,1fr);gap:10px;align-items:center;padding-bottom:8px;border-bottom:1px solid #232C38"><span class="lbl">Cabin</span><span class="lbl">Seats</span><span class="lbl">Passengers</span><span class="lbl" style="text-align:right">Mass</span></div>
+<sc-for list="{{paxRows}}" as="r" hint-placeholder-count="4">
+<div style="display:grid;grid-template-columns:minmax(0,1.5fr) 80px 140px minmax(0,1fr);gap:10px;align-items:center;min-height:58px;border-bottom:1px solid #1E2631">
+<label for="{{r.id}}" style="font-weight:600">{{r.name}}</label><span class="mono muted">{{r.seats}}</span>
+<input id="{{r.id}}" class="inp" type="number" min="0" max="{{r.seats}}" step="1" value="{{r.input}}" onChange="{{r.change}}" style="{{r.inputStyle}}">
+<span class="mono" style="text-align:right">{{r.mass}}</span>
+</div>
+</sc-for>
+<sc-for list="{{cargoRows}}" as="r" hint-placeholder-count="3">
+<div style="display:grid;grid-template-columns:minmax(0,1.5fr) 80px 140px minmax(0,1fr);gap:10px;align-items:center;min-height:58px;border-bottom:1px solid #1E2631">
+<label for="{{r.id}}" style="font-weight:600">{{r.name}}</label><span class="mono muted">{{r.unit}}</span>
+<input id="{{r.id}}" class="inp" type="number" min="0" max="{{r.max}}" step="100" value="{{r.input}}" onChange="{{r.change}}">
+<span class="mono" style="text-align:right">{{r.mass}}</span>
+</div>
+</sc-for>
+<div style="font-size:13px;color:#F7C77A;min-height:18px;margin-top:6px">{{paxWarning}}</div>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:14px">
+<div class="lbl">Totals</div>
+<div style="display:flex;justify-content:space-between"><span>Passengers</span><span class="mono">{{paxTotal}} / {{cabinTotal}}</span></div>
+<div style="display:flex;justify-content:space-between"><span>Payload</span><span class="mono">{{w.payload}}</span></div>
+<div style="display:flex;justify-content:space-between"><span>Dry operating wt</span><span class="mono">{{w.dow}}</span></div>
+<div class="hr"></div>
+<sc-for list="{{limits}}" as="l" hint-placeholder-count="3">
+<div style="display:flex;flex-direction:column;gap:6px">
+<div style="display:flex;justify-content:space-between;font-size:14px"><span style="font-weight:600">{{l.label}}</span><span class="mono muted">{{l.value}} / {{l.limit}}</span></div>
+<div class="track"><div style="{{l.style}}"></div></div>
+</div>
+</sc-for>
+<div style="display:flex;gap:10px;margin-top:6px"><button type="button" class="btn" style="border-color:{{accent}};color:{{accent}}" onClick="{{board}}">Start boarding</button><button type="button" class="btn" onClick="{{deboard}}">Deboard</button></div>
+<div class="muted" style="font-size:13px">{{boardMsg}}</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isFuel}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px;align-content:start">
+<section class="card" style="display:flex;flex-direction:column;gap:14px">
+<div class="lbl">Tanks · {{w.fob}}</div>
+<div class="muted" style="font-size:13px;font-weight:600;letter-spacing:.06em">LEFT WING</div>
+<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px">
+<sc-for list="{{tanksL}}" as="k" hint-placeholder-count="5">
+<div style="display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:10px;background:#0F141B;border:1px solid #1E2631"><span class="lbl">{{k.name}}</span><span class="mono" style="font-size:15px">{{k.qty}}</span><div class="track"><div style="{{k.style}}"></div></div></div>
+</sc-for>
+</div>
+<div class="muted" style="font-size:13px;font-weight:600;letter-spacing:.06em">RIGHT WING</div>
+<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px">
+<sc-for list="{{tanksR}}" as="k" hint-placeholder-count="5">
+<div style="display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:10px;background:#0F141B;border:1px solid #1E2631"><span class="lbl">{{k.name}}</span><span class="mono" style="font-size:15px">{{k.qty}}</span><div class="track"><div style="{{k.style}}"></div></div></div>
+</sc-for>
+</div>
+<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px">
+<div style="grid-column:3;display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:10px;background:#0F141B;border:1px solid #1E2631"><span class="lbl">{{trim.name}}</span><span class="mono" style="font-size:15px">{{trim.qty}}</span><div class="track"><div style="{{trim.style}}"></div></div></div>
+</div>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:16px">
+<div class="lbl">Refuel</div>
+<label style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Block fuel ({{massUnit}})</span><input class="inp" type="number" min="0" step="100" value="{{fuelInput}}" onChange="{{fuelChange}}" style="font-size:24px;height:52px"></label>
+<div style="display:flex;flex-direction:column;gap:8px"><span class="lbl">Rate</span>
+<div class="seg"><sc-for list="{{rateSeg}}" as="o" hint-placeholder-count="3"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div></div>
+<div style="display:flex;gap:10px"><button type="button" class="btn" style="border-color:{{accent}};color:{{accent}}" onClick="{{startRefuel}}">Start refuel</button><button type="button" class="btn" onClick="{{stopRefuel}}">Stop</button></div>
+<div class="muted" style="font-size:13px">{{refuelMsg}}</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isWB}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;align-content:start">
+<section class="card" style="display:flex;flex-direction:column;gap:10px">
+<div class="lbl">CG envelope</div>
+<svg viewBox="0 0 460 320" width="100%" role="img" aria-label="CG envelope with the zero-fuel and take-off points inside the limits">
+<rect x="40" y="20" width="400" height="270" fill="#0F141B" stroke="#232C38"></rect>
+<path d="M140 20v270M240 20v270M340 20v270M40 98h400M40 194h400" stroke="#1E2631"></path>
+<polygon points="120,290 120,145.6 160,30 400,30 420,145.6 410,290" fill="#4FC3E61A" stroke="{{accent}}" stroke-width="1.5"></polygon>
+<line x1="{{zfwX}}" y1="{{zfwY}}" x2="{{towX}}" y2="{{towY}}" stroke="#A3B1BF" stroke-dasharray="4 4"></line>
+<circle cx="{{zfwX}}" cy="{{zfwY}}" r="6" fill="#0D1117" stroke="#E6EDF3" stroke-width="2"></circle>
+<circle cx="{{towX}}" cy="{{towY}}" r="6" fill="{{accent}}"></circle>
+<text x="40" y="310" fill="#93A2B2" font-size="12" font-family="IBM Plex Mono, monospace">25</text>
+<text x="232" y="310" fill="#93A2B2" font-size="12" font-family="IBM Plex Mono, monospace">35</text>
+<text x="424" y="310" fill="#93A2B2" font-size="12" font-family="IBM Plex Mono, monospace">45</text>
+<text x="4" y="294" fill="#93A2B2" font-size="12" font-family="IBM Plex Mono, monospace">250</text>
+<text x="4" y="34" fill="#93A2B2" font-size="12" font-family="IBM Plex Mono, monospace">520</text>
+</svg>
+<div class="muted" style="font-size:13px">%MAC across, mass in tonnes up. Ring = ZFW, dot = TOW. Moves with cabin layout, passengers, cargo and fuel.</div>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:12px">
+<div class="lbl">Centre of gravity</div>
+<div style="display:flex;justify-content:space-between;min-height:40px;align-items:center;border-bottom:1px solid #1E2631"><span>ZFW CG</span><span class="mono">{{cg.zfw}} %MAC</span></div>
+<div style="display:flex;justify-content:space-between;min-height:40px;align-items:center;border-bottom:1px solid #1E2631"><span>TOW CG</span><span class="mono">{{cg.tow}} %MAC</span></div>
+<div style="display:flex;justify-content:space-between;min-height:40px;align-items:center;border-bottom:1px solid #1E2631"><span>Trim tank</span><span class="mono">{{trim.qty}}</span></div>
+<div style="display:flex;justify-content:space-between;min-height:40px;align-items:center"><span>THS for take-off</span><span class="mono">UP 1.5</span></div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isCabin}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.9fr) minmax(0,1fr);gap:16px">
+<div style="display:flex;flex-direction:column;gap:8px;min-width:0;overflow-y:auto">
+<sc-for list="{{decks}}" as="dk" hint-placeholder-count="2">
+<section class="card" style="display:flex;flex-direction:column;gap:10px;padding:14px">
+<div style="display:flex;justify-content:space-between;align-items:center"><span style="font:700 16px/1 Barlow,system-ui,sans-serif">{{dk.name}}</span><span class="mono" style="{{dk.usageStyle}}">{{dk.usage}}</span></div>
+<div style="display:flex;height:40px;border-radius:20px 8px 8px 20px;overflow:hidden;border:1px solid #2A3442;background:#0F141B" role="img" aria-label="{{dk.aria}}">
+<sc-for list="{{dk.zones}}" as="z" hint-placeholder-count="3"><div style="{{z.style}}">{{z.label}}</div></sc-for>
+</div>
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) auto;gap:8px;align-items:end">
+<sc-for list="{{dk.fields}}" as="f" hint-placeholder-count="3">
+<label style="display:flex;flex-direction:column;gap:4px"><span class="lbl">{{f.label}}</span><input class="inp" type="number" min="0" step="1" value="{{f.value}}" onChange="{{f.change}}"></label>
+</sc-for>
+<sc-if value="{{dk.fill}}" hint-placeholder-val="{{true}}">
+<div style="display:flex;flex-direction:column;gap:4px"><span class="lbl">Economy</span><div class="inp" style="display:flex;align-items:center;color:#46C38B">{{dk.y}}</div></div>
+</sc-if>
+<sc-if value="{{dk.manual}}" hint-placeholder-val="{{false}}">
+<label style="display:flex;flex-direction:column;gap:4px"><span class="lbl">Economy</span><input class="inp" type="number" min="0" step="1" value="{{dk.yInput}}" onChange="{{dk.yChange}}"></label>
+</sc-if>
+<button type="button" role="switch" aria-checked="{{dk.fill}}" style="{{dk.fillStyle}}" onClick="{{dk.toggleFill}}">Fill rest economy</button>
+</div>
+</section>
+</sc-for>
+<section class="card" style="display:flex;flex-direction:column;gap:10px;padding:14px">
+<div style="display:flex;justify-content:space-between;align-items:center"><span style="font:700 16px/1 Barlow,system-ui,sans-serif">Lower deck · cargo holds</span><span class="mono muted">{{lowerSummary}}</span></div>
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+<div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Forward hold</span><div class="seg"><sc-for list="{{fwdSeg}}" as="o" hint-placeholder-count="2"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div></div>
+<div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Aft hold</span><div class="seg"><sc-for list="{{aftSeg}}" as="o" hint-placeholder-count="2"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div></div>
+</div>
+</section>
+</div>
+<section class="card" style="display:flex;flex-direction:column;gap:12px">
+<div class="lbl">Layout summary</div>
+<sc-for list="{{classTotals}}" as="c" hint-placeholder-count="4">
+<div style="display:flex;align-items:center;gap:10px"><span style="{{c.swatch}}"></span><span style="flex:1">{{c.name}}</span><span class="mono">{{c.n}}</span></div>
+</sc-for>
+<div class="hr"></div>
+<div style="display:flex;justify-content:space-between"><span>Total seats</span><span class="mono" style="{{cabinLimitStyle}}">{{cabinTotal}} / 853</span></div>
+<div style="display:flex;justify-content:space-between"><span>Cabin weight change</span><span class="mono">{{cabinDelta}}</span></div>
+<div style="display:flex;justify-content:space-between"><span>Dry operating wt</span><span class="mono">{{w.dow}}</span></div>
+<div style="display:flex;gap:8px;margin-top:4px"><button type="button" class="btn" style="border-color:{{accent}};color:{{accent}}" onClick="{{applyCabin}}">Apply to aircraft</button><button type="button" class="btn" onClick="{{resetCabin}}">Default</button></div>
+<div style="font-size:13px;color:#7FD8A9;min-height:18px">{{cabinMsg}}</div>
+<div class="muted" style="font-size:13px">Applying rebuilds the 3D seats in the cabin and updates the empty weight. Ground only, doors may be open.</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isPerf}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:16px">
+<div class="seg" style="align-self:flex-start;width:300px"><sc-for list="{{perfModeSeg}}" as="o" hint-placeholder-count="2"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div>
+<sc-if value="{{isTakeoff}}" hint-placeholder-val="{{true}}">
+<div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px">
+<section class="card" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px;align-content:start">
+<div class="lbl" style="grid-column:span 2">Conditions</div>
+<label style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Runway</span><input class="inp" type="text" value="27R" readonly="readonly"></label>
+<label style="display:flex;flex-direction:column;gap:6px"><span class="lbl">TORA</span><input class="inp" type="text" value="3,900 m" readonly="readonly"></label>
+<label style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Wind</span><input class="inp" type="text" value="250/08" readonly="readonly"></label>
+<label style="display:flex;flex-direction:column;gap:6px"><span class="lbl">OAT / QNH</span><input class="inp" type="text" value="14 °C / 1013" readonly="readonly"></label>
+<div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Flaps</span><div class="seg"><sc-for list="{{flapsSeg}}" as="o" hint-placeholder-count="3"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div></div>
+<div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Thrust</span><div class="seg"><sc-for list="{{thrustSeg}}" as="o" hint-placeholder-count="2"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div></div>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;justify-content:space-between;align-items:center"><div class="lbl">Result</div><span class="muted" style="font-size:12px">mock values</span></div>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
+<div><div class="lbl">V1</div><div class="val" style="font-size:30px;color:{{accent}}">{{v.v1}}</div></div>
+<div><div class="lbl">VR</div><div class="val" style="font-size:30px;color:{{accent}}">{{v.vr}}</div></div>
+<div><div class="lbl">V2</div><div class="val" style="font-size:30px;color:{{accent}}">{{v.v2}}</div></div>
+</div>
+<div class="hr"></div>
+<div style="display:flex;justify-content:space-between"><span>Thrust</span><span class="mono">{{thrustResult}}</span></div>
+<div style="display:flex;justify-content:space-between"><span>Config</span><span class="mono">CONF {{flaps}}</span></div>
+<div style="display:flex;justify-content:space-between"><span>THS</span><span class="mono">UP 1.5</span></div>
+<button type="button" class="btn" style="border-color:{{accent}};color:{{accent}};align-self:flex-start" onClick="{{sendPerf}}">Send to MFD</button>
+<div class="muted" style="font-size:13px">{{perfMsg}}</div>
+</section>
+</div>
+</sc-if>
+<sc-if value="{{isLanding}}" hint-placeholder-val="{{false}}">
+<div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px">
+<section class="card" style="display:flex;flex-direction:column;gap:16px">
+<div class="lbl">Landing at WSSS 20C</div>
+<div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Config</span><div class="seg"><sc-for list="{{ldgConfSeg}}" as="o" hint-placeholder-count="2"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div></div>
+<div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">Auto brake</span><div class="seg"><sc-for list="{{autobrakeSeg}}" as="o" hint-placeholder-count="4"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div></div>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;justify-content:space-between;align-items:center"><div class="lbl">Result</div><span class="muted" style="font-size:12px">mock values</span></div>
+<div><div class="lbl">VAPP</div><div class="val" style="font-size:30px;color:{{accent}}">{{vapp}}</div></div>
+<div><div class="lbl">Landing distance</div><div class="val">{{ldgDist}}</div></div>
+<div class="muted" style="font-size:13px">Landing weight {{w.lw}}</div>
+</section>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{isNav}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:16px">
+<section class="card" style="display:flex;flex-direction:column;gap:12px">
+<div class="lbl">Route</div>
+<div style="display:flex;justify-content:space-between"><span>To destination</span><span class="mono">5,880 nm</span></div>
+<div style="display:flex;justify-content:space-between"><span>Top of descent</span><span class="mono">128 nm before WSSS</span></div>
+<div class="hr"></div>
+<div class="lbl">Next waypoints</div>
+<sc-for list="{{waypoints}}" as="p" hint-placeholder-count="5">
+<div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 70px;gap:8px;min-height:40px;align-items:center;border-bottom:1px solid #1E2631"><span class="mono" style="font-weight:600">{{p.id}}</span><span class="mono muted">{{p.dist}} nm</span><span class="mono muted">{{p.eta}}</span></div>
+</sc-for>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;justify-content:space-between;align-items:center"><div class="lbl">Charts</div><div style="display:flex;gap:8px"><button type="button" class="btn">Airport</button><button type="button" class="btn">SID</button><button type="button" class="btn">STAR</button><button type="button" class="btn">Approach</button></div></div>
+<div style="flex:1;min-height:360px;border-radius:10px;border:1px dashed #3A4656;background:#0F141B;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;padding:24px">
+<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#A3B1BF" stroke-width="1.5" aria-hidden="true"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"></path><path d="M9 4v14M15 6v14"></path></svg>
+<div style="font-weight:600">Chart viewer</div>
+<div class="muted" style="font-size:14px;max-width:360px">Airport diagram drawn from X-Plane's own airport data, with your aircraft position.</div>
+</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isComms}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-content:start">
+<section class="card" style="display:flex;flex-direction:column;gap:12px">
+<div class="lbl">COM 1</div>
+<div style="display:flex;align-items:center;gap:16px"><div style="flex:1"><div class="lbl">Active</div><div class="val" style="font-size:30px;color:#7FD8A9">{{com1.active}}</div></div><button type="button" class="btn" onClick="{{com1.swap}}">⇄ Swap</button><div style="flex:1;text-align:right"><div class="lbl">Standby</div><div class="val" style="font-size:30px">{{com1.stby}}</div></div></div>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:12px">
+<div class="lbl">COM 2</div>
+<div style="display:flex;align-items:center;gap:16px"><div style="flex:1"><div class="lbl">Active</div><div class="val" style="font-size:30px;color:#7FD8A9">{{com2.active}}</div></div><button type="button" class="btn" onClick="{{com2.swap}}">⇄ Swap</button><div style="flex:1;text-align:right"><div class="lbl">Standby</div><div class="val" style="font-size:30px">{{com2.stby}}</div></div></div>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:14px">
+<div class="lbl">Transponder</div>
+<div style="display:flex;align-items:center;justify-content:space-between"><span class="val" style="font-size:34px">4621</span><button type="button" class="btn" onClick="{{ident}}">IDENT</button></div>
+<div class="seg"><sc-for list="{{xpdrSeg}}" as="o" hint-placeholder-count="3"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div>
+<div class="muted" style="font-size:13px">{{identMsg}}</div>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:14px">
+<div class="lbl">TCAS</div>
+<div class="seg"><sc-for list="{{tcasSeg}}" as="o" hint-placeholder-count="3"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div>
+<div class="muted" style="font-size:13px">Datalink (Hoppie / ACARS) is not available in X-Plane yet.</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isChecklists}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px">
+<section class="card" style="display:flex;flex-direction:column;gap:2px;padding:10px">
+<sc-for list="{{clGroups}}" as="g" hint-placeholder-count="10">
+<button type="button" style="{{g.style}}" onClick="{{g.pick}}"><span>{{g.name}}</span><span class="mono" style="font-size:13px">{{g.progress}}</span></button>
+</sc-for>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:4px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div style="font:700 20px/1 Barlow,system-ui,sans-serif">{{clTitle}}</div><div style="display:flex;gap:8px"><button type="button" class="btn" onClick="{{resetGroup}}">Reset</button><button type="button" class="btn" style="border-color:{{accent}};color:{{accent}}" onClick="{{checkNext}}">Check item</button></div></div>
+<sc-for list="{{clItems}}" as="c" hint-placeholder-count="6">
+<div style="display:flex;align-items:center;gap:14px;min-height:52px;border-bottom:1px solid #1E2631">
+<input type="checkbox" id="{{c.id}}" checked="{{c.checked}}" onChange="{{c.toggle}}" style="width:22px;height:22px;accent-color:#46C38B">
+<label for="{{c.id}}" style="{{c.rowStyle}}"><span>{{c.item}}</span><span style="flex:1;border-bottom:1px dotted #3A4656;margin:0 10px"></span><span class="mono">{{c.resp}}</span></label>
+</div>
+</sc-for>
+<div class="muted" style="font-size:13px;margin-top:8px">{{autoCheckNote}}</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isPresets}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-content:start">
+<sc-for list="{{presets}}" as="p" hint-placeholder-count="5">
+<section class="card" style="display:flex;flex-direction:column;gap:12px;min-height:150px">
+<div style="font:700 19px/1.2 Barlow,system-ui,sans-serif">{{p.name}}</div>
+<div class="muted" style="font-size:14px;flex:1">{{p.desc}}</div>
+<button type="button" class="btn" style="align-self:flex-start;border-color:{{accent}};color:{{accent}}" onClick="{{p.apply}}">Apply</button>
+</section>
+</sc-for>
+<section class="card" style="display:flex;flex-direction:column;justify-content:center;gap:8px;min-height:150px">
+<div class="lbl">Status</div>
+<div style="font-size:15px;color:#7FD8A9">{{presetStatus}}</div>
+<div class="muted" style="font-size:13px">Presets run only on the ground with engines off.</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isFailures}}" hint-placeholder-val="{{false}}">
+<section class="card" style="display:flex;flex-direction:column;gap:2px">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px">
+<div style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{failFilters}}" as="o" hint-placeholder-count="8"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div>
+<button type="button" class="btn" onClick="{{clearFailures}}">Clear all</button>
+</div>
+<div class="lbl" style="margin-bottom:6px">{{activeFailures}} active · {{armedFailures}} armed</div>
+<div style="display:grid;grid-template-columns:60px 90px minmax(0,1fr) 120px;gap:10px;padding-bottom:8px;border-bottom:1px solid #232C38"><span class="lbl">ATA</span><span class="lbl">System</span><span class="lbl">Failure</span><span class="lbl">State</span></div>
+<sc-for list="{{failures}}" as="f" hint-placeholder-count="8">
+<div style="display:grid;grid-template-columns:60px 90px minmax(0,1fr) 120px;gap:10px;align-items:center;min-height:50px;border-bottom:1px solid #1E2631">
+<span class="mono muted">{{f.ata}}</span><span style="font-weight:600">{{f.sys}}</span><span class="mono">{{f.name}}</span>
+<button type="button" style="{{f.style}}" onClick="{{f.pick}}">{{f.label}}</button>
+</div>
+</sc-for>
+<div class="muted" style="font-size:13px;margin-top:8px">Tap a state to cycle Inactive → Armed → Active. Armed failures trigger at a random time in the next 30 minutes.</div>
+</section>
+</sc-if>
+
+<sc-if value="{{isAircraft}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-content:start">
+<section class="card" style="grid-column:span 2;display:flex;flex-direction:column;gap:12px">
+<div style="display:flex;justify-content:space-between;align-items:center"><div class="lbl">Engines</div><span class="mono muted">{{variant}}</span></div>
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
+<sc-for list="{{engineOpts}}" as="e" hint-placeholder-count="2">
+<button type="button" aria-pressed="{{e.on}}" style="{{e.style}}" onClick="{{e.pick}}"><span style="font:700 18px/1.2 Barlow,system-ui,sans-serif">{{e.name}}</span><span class="muted" style="font-size:14px;font-weight:500">{{e.desc}}</span></button>
+</sc-for>
+</div>
+</section>
+<sc-for list="{{options}}" as="o" hint-placeholder-count="2">
+<section class="card" style="display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+<span style="font:700 18px/1.2 Barlow,system-ui,sans-serif">{{o.label}}</span>
+<button type="button" role="switch" aria-checked="{{o.on}}" aria-label="{{o.label}}" style="{{o.style}}" onClick="{{o.pick}}"><span style="{{o.knob}}"></span></button>
+</div>
+<div class="muted" style="font-size:14px">{{o.desc}}</div>
+<div class="mono" style="font-size:13px;color:{{accent}}">{{o.status}}</div>
+</section>
+</sc-for>
+<div class="muted" style="grid-column:span 2;font-size:13px">Options are saved with the aircraft and apply on the ground with engines off.</div>
+</div>
+</sc-if>
+
+<sc-if value="{{isGeneral}}" hint-placeholder-val="{{false}}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-content:start">
+<section class="card" style="display:flex;flex-direction:column;gap:16px">
+<div class="lbl">Units &amp; time</div>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:16px"><span>Mass</span><div class="seg" style="width:180px"><sc-for list="{{unitsSeg}}" as="o" hint-placeholder-count="2"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div></div>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:16px"><span>Clock</span><div class="seg" style="width:180px"><sc-for list="{{clockSeg}}" as="o" hint-placeholder-count="2"><button type="button" style="{{o.style}}" onClick="{{o.pick}}">{{o.label}}</button></sc-for></div></div>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:6px">
+<div class="lbl" style="margin-bottom:8px">Behaviour</div>
+<sc-for list="{{switches}}" as="s" hint-placeholder-count="3">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px;border-bottom:1px solid #1E2631">
+<span>{{s.label}}</span>
+<button type="button" role="switch" aria-checked="{{s.on}}" aria-label="{{s.label}}" style="{{s.style}}" onClick="{{s.pick}}"><span style="{{s.knob}}"></span></button>
+</div>
+</sc-for>
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:12px">
+<label for="efb-brightness" class="lbl">Screen brightness · {{brightness}} %</label>
+<input id="efb-brightness" type="range" min="10" max="100" step="5" value="{{brightness}}" onChange="{{setBrightness}}" style="width:100%;accent-color:{{accent}}">
+</section>
+<section class="card" style="display:flex;flex-direction:column;gap:8px">
+<div class="lbl">About</div>
+<div style="font-size:15px">A380 EFB for the X-Plane 12 A380X port</div>
+<div class="muted" style="font-size:13px">Built on the FlyByWire flyPad page model; data comes from the aircraft's own systems.</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isSounds}}" hint-placeholder-val="{{false}}">
+<section class="card" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 40px;align-content:start">
+<div class="lbl" style="grid-column:span 2">Volume</div>
+<sc-for list="{{volumes}}" as="v" hint-placeholder-count="8">
+<div style="display:flex;flex-direction:column;gap:8px">
+<div style="display:flex;justify-content:space-between"><label for="{{v.id}}" style="font-weight:600;font-size:15px">{{v.label}}</label><span class="mono muted">{{v.value}} %</span></div>
+<input id="{{v.id}}" type="range" min="0" max="100" step="5" value="{{v.value}}" onChange="{{v.change}}" style="width:100%;accent-color:{{accent}}">
+<span class="muted" style="font-size:12px">{{v.hint}}</span>
+</div>
+</sc-for>
+<div style="grid-column:span 2;display:flex;gap:10px"><button type="button" class="btn" onClick="{{resetVolumes}}">Reset to default</button></div>
+</section>
+</sc-if>
+
+</main>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#4FC3E6","options":["#4FC3E6","#7AA7FF","#46C38B","#F2A93B"]},"$preview":{"width":1240,"height":880}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.defaultCabin = { main: { F: '14', J: '0', W: '44', Y: '300', fill: true }, upper: { F: '0', J: '76', W: '0', Y: '110', fill: true }, lower: { F: '0', J: '0', W: '0', Y: '0', fill: false } };
+    this.defaultVol = { master: 80, engines: 90, apu: 80, cockpit: 70, cabin: 60, env: 70, ground: 60, warnings: 100 };
+    this.state = {
+      section: 'home',
+      sub: { ground: 'doors', loading: 'payload', flight: 'perf', ops: 'checklists', settings: 'general' },
+      doors: { M1L: true, M2L: true, U1L: true }, slides: {}, doorMode: 'Doors', doorMsg: '',
+      services: { gpu: true, jetway: true, pca: true, catering: true, chocks: true },
+      paxIn: { F: '14', J: '70', W: '40', Y: '320' },
+      cargo: { FWD: 6000, AFT: 5500, BULK: 1000 },
+      fobKg: 168000,
+      cabin: JSON.parse(JSON.stringify(this.defaultCabin)), fwdHold: 'Containers', aftHold: 'Containers', cabinMsg: '',
+      engine: 'Trent 970', brakeFans: false, hud: true,
+      vol: { ...this.defaultVol },
+      units: 'kg', clockMode: 'UTC', autoCheck: true, battSim: true, sounds: true, brightness: 80,
+      thrust: 'FLEX', flaps: '1+F', perfMode: 'Takeoff', autobrake: 'L2', ldgConf: 'FULL',
+      com1: ['121.900', '118.505'], com2: ['121.500', '123.450'], xpdrMode: 'AUTO', tcas: 'TA/RA',
+      group: 1, checked: { '0-0': true, '0-1': true, '0-2': true, '0-3': true, '0-4': true, '1-0': true, '1-1': true },
+      failures: {}, failFilter: 'All', rate: 'Real', steer: 'Straight', pushSpeed: 3, pushState: 'Tug not connected',
+      presetMsg: '', boardMsg: 'Boarding not started', refuelMsg: 'Refuel idle', perfMsg: '', identMsg: '',
+      now: new Date()
+    };
+  }
+  componentDidMount() { this.timer = setInterval(() => this.setState({ now: new Date() }), 15000); }
+  componentWillUnmount() { clearInterval(this.timer); }
+  renderVals() {
+    const s = this.state;
+    const ACC = this.props.accent ?? '#4FC3E6';
+    const F = 'Barlow,system-ui,sans-serif';
+    const set = (o) => this.setState(o);
+    const LB = 2.20462;
+    const mass = (kg) => s.units === 'kg' ? (kg / 1000).toFixed(1) + ' t' : (kg * LB / 1000).toFixed(1) + ' klb';
+    const toUnit = (kg) => String(Math.round(s.units === 'kg' ? kg : kg * LB));
+    const fromUnit = (v) => s.units === 'kg' ? v : v / LB;
+    const int = (v) => Math.max(0, parseInt(v, 10) || 0);
+    const pad = (n) => String(n).padStart(2, '0');
+    const d = s.now;
+    const clock = s.clockMode === 'UTC' ? pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + 'Z' : pad(d.getHours()) + ':' + pad(d.getMinutes()) + ' LT';
+
+    const navStyle = (on) => 'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:84px;height:62px;flex-shrink:0;border:0;border-radius:12px;cursor:pointer;font:600 12px/1 ' + F + ';letter-spacing:.03em;background:' + (on ? '#1B2733' : 'transparent') + ';color:' + (on ? ACC : '#A3B1BF');
+    const tabStyle = (on) => 'height:40px;padding:0 16px;border-radius:10px;border:1px solid ' + (on ? ACC : '#2A3442') + ';background:' + (on ? '#142130' : 'transparent') + ';color:' + (on ? ACC : '#C9D4DF') + ';font:600 14px/1 ' + F + ';cursor:pointer;white-space:nowrap';
+    const segStyle = (on) => 'flex:1;height:40px;padding:0 10px;border:0;border-radius:8px;background:' + (on ? ACC : 'transparent') + ';color:' + (on ? '#06121A' : '#C9D4DF') + ';font:600 14px/1 ' + F + ';cursor:pointer;white-space:nowrap';
+    const chipStyle = (on) => 'height:36px;padding:0 14px;border-radius:18px;border:1px solid ' + (on ? ACC : '#2A3442') + ';background:' + (on ? '#142130' : 'transparent') + ';color:' + (on ? ACC : '#C9D4DF') + ';font:600 13px/1 ' + F + ';cursor:pointer';
+    const seg = (opts, cur, key) => opts.map((o) => ({ label: o, style: segStyle(o === cur), pick: () => set({ [key]: o }) }));
+    const toggle = (on, pick) => ({ on, pick,
+      style: 'position:relative;width:56px;height:32px;flex-shrink:0;border-radius:16px;border:0;cursor:pointer;background:' + (on ? ACC : '#2A3442'),
+      knob: 'position:absolute;top:4px;left:' + (on ? 28 : 4) + 'px;width:24px;height:24px;border-radius:12px;background:#F2F6F9' });
+    const goto = (sec) => () => set({ section: sec });
+
+    const titles = { home: 'Dashboard', ofp: 'SimBrief OFP', ground: 'Ground', loading: 'Loading', cabin: 'Cabin layout', flight: 'Flight', ops: 'Operations', failures: 'Failures', aircraft: 'Aircraft options', settings: 'Settings' };
+    const subDefs = {
+      ground: [['doors', 'Doors & slides'], ['services', 'Services'], ['push', 'Pushback']],
+      loading: [['payload', 'Payload'], ['fuel', 'Fuel'], ['wb', 'Weight & balance']],
+      flight: [['perf', 'Performance'], ['nav', 'Charts & nav'], ['comms', 'Comms']],
+      ops: [['checklists', 'Checklists'], ['presets', 'Presets']],
+      settings: [['general', 'General'], ['sounds', 'Sounds']]
+    };
+    const cur = s.section;
+    const curSub = s.sub[cur];
+    const tabs = (subDefs[cur] || []).map(([k, label]) => ({ label, selected: k === curSub, style: tabStyle(k === curSub),
+      pick: () => set({ sub: { ...s.sub, [cur]: k } }) }));
+    const on = (sec, sub) => cur === sec && curSub === sub;
+
+    /* Doors and slides */
+    const allDoors = ['M1L', 'M2L', 'M3L', 'M4L', 'M5L', 'M1R', 'M2R', 'M3R', 'M4R', 'M5R', 'U1L', 'U2L', 'U3L', 'U1R', 'U2R', 'U3R', 'FWD', 'AFT', 'BULK', 'CKPT'];
+    const hasSlide = (id) => id[0] === 'M' || id[0] === 'U';
+    const doorItem = (id) => {
+      const open = !!s.doors[id], armed = !!s.slides[id], slide = hasSlide(id);
+      const name = id === 'CKPT' ? 'Cockpit' : id;
+      const pick = () => {
+        if (s.doorMode === 'Doors') {
+          if (!open && armed) { set({ doorMsg: 'Disarm the ' + name + ' slide before opening the door.' }); return; }
+          set({ doors: { ...s.doors, [id]: !open }, doorMsg: '' });
+        } else {
+          if (!slide) { set({ doorMsg: name + ' has no escape slide.' }); return; }
+          if (open) { set({ doorMsg: 'Close ' + name + ' before arming its slide.' }); return; }
+          set({ slides: { ...s.slides, [id]: !armed }, doorMsg: '' });
+        }
+      };
+      return { label: name, state: open ? 'OPEN' : 'CLOSED', slide: slide ? (armed ? 'ARMED' : 'DISARMED') : 'NO SLIDE',
+        aria: name + ', ' + (open ? 'open' : 'closed') + (slide ? ', slide ' + (armed ? 'armed' : 'disarmed') : ''),
+        slideStyle: 'font-size:11px;letter-spacing:.06em;color:' + (armed ? ACC : '#8A98A8'),
+        style: 'display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;height:68px;padding:0 12px;border-radius:10px;cursor:pointer;font:600 15px/1 ' + F + ';border:1px solid ' + (open ? '#F2A93B' : armed ? ACC : '#2A3442') + ';background:' + (open ? '#33240F' : '#0F141B') + ';color:' + (open ? '#F7C77A' : '#D5DEE7'),
+        pick };
+    };
+    const doors = { main: allDoors.slice(0, 10).map(doorItem), upper: allDoors.slice(10, 16).map(doorItem), other: allDoors.slice(16).map(doorItem) };
+    const openDoors = allDoors.filter((k) => s.doors[k]).length;
+    const armedSlides = allDoors.filter((k) => hasSlide(k) && s.slides[k]).length;
+    const armAll = () => {
+      const openOnes = allDoors.filter((k) => hasSlide(k) && s.doors[k]);
+      const sl = {}; allDoors.filter((k) => hasSlide(k) && !s.doors[k]).forEach((k) => { sl[k] = true; });
+      set({ slides: sl, doorMsg: openOnes.length ? openOnes.length + ' open doors left disarmed: close them first.' : '' });
+    };
+
+    const svcDefs = [['gpu', 'Ground power (EXT 1–4)'], ['jetway', 'Jet bridges'], ['pca', 'Pre-conditioned air'], ['catering', 'Catering trucks'], ['fuel', 'Fuel truck'], ['cargo', 'Cargo loaders'], ['asu', 'Air start unit'], ['chocks', 'Wheel chocks & cones']];
+    const services = svcDefs.map(([k, label]) => ({ label, ...toggle(!!s.services[k], () => set({ services: { ...s.services, [k]: !s.services[k] } })) }));
+    const activeServices = svcDefs.filter(([k]) => s.services[k]).length;
+
+    /* Cabin layout: seat footprint in deck units, seat mass in kg */
+    const UNITS = { F: 4.0, J: 2.4, W: 1.3, Y: 1.0 };
+    const SEATKG = { F: 280, J: 110, W: 30, Y: 18 };
+    const CAP = { main: 420, upper: 300, lower: 160 };
+    const CLS = { F: ['First', '#E8B54A'], J: ['Business', '#4FC3E6'], W: ['Premium economy', '#A78BFA'], Y: ['Economy', '#46C38B'] };
+    const deckCount = (c, deck) => {
+      const n = { F: int(c.F), J: int(c.J), W: int(c.W) };
+      const used = n.F * UNITS.F + n.J * UNITS.J + n.W * UNITS.W;
+      n.Y = c.fill ? Math.max(0, Math.floor(CAP[deck] - used)) : int(c.Y);
+      return { n, used: used + n.Y * UNITS.Y };
+    };
+    const layoutOf = (cab) => ({ main: deckCount(cab.main, 'main'), upper: deckCount(cab.upper, 'upper'), lower: deckCount(cab.lower, 'lower') });
+    const lay = layoutOf(s.cabin), layDef = layoutOf(this.defaultCabin);
+    const seats = {}; ['F', 'J', 'W', 'Y'].forEach((k) => { seats[k] = lay.main.n[k] + lay.upper.n[k] + lay.lower.n[k]; });
+    const cabinTotal = seats.F + seats.J + seats.W + seats.Y;
+    const cabinMass = (L) => ['F', 'J', 'W', 'Y'].reduce((a, k) => a + (L.main.n[k] + L.upper.n[k] + L.lower.n[k]) * SEATKG[k], 0);
+    const cabinDeltaKg = cabinMass(lay) - cabinMass(layDef);
+    const deckView = (deck, name) => {
+      const c = s.cabin[deck], L = lay[deck];
+      const over = L.used > CAP[deck] + 0.01;
+      const zones = ['F', 'J', 'W', 'Y'].filter((k) => L.n[k] > 0).map((k) => ({ label: k + ' ' + L.n[k],
+        style: 'flex:' + (L.n[k] * UNITS[k]).toFixed(1) + ' 0 0;min-width:0;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap;font:600 12px/1 ' + F + ';color:#06121A;background:' + CLS[k][1] + ';border-right:1px solid #0D1117' }));
+      const free = Math.max(0, CAP[deck] - L.used);
+      if (free > 0.5) zones.push({ label: 'free', style: 'flex:' + free.toFixed(1) + ' 0 0;min-width:0;display:flex;align-items:center;justify-content:center;font:600 12px/1 ' + F + ';color:#8A98A8' });
+      const setDeck = (patch) => set({ cabin: { ...s.cabin, [deck]: { ...c, ...patch } } });
+      return { name, zones, fill: c.fill, manual: !c.fill, y: L.n.Y,
+        usage: over ? 'OVER CAPACITY' : Math.round(L.used / CAP[deck] * 100) + '% of floor used',
+        usageStyle: 'font-size:13px;color:' + (over ? '#F06A6A' : '#A3B1BF'),
+        aria: name + ' seat map: ' + zones.map((z) => z.label).join(', '),
+        fields: [['F', 'First'], ['J', 'Business'], ['W', 'Prem. eco']].map(([k, label]) => ({ label, value: c[k], change: (e) => setDeck({ [k]: e.target.value }) })),
+        yInput: c.Y, yChange: (e) => setDeck({ Y: e.target.value }),
+        fillStyle: 'height:44px;padding:0 12px;border-radius:10px;cursor:pointer;font:600 13px/1 ' + F + ';white-space:nowrap;border:1px solid ' + (c.fill ? ACC : '#2A3442') + ';background:' + (c.fill ? '#142130' : 'transparent') + ';color:' + (c.fill ? ACC : '#C9D4DF'),
+        toggleFill: () => setDeck({ fill: !c.fill, Y: String(L.n.Y) }) };
+    };
+    const decks = [deckView('upper', 'Upper deck'), deckView('main', 'Main deck'), deckView('lower', 'Lower deck seating')];
+    /* Lower-deck seats take floor from the forward hold: one LD3 position per 8 seat units */
+    const fwdLost = Math.ceil(lay.lower.used / 8);
+    const holdPos = { Containers: [Math.max(0, 22 - fwdLost) + ' LD3', '16 LD3'], Pallets: [Math.max(0, 7 - Math.ceil(fwdLost / 3)) + ' PMC', '6 PMC'] };
+
+    /* Payload */
+    const PAXKG = 104;
+    const pax = {}; ['F', 'J', 'W', 'Y'].forEach((k) => { pax[k] = Math.min(seats[k], int(s.paxIn[k])); });
+    const overClasses = ['F', 'J', 'W', 'Y'].filter((k) => int(s.paxIn[k]) > seats[k]).map((k) => CLS[k][0] + ' max ' + seats[k]);
+    const paxRows = ['F', 'J', 'W', 'Y'].map((k) => ({ id: 'pax-' + k, name: CLS[k][0], seats: seats[k], input: s.paxIn[k], mass: mass(pax[k] * PAXKG),
+      inputStyle: int(s.paxIn[k]) > seats[k] ? 'border-color:#F2A93B' : '',
+      change: (e) => set({ paxIn: { ...s.paxIn, [k]: e.target.value } }) }));
+    const holds = [['FWD', 'Forward hold', 20000], ['AFT', 'Aft hold', 16000], ['BULK', 'Bulk hold', 3000]];
+    const cargoRows = holds.map(([k, name, max]) => ({ id: 'cargo-' + k, name, unit: s.units, max: toUnit(max), input: toUnit(s.cargo[k]), mass: mass(s.cargo[k]),
+      change: (e) => set({ cargo: { ...s.cargo, [k]: Math.min(max, fromUnit(int(e.target.value))) } }) }));
+    const paxTotal = pax.F + pax.J + pax.W + pax.Y;
+    const payload = paxTotal * PAXKG + s.cargo.FWD + s.cargo.AFT + s.cargo.BULK;
+    const DOW = 276800 + cabinDeltaKg, TAXI = 2000, TRIP = 152000;
+    const zfw = DOW + payload, gw = zfw + s.fobKg, tow = gw - TAXI, lw = tow - Math.min(TRIP, s.fobKg);
+    const bar = (v, lim) => 'width:' + Math.min(100, v / lim * 100).toFixed(1) + '%;height:100%;border-radius:4px;background:' + (v > lim ? '#F06A6A' : ACC);
+    const limits = [
+      { label: 'ZFW', value: mass(zfw), limit: mass(373000), style: bar(zfw, 373000) },
+      { label: 'TOW', value: mass(tow), limit: mass(510000), style: bar(tow, 510000) },
+      { label: 'LW', value: mass(lw), limit: mass(395000), style: bar(lw, 395000) }
+    ];
+    /* Illustrative CG: upper-deck and aft cabin load moves it aft */
+    const zfwCg = 37.2 + (lay.upper.used / CAP.upper - 0.6) * 1.5 + (s.cargo.AFT - s.cargo.FWD) / 20000;
+    const towCg = zfwCg + 0.5;
+    const cg = { zfw: zfwCg.toFixed(1), tow: towCg.toFixed(1) };
+
+    const tankDefs = [['L OUTR', 7, 8400], ['L MID', 26, 29000], ['L INR', 22, 36000], ['FEED 1', 13, 23000], ['FEED 2', 14, 24000],
+      ['FEED 3', 14, 24000], ['FEED 4', 13, 23000], ['R INR', 22, 36000], ['R MID', 26, 29000], ['R OUTR', 7, 8400], ['TRIM', 4, 18600]];
+    const scale = s.fobKg / 168000;
+    const tanks = tankDefs.map(([name, base, cap]) => { const q = Math.min(cap, base * 1000 * scale);
+      return { name, qty: mass(q), style: 'width:' + (q / cap * 100).toFixed(0) + '%;height:100%;border-radius:4px;background:' + ACC }; });
+
+    const groups = [
+      ['Cockpit preparation', [['GEAR PINS & COVERS', 'REMOVED'], ['FUEL QUANTITY', 'CHECKED'], ['SEAT BELTS', 'ON'], ['ADIRS', 'NAV'], ['BARO REF', 'SET']]],
+      ['Before start', [['PARKING BRAKE', 'AS RQRD'], ['T.O SPEEDS & THRUST', 'CHECKED'], ['WINDOWS / DOORS', 'CLOSED'], ['SLIDES', 'ARMED'], ['BEACON', 'ON'], ['THR LEVERS', 'IDLE']]],
+      ['After start', [['ANTI ICE', 'AS RQRD'], ['ECAM STATUS', 'CHECKED'], ['PITCH TRIM', 'SET'], ['RUDDER TRIM', 'NEUTRAL']]],
+      ['Taxi', [['FLIGHT CONTROLS', 'CHECKED'], ['FLAP SETTING', 'CONF ' + s.flaps], ['RADAR & PRED W/S', 'ON & AUTO'], ['ENG MODE SEL', 'AS RQRD'], ['ECAM MEMO', 'T.O NO BLUE']]],
+      ['Line-up', [['T.O RWY', 'CONFIRMED'], ['TCAS', 'TA/RA'], ['PACKS', 'AS RQRD']]],
+      ['After take-off', [['LDG GEAR', 'UP'], ['FLAPS', 'RETRACTED'], ['BARO REF', 'SET']]],
+      ['Approach', [['BRIEFING', 'CONFIRMED'], ['ECAM STATUS', 'CHECKED'], ['SEAT BELTS', 'ON'], ['MINIMUM', 'SET'], ['AUTO BRAKE', 'AS RQRD']]],
+      ['Landing', [['ECAM MEMO', 'LDG NO BLUE'], ['LDG GEAR', 'DOWN'], ['SPOILERS', 'ARM'], ['FLAPS', 'SET']]],
+      ['After landing', [['RADAR & PRED W/S', 'OFF'], ['SPOILERS', 'DISARMED'], ['APU', 'START'], ['FLAPS', 'RETRACTED']]],
+      ['Parking', [['APU BLEED', 'ON'], ['ENGINES', 'OFF'], ['SLIDES', 'DISARMED'], ['SEAT BELTS', 'OFF'], ['FUEL PUMPS', 'OFF'], ['PARK BRK & CHOCKS', 'AS RQRD']]]
+    ];
+    const doneIn = (gi) => groups[gi][1].filter((_, i) => s.checked[gi + '-' + i]).length;
+    const clGroups = groups.map(([name, items], gi) => { const done = doneIn(gi); const sel = gi === s.group; const full = done === items.length;
+      return { name, progress: done + '/' + items.length,
+        style: 'display:flex;align-items:center;justify-content:space-between;width:100%;min-height:52px;padding:0 14px;border-radius:10px;border:1px solid ' + (sel ? ACC : 'transparent') + ';background:' + (sel ? '#142130' : 'transparent') + ';color:' + (full ? '#7FD8A9' : '#D5DEE7') + ';font:600 15px/1 ' + F + ';cursor:pointer;text-align:left',
+        pick: () => set({ group: gi }) }; });
+    const g = groups[s.group];
+    const clItems = g[1].map(([item, resp], i) => { const key = s.group + '-' + i; const c = !!s.checked[key];
+      return { id: 'cl-' + key, item, resp, checked: c, toggle: () => set({ checked: { ...s.checked, [key]: !c } }),
+        rowStyle: 'flex:1;display:flex;align-items:center;font:600 15px/1.2 ' + F + ';cursor:pointer;color:' + (c ? '#7FD8A9' : '#E6EDF3') }; });
+    const checkNext = () => { const i = g[1].findIndex((_, k) => !s.checked[s.group + '-' + k]);
+      if (i < 0) { set({ group: Math.min(groups.length - 1, s.group + 1) }); return; }
+      set({ checked: { ...s.checked, [s.group + '-' + i]: true } }); };
+    const resetGroup = () => { const c = { ...s.checked }; g[1].forEach((_, k) => { delete c[s.group + '-' + k]; }); set({ checked: c }); };
+    const nextIdx = Math.max(0, groups.findIndex((_, gi) => doneIn(gi) < groups[gi][1].length));
+    const nextDone = doneIn(nextIdx), nextTotal = groups[nextIdx][1].length;
+    const nextGroup = { name: groups[nextIdx][0], progress: nextDone + '/' + nextTotal,
+      bar: 'width:' + (nextDone / nextTotal * 100).toFixed(0) + '%;height:100%;border-radius:4px;background:' + ACC,
+      open: () => set({ section: 'ops', sub: { ...s.sub, ops: 'checklists' }, group: nextIdx }) };
+
+    const failDefs = [['24', 'ELEC', 'GEN 1 FAULT'], ['24', 'ELEC', 'AC BUS 1 FAULT'], ['29', 'HYD', 'G SYS LO PRESS'], ['29', 'HYD', 'Y ENG 3 PMP A FAULT'], ['28', 'FUEL', 'FEED TK 1 MAIN PMP FAULT'],
+      ['32', 'L/G', 'GEAR NOT DOWNLOCKED'], ['34', 'NAV', 'ADR 1 FAULT'], ['70', 'ENG', 'ENG 2 FLAMEOUT'], ['26', 'FIRE', 'APU FIRE']];
+    const fNames = ['Inactive', 'Armed', 'Active'];
+    const fStyle = (st) => 'height:38px;border-radius:10px;cursor:pointer;font:600 14px/1 ' + F + ';border:1px solid ' + (st === 2 ? '#F2A93B' : st === 1 ? ACC : '#2A3442') + ';background:' + (st === 2 ? '#33240F' : 'transparent') + ';color:' + (st === 2 ? '#F7C77A' : st === 1 ? ACC : '#C9D4DF');
+    const failures = failDefs.map(([ata, sys, name], i) => ({ ata, sys, name, i })).filter((f) => s.failFilter === 'All' || f.sys === s.failFilter)
+      .map(({ ata, sys, name, i }) => { const st = s.failures[i] || 0;
+        return { ata, sys, name, label: fNames[st], style: fStyle(st), pick: () => set({ failures: { ...s.failures, [i]: (st + 1) % 3 } }) }; });
+    const failFilters = ['All', 'ELEC', 'HYD', 'FUEL', 'L/G', 'NAV', 'ENG', 'FIRE'].map((k) => ({ label: k, style: chipStyle(k === s.failFilter), pick: () => set({ failFilter: k }) }));
+    const fv = Object.values(s.failures);
+
+    const presetDefs = [['Cold & dark', 'Everything off, doors closed, no ground power.'], ['Turnaround', 'External power, doors open, slides disarmed, services connected.'],
+      ['Ready for pushback', 'APU running, doors closed, slides armed, beacon on.'], ['Ready for taxi', 'Engines running, flight controls checked.'], ['Ready for take-off', 'Take-off configuration set, cleared to line up.']];
+    const presets = presetDefs.map(([name, desc]) => ({ name, desc, apply: () => set({ presetMsg: name + ' applied at ' + clock }) }));
+
+    const engDefs = [['Trent 970', 'Rolls-Royce Trent 970 · A380-842', 'A380-842'], ['GP7270', 'Engine Alliance GP7270 · A380-861', 'A380-861']];
+    const variant = s.engine === 'GP7270' ? 'A380-861' : 'A380-842';
+    const engineOpts = engDefs.map(([k, desc]) => { const sel = s.engine === k;
+      return { name: k === 'GP7270' ? 'Engine Alliance GP7270' : 'Rolls-Royce Trent 970', desc: sel ? 'Installed · engine model, sounds and thrust data' : 'Tap to install',
+        on: sel, pick: () => set({ engine: k }),
+        style: 'display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:16px;border-radius:12px;cursor:pointer;text-align:left;color:#E6EDF3;border:1px solid ' + (sel ? ACC : '#2A3442') + ';background:' + (sel ? '#142130' : '#0F141B') }; });
+    const options = [
+      { label: 'Brake cooling fans', desc: 'Fans on the main-gear wheels: visible on the 3D gear and cool the brakes faster on the ground.', status: s.brakeFans ? 'INSTALLED' : 'NOT INSTALLED', ...toggle(s.brakeFans, () => set({ brakeFans: !s.brakeFans })) },
+      { label: 'Head-up display', desc: 'HUD combiners for both pilots. When not installed, the HUD units disappear from the cockpit.', status: s.hud ? 'INSTALLED · shown in cockpit' : 'NOT INSTALLED · removed from cockpit', ...toggle(s.hud, () => set({ hud: !s.hud })) }
+    ];
+
+    const volDefs = [['master', 'Master', 'All aircraft sounds'], ['engines', 'Engines', 'Spool, fan and reverser sounds'], ['apu', 'APU', 'APU start and run'],
+      ['cockpit', 'Cockpit & switches', 'Buttons, knobs, levers, detent clicks'], ['cabin', 'Cabin', 'Announcements and cabin ambience'],
+      ['env', 'Environment', 'Wind, rain and airflow'], ['ground', 'Ground', 'Tug, ground vehicles, rumble'], ['warnings', 'Warnings', 'Chimes, aurals and callouts']];
+    const volumes = volDefs.map(([k, label, hint]) => ({ id: 'vol-' + k, label, hint, value: s.vol[k], change: (e) => set({ vol: { ...s.vol, [k]: Number(e.target.value) } }) }));
+
+    const speeds = { '1+F': ['148', '152', '157'], '2': ['143', '147', '152'], '3': ['139', '143', '148'] }[s.flaps];
+    const swap = (k) => () => set({ [k]: [s[k][1], s[k][0]] });
+    const ofpFuel = [['Taxi', 2000], ['Trip', 152000], ['Contingency', 4600], ['Alternate', 5900], ['Final reserve', 3400], ['Extra', 0], ['Block', 167900]].map(([label, kg]) => ({ label, value: mass(kg) }));
+
+    return {
+      accent: ACC, clock, battery: s.battSim ? '86%' : 'ext', variant, engineShort: s.engine === 'GP7270' ? 'GP7270' : 'Trent 970',
+      sectionTitle: titles[cur], hasTabs: tabs.length > 0, tabs,
+      nav: { home: navStyle(cur === 'home'), ofp: navStyle(cur === 'ofp'), ground: navStyle(cur === 'ground'), loading: navStyle(cur === 'loading'), cabin: navStyle(cur === 'cabin'),
+        flight: navStyle(cur === 'flight'), ops: navStyle(cur === 'ops'), failures: navStyle(cur === 'failures'), aircraft: navStyle(cur === 'aircraft'), settings: navStyle(cur === 'settings') },
+      go: { home: goto('home'), ofp: goto('ofp'), ground: goto('ground'), loading: goto('loading'), cabin: goto('cabin'), flight: goto('flight'),
+        ops: goto('ops'), failures: goto('failures'), aircraft: goto('aircraft'), settings: goto('settings') },
+      isHome: cur === 'home', isOfp: cur === 'ofp', isDoors: on('ground', 'doors'), isServices: on('ground', 'services'), isPush: on('ground', 'push'),
+      isPayload: on('loading', 'payload'), isFuel: on('loading', 'fuel'), isWB: on('loading', 'wb'), isCabin: cur === 'cabin',
+      isPerf: on('flight', 'perf'), isNav: on('flight', 'nav'), isComms: on('flight', 'comms'),
+      isChecklists: on('ops', 'checklists'), isPresets: on('ops', 'presets'), isFailures: cur === 'failures', isAircraft: cur === 'aircraft',
+      isGeneral: on('settings', 'general'), isSounds: on('settings', 'sounds'),
+      w: { gw: mass(gw), fob: mass(s.fobKg), zfw: mass(zfw), tow: mass(tow), payload: mass(payload), lw: mass(lw), dow: mass(DOW) }, cg,
+      openDoors, armedSlides, activeServices, doors, services, limits, presets, hasPresetMsg: s.presetMsg !== '', presetMsg: s.presetMsg,
+      presetStatus: s.presetMsg || 'No preset applied this session', nextGroup,
+      doorModeSeg: seg(['Doors', 'Slides'], s.doorMode, 'doorMode'), doorMsg: s.doorMsg,
+      doorModeHint: s.doorMode === 'Doors' ? 'Tap a door to open or close it' : 'Tap a door to arm or disarm its slide',
+      openAll: () => { const o = {}; allDoors.forEach((k) => { if (!s.slides[k]) o[k] = true; });
+        set({ doors: o, doorMsg: armedSlides ? armedSlides + ' doors with armed slides stayed closed.' : '' }); },
+      closeAll: () => set({ doors: {}, doorMsg: '' }), armAll, disarmAll: () => set({ slides: {}, doorMsg: '' }),
+      pushState: s.pushState, pushSpeed: s.pushSpeed, steerSeg: seg(['Nose left', 'Straight', 'Nose right'], s.steer, 'steer'),
+      setPushSpeed: (e) => set({ pushSpeed: Number(e.target.value) }),
+      callTug: () => set({ pushState: 'Tug connected, tow bar attached' }), startPush: () => set({ pushState: 'Pushing back · ' + s.steer.toLowerCase() }), stopPush: () => set({ pushState: 'Pushback stopped' }),
+      doorsClosedLabel: openDoors === 0 ? 'YES' : openDoors + ' OPEN', doorsColor: openDoors === 0 ? '#7FD8A9' : '#F2A93B',
+      slidesLabel: armedSlides === 16 ? 'ALL 16' : armedSlides + ' / 16', slidesColor: armedSlides === 16 ? '#7FD8A9' : '#F2A93B',
+      jetwayLabel: s.services.jetway ? 'CONNECTED' : 'REMOVED',
+      paxRows, cargoRows, paxTotal, paxWarning: overClasses.length ? 'More passengers than seats: ' + overClasses.join(', ') + '.' : '',
+      board: () => set({ boardMsg: 'Boarding ' + paxTotal + ' passengers at real-time rate' }), deboard: () => set({ boardMsg: 'Deboarding started' }), boardMsg: s.boardMsg,
+      tanksL: tanks.slice(0, 5), tanksR: tanks.slice(5, 10), trim: tanks[10], massUnit: s.units,
+      fuelInput: toUnit(s.fobKg), fuelChange: (e) => set({ fobKg: Math.min(250000, fromUnit(int(e.target.value))) }),
+      rateSeg: seg(['Real', 'Fast', 'Instant'], s.rate, 'rate'), refuelMsg: s.refuelMsg,
+      startRefuel: () => set({ refuelMsg: 'Refuelling to ' + mass(s.fobKg) + ' · ' + s.rate.toLowerCase() + ' rate' }), stopRefuel: () => set({ refuelMsg: 'Refuel stopped' }),
+      zfwX: 40 + (zfwCg - 25) / 20 * 400, zfwY: 290 - (zfw / 1000 - 250) / 270 * 260, towX: 40 + (towCg - 25) / 20 * 400, towY: 290 - (tow / 1000 - 250) / 270 * 260,
+      decks, cabinTotal, fwdSeg: seg(['Containers', 'Pallets'], s.fwdHold, 'fwdHold'), aftSeg: seg(['Containers', 'Pallets'], s.aftHold, 'aftHold'),
+      lowerSummary: 'FWD ' + holdPos[s.fwdHold][0] + ' · AFT ' + holdPos[s.aftHold][1] + ' · BULK loose',
+      classTotals: ['F', 'J', 'W', 'Y'].map((k) => ({ name: CLS[k][0], n: seats[k], swatch: 'width:14px;height:14px;border-radius:4px;background:' + CLS[k][1] })),
+      cabinLimitStyle: 'color:' + (cabinTotal > 853 ? '#F06A6A' : '#E6EDF3'),
+      cabinDelta: (cabinDeltaKg >= 0 ? '+' : '−') + mass(Math.abs(cabinDeltaKg)),
+      applyCabin: () => set({ cabinMsg: cabinTotal + ' seats applied at ' + clock }), resetCabin: () => set({ cabin: JSON.parse(JSON.stringify(this.defaultCabin)), cabinMsg: 'Default layout restored' }),
+      cabinMsg: s.cabinMsg,
+      perfModeSeg: seg(['Takeoff', 'Landing'], s.perfMode, 'perfMode'), isTakeoff: s.perfMode === 'Takeoff', isLanding: s.perfMode === 'Landing',
+      flapsSeg: seg(['1+F', '2', '3'], s.flaps, 'flaps'), thrustSeg: seg(['TOGA', 'FLEX'], s.thrust, 'thrust'), flaps: s.flaps,
+      v: { v1: speeds[0], vr: speeds[1], v2: speeds[2] }, thrustResult: s.thrust === 'FLEX' ? 'FLEX 48 °C' : 'TOGA',
+      sendPerf: () => set({ perfMsg: 'Sent to MFD PERF T.O at ' + clock }), perfMsg: s.perfMsg,
+      ldgConfSeg: seg(['3', 'FULL'], s.ldgConf, 'ldgConf'), autobrakeSeg: seg(['LO', 'L2', 'L3', 'HI'], s.autobrake, 'autobrake'),
+      vapp: s.ldgConf === 'FULL' ? '142 kt' : '147 kt', ldgDist: { LO: '2,950 m', L2: '2,700 m', L3: '2,450 m', HI: '2,200 m' }[s.autobrake],
+      waypoints: [{ id: 'DVR', dist: '42', eta: '22:04' }, { id: 'KONAN', dist: '71', eta: '22:09' }, { id: 'KOK', dist: '112', eta: '22:14' }, { id: 'ABNED', dist: '158', eta: '22:20' }, { id: 'NIK', dist: '206', eta: '22:26' }],
+      com1: { active: s.com1[0], stby: s.com1[1], swap: swap('com1') }, com2: { active: s.com2[0], stby: s.com2[1], swap: swap('com2') },
+      xpdrSeg: seg(['STBY', 'AUTO', 'ON'], s.xpdrMode, 'xpdrMode'), tcasSeg: seg(['STBY', 'TA', 'TA/RA'], s.tcas, 'tcas'),
+      ident: () => set({ identMsg: 'IDENT sent at ' + clock }), identMsg: s.identMsg,
+      clGroups, clItems, clTitle: g[0], checkNext, resetGroup,
+      autoCheckNote: s.autoCheck ? 'Auto check is on: items the aircraft can confirm tick themselves.' : 'Auto check is off: tick every item by hand.',
+      failures, failFilters, activeFailures: fv.filter((x) => x === 2).length, armedFailures: fv.filter((x) => x === 1).length, clearFailures: () => set({ failures: {} }),
+      engineOpts, options, volumes, resetVolumes: () => set({ vol: { ...this.defaultVol } }), ofpFuel,
+      unitsSeg: seg(['kg', 'lb'], s.units, 'units'), clockSeg: seg(['UTC', 'Local'], s.clockMode === 'UTC' ? 'UTC' : 'Local', 'clockMode'),
+      switches: [
+        { label: 'Auto check checklists', ...toggle(s.autoCheck, () => set({ autoCheck: !s.autoCheck })) },
+        { label: 'Simulate tablet battery', ...toggle(s.battSim, () => set({ battSim: !s.battSim })) },
+        { label: 'Touch click sounds', ...toggle(s.sounds, () => set({ sounds: !s.sounds })) }
+      ],
+      brightness: s.brightness, setBrightness: (e) => set({ brightness: Number(e.target.value) })
+    };
+  }
+}
+</script>
+</body>
+</html>
