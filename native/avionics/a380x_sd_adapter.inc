@@ -293,6 +293,25 @@ static void sda_update(float dt,int powered,const EwdData *engines)
     ecam_button_update(&sda.eng_motion,&sda_eng_config,dt);
     if(engines)sda.warnings=*engines;
     if(sda.all) {sda.all_elapsed+=fmaxf(0,dt);if(sda.all_elapsed>=1){sda.all_elapsed=fmodf(sda.all_elapsed,1);sda.page=(sda.page+1)%SD_PAGES;++sda.select_count;sda.force=1;}}
+    {   /* FBW automatic pages: ENGINE while ENG START is at CRANK / IGN START, APU from APU MASTER SW on until
+         * 10 s after APU AVAIL; then the page shown before comes back, unless another page was selected. */
+        static XPLMDataRef selector, apu_switch, apu_n1;
+        static int auto_page=-1, before=-1;
+        static float avail_for;
+        int want=-1;
+        if(!selector) selector=XPLMFindDataRef("a380x/xp12/eng_start/selector");
+        if(!apu_switch) apu_switch=XPLMFindDataRef("sim/cockpit2/electrical/APU_starter_switch");
+        if(!apu_n1) apu_n1=XPLMFindDataRef("sim/cockpit2/electrical/APU_N1_percent");
+        avail_for=apu_n1 && XPLMGetDataf(apu_n1)>=95.0f ? avail_for+fmaxf(0,dt) : 0.0f;
+        if(selector && XPLMGetDatai(selector)!=1) want=SD_ENGINE;
+        else if(apu_switch && XPLMGetDatai(apu_switch)>=1 && avail_for<10.0f) want=SD_APU;
+        if(want!=auto_page) {
+            if(want>=0) { if(auto_page<0) before=sda.page; sda.page=want; sda.force=1; }
+            else if(before>=0 && sda.page==auto_page) { sda.page=before; sda.force=1; }
+            if(want<0) before=-1;
+            auto_page=want;
+        }
+    }
     int on=powered && sda.brightness>.001f;
     {   /* SD on DC 2: a CDS state change (boot / self-test / on) redraws the device */
         static int cds_state=-2;

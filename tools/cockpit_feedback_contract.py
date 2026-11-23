@@ -493,6 +493,7 @@ def _panel_keys():
 
 
 FIRE_PUSHBUTTONS = ("ENG1", "ENG2", "ENG3", "ENG4", "APU")
+FIRE_TEST_COMMAND = PREFIX + "fire/test"   # held: FWS fire test (a380x_fws_adapter.inc), agent legends
 
 
 def _fire():
@@ -508,6 +509,9 @@ def _fire():
         rows.append(Control(f"fire_{key}_pb", "toggle", f"PUSH_OVHD_FIRE_{unit}", f"PUSH_OVHD_FIRE_{unit}",
                             f"{PREFIX}fire/{key}_pb", label=f"{unit} FIRE pushbutton - release / reset",
                             all_nodes=True, travel=0.15, group="fire"))
+    # FIRE TEST: FBW has no clip for this key, so a click target without motion
+    rows.append(Control("fire_test", "press", "PUSH_FIRE_ENG1_TEST", "", FIRE_TEST_COMMAND + "_pressed",
+                        (FIRE_TEST_COMMAND,), "FIRE TEST - hold", own=True, group="fire"))
     return rows
 
 

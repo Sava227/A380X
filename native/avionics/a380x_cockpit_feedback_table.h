@@ -569,6 +569,7 @@ static const CfbPressRow cfb_press_rows[] = {
     {"a380x/xp12/cockpit/captain_wxr_vd_azim_push_pressed", "a380x/xp12/cockpit/captain_wxr_vd_azim_push"},
     {"a380x/xp12/cockpit/first_officer_wxr_vd_azim_push_pressed", "a380x/xp12/cockpit/first_officer_wxr_vd_azim_push"},
     {"a380x/xp12/cockpit/oxygen_crew_pressed", "sim/oxy/crew_valve_toggle"},
+    {"a380x/xp12/fire/test_pressed", "a380x/xp12/fire/test"},
 };
 
 static const CfbPositionRow cfb_position_rows[] = {

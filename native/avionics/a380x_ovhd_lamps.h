@@ -40,7 +40,7 @@ typedef struct {
     unsigned char apu_master, apu_failed, apu_start, apu_avail, apu_bleed;
     unsigned char eng_bleed[4], eng_bleed_failed[4], pack[2];
     unsigned char eng_ai[4], eng_ai_failed[4], wing_ai, wing_ai_failed, window_heat;
-    unsigned char feed_pump[4], crew_oxy;
+    unsigned char feed_pump[4], crew_oxy, fire_test;
     unsigned char fault[A380X_OVHD_PB_COUNT];   /* writable fail/<id> inputs */
     unsigned char pb[A380X_OVHD_PB_COUNT];      /* latched position of a pushbutton with no simulated
                                                    system (1 = pressed in), a380x/xp12/ovhd/pb/<id> */
@@ -98,6 +98,7 @@ static inline int a380x_ovhd_condition(const A380XOvhdInputs *in, int pb, int se
     case A380X_OVHD_SRC_WINDOW_HEAT_ON: return in->window_heat != 0;
     case A380X_OVHD_SRC_FEED_PUMP_OFF: return !in->feed_pump[i];
     case A380X_OVHD_SRC_CREW_OXY_OFF: return !in->crew_oxy;
+    case A380X_OVHD_SRC_FIRE_TEST: return in->fire_test != 0;
     case A380X_OVHD_SRC_PB_OFF: return !in->pb[pb];        /* OFF while released */
     case A380X_OVHD_SRC_PB_ON: return in->pb[pb] != 0;     /* ON / MAN / OVRD / DISC while pressed in */
     default: return 0;                                   /* NONE, TEST: ANN LT TEST only */
