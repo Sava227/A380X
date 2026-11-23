@@ -112,6 +112,11 @@ static void ovhd_read_inputs(void)
     ovhd_in.wing_ai_failed = ovhd_failed(OVR_FAIL_SURF_HEAT);
     ovhd_in.window_heat = ovhd_rawi(OVR_WINDOW_HEAT) != 0;
     ovhd_in.crew_oxy = ovhd_rawi(OVR_O2) != 0;
+    {   /* FIRE TEST pushbutton travel (a380x_cockpit_feedback.inc, registered after this module) */
+        static XPLMDataRef fire_test;
+        if (!fire_test) fire_test = XPLMFindDataRef("a380x/xp12/fire/test_pressed");
+        ovhd_in.fire_test = fire_test && XPLMGetDataf(fire_test) > 0.5f;
+    }
     ovhd_in.network = network;
     ovhd_in.buses = network ? a380x_power.bus : 0u;
     ovhd_in.simple_power = network && eln_simple_lamp_power();

@@ -91,6 +91,31 @@ static void test_eng_button(const EwdData *engines)
     sda_plane_loaded();
 }
 
+/* FBW automatic pages: APU on APU MASTER SW until 10 s after AVAIL, ENGINE while ENG START is not NORM,
+ * the previous page back afterwards unless another one was picked meanwhile. */
+static int auto_selector=1,auto_apu_switch;
+static float auto_apu_n1;
+static int auto_geti(void *r) { return *(int *)r; }
+static float auto_getf(void *r) { return *(float *)r; }
+static void test_automatic_pages(const EwdData *engines)
+{
+    XPLMRegisterDataAccessor("a380x/xp12/eng_start/selector",xplmType_Int,0,auto_geti,NULL,NULL,NULL,NULL,NULL,
+                             NULL,NULL,NULL,NULL,NULL,NULL,&auto_selector,NULL);
+    XPLMRegisterDataAccessor("sim/cockpit2/electrical/APU_starter_switch",xplmType_Int,0,auto_geti,NULL,NULL,NULL,
+                             NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,&auto_apu_switch,NULL);
+    XPLMRegisterDataAccessor("sim/cockpit2/electrical/APU_N1_percent",xplmType_Float,0,NULL,NULL,auto_getf,NULL,
+                             NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,&auto_apu_n1,NULL);
+    run_command(SDA_PREFIX "bleed",xplm_CommandBegin);sda_update(.01f,1,engines);CHECK(sda.page==SD_BLEED);
+    auto_apu_switch=1;sda_update(.01f,1,engines);CHECK(sda.page==SD_APU);
+    auto_apu_n1=100;for(int i=0;i<9;++i)sda_update(1,1,engines);CHECK(sda.page==SD_APU);
+    sda_update(2,1,engines);CHECK(sda.page==SD_BLEED);
+    auto_selector=2;sda_update(.01f,1,engines);CHECK(sda.page==SD_ENGINE);          /* IGN START */
+    auto_selector=1;sda_update(.01f,1,engines);CHECK(sda.page==SD_BLEED);
+    auto_selector=0;sda_update(.01f,1,engines);CHECK(sda.page==SD_ENGINE);          /* CRANK */
+    run_command(SDA_PREFIX "fuel",xplm_CommandBegin);sda_update(.01f,1,engines);
+    auto_selector=1;sda_update(.01f,1,engines);CHECK(sda.page==SD_FUEL);
+}
+
 int main(int argc,char **argv)
 {
     EwdData engines={0};
@@ -166,6 +191,7 @@ int main(int argc,char **argv)
     sda_disable();CHECK(!sda.powered&&!sd_device()->popup);
     int disabled_page=sda.page;plugin_enabled=0;run_command(SDA_PREFIX "apu",xplm_CommandBegin);CHECK(sda.page==disabled_page);
     plugin_enabled=1;
+    test_automatic_pages(&engines);
     MockRef *ref=XPLMFindDataRef(SDA_PREFIX "active_page");
     CHECK(ref&&!ref->writable&&!ref->seti);
     sda_shutdown();CHECK(!sd_device()&&active_commands()==0&&mock_menus==0);

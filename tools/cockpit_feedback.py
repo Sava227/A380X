@@ -141,7 +141,7 @@ def compile_motion(source: Source, control: Control) -> dict:
     index = source.names[control.node]
     motion = dict(control=control, index=index, pivot=transform_point(source.world(index), (0, 0, 0)),
                   stages=[], nodes={})
-    if control.kind == "static":
+    if control.kind == "static" or not control.clip:     # lamps / click target only, no FBW motion
         return motion
     for clip_name, dataref, kind, lo, hi in _extras(control):
         clip = source.clips.get(clip_name)
