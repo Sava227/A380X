@@ -59,7 +59,7 @@ boosts emissive at runtime), its 291 single-lamp hide blocks become `# A380X LIT
 overlay quads get an unconditional `ANIM_hide`. ENG 2 BLEED (one face, two lamps), the EFIS / FCU bars
 (emis decal) and the ECAM / RMP keys (lovis decal) keep the quads. Tool order after any regeneration:
 cockpit_feedback → hide_lit_legend_decals → seat_lamp_quads → light_legends_in_place, then the DDS
-converter on the installed aircraft.
+converter on the installed aircraft. `tools/lower_label_decal.py` then puts the label decal (`decal_a380x_cockpit_decal_emis.obj`, exported 2 mm out) back to 0.25 mm above the panel: its pushbutton outlines had floated as a hazy copy of the button frame; run seat_lamp_quads again after it.
 
 ## Why the lamps were still invisible in the sim (2026-10-22, X-Plane 12.4.4)
 
