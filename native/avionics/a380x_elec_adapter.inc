@@ -116,10 +116,9 @@ static struct {
     /* preset runner + native item states without an X-Plane equivalent */
     A380XPresetRunner preset;
     int preset_expedited, preset_last, nose, strobe_auto, no_smoking_auto, rwy_turnoff;
-    int starting[4];
-    double start_elapsed[4];
     char preset_text[64];
-    XPLMCommandRef starter[4], flaps_down;
+    XPLMCommandRef flaps_down, to_config;
+    int to_config_held;
     A380XPw980 apu;
 } eln;
 
@@ -447,8 +446,8 @@ static int eln_preset_get(void *ctx, int item, int index)
     case A380X_PI_FLAPS: return eln_rawf(ENR_FLAP_RATIO) > 0.01f;
     case A380X_PI_FLAPS_AT: {
         float handle = eln_rawf(ENR_FLAP_RATIO), deploy = eln_rawf(ENR_FLAP_DEPLOY);
-        int at = fabsf(handle - deploy) < 0.02f;
-        return index == 0 ? at && (handle > 0.01f) : 0;
+        if (index != 0 || fabsf(handle - deploy) >= 0.02f) return -1;   /* travelling: no await passes */
+        return handle > 0.01f;
     }
     case A380X_PI_SPOILER_ARM: {
         /* SPEED BRAKE module (docs/SPEED_BRAKE.md): X-Plane's handle carries the surface order there. */
@@ -463,6 +462,11 @@ static int eln_preset_get(void *ctx, int item, int index)
     case A380X_PI_AUTOBRAKE_RTO: return center_right.rto_arm != 0;
     case A380X_PI_TERR_ND: return eln_rawi(ENR_TERR) != 0;
     case A380X_PI_TRANSPONDER: return eln_rawi(ENR_XPDR) >= 2;
+    case A380X_PI_ENG_MODE_SEL: {
+        XPLMDataRef sel = XPLMFindDataRef("a380x/xp12/eng_start/selector");
+        return sel ? XPLMGetDatai(sel) : 1;
+    }
+    case A380X_PI_TO_CONFIG: return eln.to_config_held;
     default: return 0;
     }
 }
@@ -502,12 +506,7 @@ static void eln_preset_set(void *ctx, int item, int index, int value)
     case A380X_PI_COCKPIT_DOOR: eln_run_command(value ? "a380x/xp12/cockpit_door/lock" : "a380x/xp12/cockpit_door/unlock"); break;
     case A380X_PI_ENG_MASTER:
         if (index < 0 || index > 3) break;
-        if (eln.raw[ENR_MIXTURE]) eln_set_vf(ENR_MIXTURE, index, value ? 1.0f : 0.0f);
-        if (value && !eln.starting[index] && eln.starter[index]) {
-            XPLMCommandBegin(eln.starter[index]); eln.starting[index] = 1; eln.start_elapsed[index] = 0.0;
-        } else if (!value && eln.starting[index]) {
-            XPLMCommandEnd(eln.starter[index]); eln.starting[index] = 0;
-        }
+        if (eln.raw[ENR_MIXTURE]) eln_set_vf(ENR_MIXTURE, index, value ? 1.0f : 0.0f);  /* FADEC starts it */
         break;
     case A380X_PI_FLAPS:
         if (value && eln_rawf(ENR_FLAP_RATIO) <= 0.01f && eln.flaps_down) XPLMCommandOnce(eln.flaps_down);
@@ -531,32 +530,29 @@ static void eln_preset_set(void *ctx, int item, int index, int value)
         break;
     case A380X_PI_TERR_ND: eln_seti(ENR_TERR, value != 0); break;
     case A380X_PI_TRANSPONDER: eln_seti(ENR_XPDR, value ? 3 : 1); break;
+    case A380X_PI_ENG_MODE_SEL: {
+        XPLMDataRef sel = XPLMFindDataRef("a380x/xp12/eng_start/selector");
+        if (sel) XPLMSetDatai(sel, value);
+        break;
+    }
+    case A380X_PI_TO_CONFIG:
+        if (!eln.to_config) eln.to_config = XPLMFindCommand("a380x/xp12/ecam/sd/to_config");
+        if (eln.to_config && (value != 0) != eln.to_config_held) {
+            if (value) XPLMCommandBegin(eln.to_config); else XPLMCommandEnd(eln.to_config);
+            eln.to_config_held = value != 0;
+        }
+        break;
     default: break;
     }
 }
 static const A380XPresetHost eln_preset_host = {eln_preset_get, eln_preset_set, NULL};
 
-static void eln_engine_starters(double dt)
-{
-    int i;
-    for (i = 0; i < 4; ++i) if (eln.starting[i]) {
-        eln.start_elapsed[i] += dt;
-        if (eln_eng_running(i) || eln.start_elapsed[i] > 120.0 || eln_vf(ENR_MIXTURE, i) < 0.5f) {
-            XPLMCommandEnd(eln.starter[i]); eln.starting[i] = 0;
-        }
-    }
-}
-static void eln_release_starters(void)
-{
-    int i;
-    for (i = 0; i < 4; ++i) if (eln.starting[i] && eln.starter[i]) { XPLMCommandEnd(eln.starter[i]); eln.starting[i] = 0; }
-}
 /* flyPad presets: ground only; COLD & DARK and TURNAROUND with the engines stopped (port rule). */
 static int eln_preset_request(int preset)
 {
     int i, running = 0;
     if (!eln.active) return 0;
-    if (eln.preset.running && eln.preset.preset == preset) { a380x_preset_cancel(&eln.preset); eln_release_starters(); return 1; }
+    if (eln.preset.running && eln.preset.preset == preset) { a380x_preset_cancel(&eln.preset); return 1; }
     if (!eln_rawi(ENR_ON_GROUND)) { snprintf(eln.preset_text, sizeof(eln.preset_text), "PRESETS ARE GROUND ONLY"); return 0; }
     for (i = 0; i < 4; ++i) running |= eln_eng_running(i);
     if (running && preset <= A380X_PRESET_TURNAROUND) {
@@ -579,15 +575,24 @@ static void eln_update(float dt_real, const float *brightness)
     speed = eln_rawf(ENR_SPEED);
     paused = eln_rawi(ENR_PAUSED) || eln_rawi(ENR_REPLAY);
     sim_dt = paused || !isfinite(dt_real) || dt_real < 0.0f ? 0.0 : dt_real * (isfinite(speed) && speed > 0.0 ? fmin(speed, 16.0) : 1.0);
-    /* X-Plane starts the engines a frame or two after the load message (spec 7.2). */
+    /* X-Plane starts the engines a frame or two after the load message (spec 7.2), and loads the aircraft's
+     * plugins before it puts a new flight on the ground (Log.txt: plugins, then "Init ... ramp_start"), so
+     * an "in the air" READY decided at load is re-checked: still on the ground with the engines stopped at
+     * the end of the checks -> the cold & dark (or turnaround) spawn after all. */
     if (eln.spawn_checks > 0) {
+        int spawn = eln_detect_spawn();
         --eln.spawn_checks;
-        if (eln.mode != A380X_ELN_SPAWN_READY && eln_detect_spawn() == A380X_ELN_SPAWN_READY) {
+        if (eln.mode != A380X_ELN_SPAWN_READY && spawn == A380X_ELN_SPAWN_READY) {
             eln_apply_spawn(A380X_ELN_SPAWN_READY, 0);
             elec_spawn_changed();
             XPLMDebugString("A380X ELEC: engines running after load: READY (no cold & dark)\n");
+        } else if (!eln.spawn_checks && eln.mode == A380X_ELN_SPAWN_READY && spawn != A380X_ELN_SPAWN_READY) {
+            eln_apply_spawn(spawn, 1);
+            elec_spawn_changed();
+            XPLMDebugString("A380X ELEC: on the ground with the engines stopped after load: cold & dark\n");
         }
     }
+    if (eln.to_config_held && !eln.preset.running) eln_preset_set(NULL, A380X_PI_TO_CONFIG, 0, 0);  /* cancelled */
     /* Ground power cannot stay plugged in once the aircraft rolls or flies (GPUM). */
     if (elec_io.ext_connected && (!eln_rawi(ENR_ON_GROUND) || eln_rawf(ENR_GROUNDSPEED) > 1.0f)) elec_io.ext_connected = 0;
     eln_read_inputs(sim_dt);
@@ -603,7 +608,6 @@ static void eln_update(float dt_real, const float *brightness)
         snprintf(eln.preset_text, sizeof(eln.preset_text), "%s", eln.preset.current ? eln.preset.current : "");
         if (!eln.preset.running && eln.preset.done) snprintf(eln.preset_text, sizeof(eln.preset_text), "%s DONE", a380x_preset_names[eln.preset.preset]);
     }
-    eln_engine_starters(sim_dt);
 }
 
 /* ---------------------------------------------------------------- hardware command interception */
@@ -907,7 +911,7 @@ static int eln_command_handler(XPLMCommandRef command, XPLMCommandPhase phase, v
     if (!plugin_enabled || !eln.active || phase != xplm_CommandBegin) return 1;
     switch (c->action) {
     case EC_PRESET: eln_preset_request(c->value); break;
-    case EC_PRESET_CANCEL: a380x_preset_cancel(&eln.preset); eln_release_starters(); break;
+    case EC_PRESET_CANCEL: a380x_preset_cancel(&eln.preset); break;
     case EC_EXPEDITE: eln.preset_expedited = !eln.preset_expedited; break;
     case EC_APU_START: a380x_eln_apu_start_press(&eln.st); break;
     case EC_BAT_SEL_LEFT: if (eln.bat_selector > 0) --eln.bat_selector; break;
@@ -921,7 +925,6 @@ static int eln_command_handler(XPLMCommandRef command, XPLMCommandPhase phase, v
 static void eln_shutdown(void)
 {
     int i;
-    eln_release_starters();
     for (i = 0; i < (int)(sizeof(eln_intercepts) / sizeof(eln_intercepts[0])); ++i) if (eln_intercepts[i].handle) {
         XPLMUnregisterCommandHandler(eln_intercepts[i].handle, eln_intercept_handler, 1, &eln_intercepts[i]);
         eln_intercepts[i].handle = NULL;
@@ -954,11 +957,6 @@ static int eln_init(void)
             XPLMDebugString("\n");
             return 0;
         }
-    }
-    for (i = 0; i < 4; ++i) {
-        char name[64];
-        snprintf(name, sizeof(name), "sim/starters/engage_starter_%d", i + 1);
-        eln.starter[i] = XPLMFindCommand(name);
     }
     eln.flaps_down = XPLMFindCommand("sim/flight_controls/flaps_down");
     eln_build_refs();
@@ -1023,12 +1021,10 @@ static void eln_plane_loaded(void)
     if (!eln.ready || !eln.active) return;
     elec_io.external_logic = 1;
     eln.since_load = 0.0;
-    eln_release_starters();
     eln_apply_spawn(eln_detect_spawn(), 1);
     eln.spawn_checks = 90;
 }
 static void eln_disable(void)
 {
-    eln_release_starters();
     a380x_preset_cancel(&eln.preset);
 }

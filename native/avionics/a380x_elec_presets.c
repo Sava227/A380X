@@ -2,8 +2,7 @@
  * flyPad aircraft-state preset tables, ported from the FlyByWire A380X
  * config/a380x/a380-842/aircraft_preset_procedures.xml (GPL-3.0). Names, order, types and
  * delays are FBW's. Steps whose system the port does not model (ENG fire test, RCDR GND CTL,
- * EMER EXIT LT, RMP volumes, ENG MODE SEL, cabin ready, T.O CONFIG test, standby/transfer/
- * trim fuel pumps, FWC init) are left out; docs/ELEC_SYSTEM.md lists them.
+ * EMER EXIT LT, RMP volumes, cabin ready, standby/transfer/trim fuel pumps, FWC init) are left out; docs/ELEC_SYSTEM.md lists them.
  */
 #include "a380x_elec_presets.h"
 #include <math.h>
@@ -88,6 +87,7 @@ static const A380XPresetStep pushback_off[] = {
     S("Beacon Off", STEP, BEACON, 0, 0, 1000),
 };
 static const A380XPresetStep taxi_on[] = {
+    S("ENG MODE SEL Start", STEP, ENG_MODE_SEL, 0, 2, 3000),
     S("ENG 1 On", STEP, ENG_MASTER, 0, 1, 1000),
     S("ENG 2 On", STEP, ENG_MASTER, 1, 1, 20000),
     S("Await ENG 1 Avail", NCON, ENG_RUNNING, 0, 1, 2000),
@@ -98,6 +98,7 @@ static const A380XPresetStep taxi_on[] = {
     S("Await ENG 4 Avail", COND, ENG_RUNNING, 3, 1, 2000),
     S("Await ENG 1 Avail", ECON, ENG_RUNNING, 0, 1, 0),
     S("Await ENG 2 Avail", ECON, ENG_RUNNING, 1, 1, 0),
+    S("ENG MODE SEL Norm", STEP, ENG_MODE_SEL, 0, 1, 3000),
     S("APU Bleed Off", STEP, APU_BLEED, 0, 0, 1500),
     S("APU Master Off", STEP, APU_MASTER, 0, 0, 2000),
     S("Spoiler Arm", STEP, SPOILER_ARM, 0, 1, 2000),
@@ -109,6 +110,8 @@ static const A380XPresetStep taxi_on[] = {
     S("TERR ON ND Capt. On", STEP, TERR_ND, 0, 1, 2000),
     S("Transponder Auto", STEP, TRANSPONDER, 0, 1, 1000),
     S("Await Flaps 1+F", COND, FLAPS_AT, 0, 1, 1000),
+    S("T.O. Config Push", NOEX, TO_CONFIG, 0, 1, 500),    /* FBW 200 ms; the FWS confirms after 0.3 s */
+    S("T.O. Config Release", STEP, TO_CONFIG, 0, 0, 2000),
 };
 static const A380XPresetStep taxi_off[] = {
     S("TERR ON ND Capt. Off", STEP, TERR_ND, 0, 0, 2000),

@@ -9,8 +9,14 @@ mapped to this X-Plane port. Only the steps that do something here are listed; s
 (temperatures, pack flow, LDG ELEV) can be set but have no system behind them.
 
 **Shortcut:** flyPad → Presets → **READY FOR TAXI** sets the aircraft up in one step (it also has
-COLD & DARK, BEFORE START, AFTER START, READY FOR PUSHBACK and READY FOR TAKEOFF). The FMS still needs
-the data entry in step 4.
+COLD & DARK, BEFORE START, AFTER START, READY FOR PUSHBACK and READY FOR TAKEOFF). As in FBW it starts
+the engines through the FADEC (ENG START selector IGN START, ENG MASTER 1-2 then 3-4, selector back to NORM)
+and ends with a T.O CONFIG test. The FMS still needs the data entry in step 4.
+
+**Spawn:** a new flight on the ground with the engines stopped is cold & dark (BAT 1, ESS, 2, APU OFF; IR 1-3
+OFF), also when X-Plane only places the aircraft on the ground after the plugins have loaded (Log.txt:
+"A380X ELEC: on the ground with the engines stopped after load: cold & dark"). Engines running, or a start
+in the air, is READY.
 
 ## 1. Pre-checks
 ENG MASTER 1-4 OFF, PARK BRK ON, speed brake retracted, flaps 0, thrust levers IDLE, gear lever DOWN,
@@ -63,3 +69,10 @@ ENG START selector NORM, wipers OFF.
 3. SD STATUS checked; flight controls checked on the SD F/CTL page; ECP C/L → AFTER START.
 4. NOSE light TAXI, PARK BRK OFF, a little thrust; brakes checked; steer with the rudder / tiller axis.
 5. On the way: autobrake RTO, T.O CONFIG test (ECP), BEFORE TAKEOFF checklist.
+
+## 8. Ready for takeoff
+1. ECP **T.O CONFIG** (hold) → T.O CONFIG NORMAL in the T.O memo when flaps / slats, speed brake, pitch and
+   rudder trim, doors, T.O speeds and brake temperature are right; otherwise the ECAM names what is wrong.
+2. MFD SURV: TCAS TA/RA; transponder AUTO. ECP C/L → BEFORE TAKEOFF.
+3. Lights: STROBE ON, NOSE light T.O, landing lights ON (flyPad READY FOR TAKEOFF does these three).
+4. PARK BRK OFF, thrust levers FLEX or TOGA; A/THR arms with the levers in the detent.

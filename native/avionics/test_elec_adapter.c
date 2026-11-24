@@ -393,6 +393,19 @@ static void test_presets_and_reload(void)
     /* ready spawn directly from the load message */
     elec_plane_loaded(); eln_plane_loaded();
     assert(geti("spawn_mode") == A380X_ELN_SPAWN_READY && a380x_power_du_on(A380X_ELN_DU_FO_PFD, 0));
+    /* new flight: plugins load before X-Plane puts the aircraft on the ground -> READY at load, then cold &
+     * dark (batteries OFF) once the spawn checks end on the ground with the engines stopped */
+    engines(0.0f, 0.0f, 0);
+    raw("sim/flightmodel/failures/onground_any")->value = 0;
+    spawn_changes = 0;
+    elec_plane_loaded(); eln_plane_loaded();
+    assert(geti("spawn_mode") == A380X_ELN_SPAWN_READY && geti("pb/bat1"));
+    raw("sim/flightmodel/failures/onground_any")->value = 1;
+    frames(1.0f);
+    assert(geti("spawn_mode") == A380X_ELN_SPAWN_READY && !spawn_changes);
+    frames(4.0f);
+    assert(geti("spawn_mode") == A380X_ELN_SPAWN_COLD_DARK && spawn_changes == 1);
+    assert(!geti("pb/bat1") && !geti("pb/bat2") && !geti("pb/bat_ess") && !geti("pb/bat_apu") && !geti("ext/connected"));
     /* disable stops a running preset; the CDS overlay hook is the renderer's (stubbed here) */
     click("preset/3"); assert(geti("preset/active") == 3); eln_disable(); assert(!geti("preset/active"));
     assert(!cds_overlay(A380X_ELN_DU_EWD, 0, 0, 768, 1024));
