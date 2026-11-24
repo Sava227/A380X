@@ -196,10 +196,13 @@
       "sha256": "d7d6bee71357819fe307b9c9b8d4493d7d38c25644fde2098a27f288941fcc94"
     },
     "cavalry_charge.wav": {
-      "source": "original synthesis (not from the supplied set): bugle-style G5-C6-E6-G6-E6-G6 arpeggio, 7-harmonic brass-like tone, one 1.2 s cycle (the FWS first cavalry-charge period), loopable",
-      "seconds": 1.2,
+      "source": "original synthesis (not from the supplied set), matched to the Airbus FWC cavalry charge as measured from reference recordings (no audio copied): square wave alternating 1660 Hz / 830 Hz every 40 ms (H L H L H = 0.2 s burst), 0.2 s silence; naive square at 16 kHz (reproduces the FWC tone's aliased partials), band-limited FFT resampling to 44.1 kHz",
+      "seconds": 0.4,
       "rate": 44100,
-      "sha256": "03ffaa512dc4156e0d97340d9e6aa421925618f4666319080edd86b19d2210a6"
+      "loop": "one whole 0.4 s period, periodic resampling, seamless",
+      "level": "short-term A-weighted RMS 0.30, the same as crc_master_warning.wav",
+      "tool": "make_cavalry.py (backups/cavalry-charge-20261116/tools)",
+      "sha256": "707dd7159b7d0aab2ccf4086ea3417424a8c21eee4d1800f897ef6744364e757"
     },
     "pull_up_new.wav": {
       "source": "airbus-a380-pull-up.mp3 (user-supplied, ~/Downloads)",
