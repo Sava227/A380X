@@ -1956,7 +1956,7 @@
   "files": [
     {
       "path": "plugins/A380XAvionics/mac_x64/A380XAvionics.xpl",
-      "sha256": "4a37c9ac8ed5bd6132eb1eb961b2d898e999e250001986464cce4ebc14df4d42"
+      "sha256": "c3fe71c7406016aaa1850f2202a47ed6d74b3e4f4b23e73527105123f5507c8c"
     },
     {
       "path": "plugins/A380XAvionics/win_x64/A380XAvionics.xpl",
@@ -2080,7 +2080,7 @@
     },
     {
       "path": "plugins/A380XAvionics/sounds/cockpit/cavalry_charge.wav",
-      "sha256": "03ffaa512dc4156e0d97340d9e6aa421925618f4666319080edd86b19d2210a6"
+      "sha256": "707dd7159b7d0aab2ccf4086ea3417424a8c21eee4d1800f897ef6744364e757"
     },
     {
       "path": "plugins/A380XAvionics/sounds/cockpit/cchord.wav",
@@ -2100,7 +2100,7 @@
     },
     {
       "path": "plugins/A380XAvionics/sounds/cockpit/provenance.json",
-      "sha256": "b1769de41d08f12f5b87c49370dd97e41683216f4e7903741a110e499fdef210"
+      "sha256": "987f1593e7d9a5dc2e1fd3953d2bb8f1b46e82aa5f6119f99124ae7aa13a315d"
     },
     {
       "path": "plugins/A380XAvionics/sounds/cockpit/pull_up_new.wav",
@@ -2132,7 +2132,7 @@
     },
     {
       "path": "plugins/A380XAvionics/build-report.json",
-      "sha256": "22f9d31c0dc6f63dba42f7a6597cebb0a055be0cb9c758bcc890a5b3f7663f86"
+      "sha256": "e0ca58965c20059da7d832e329f9a58a0e4e79fb5723e65710d18f1f9e7d35b2"
     }
   ],
   "runtime_tested": false,
