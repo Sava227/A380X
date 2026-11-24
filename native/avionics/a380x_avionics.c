@@ -445,14 +445,14 @@ static int cds_overlay(int du, float x, float y, float w, float h)
     return 1;
 }
 
-/* Late READY spawn (engines found running after the load message): re-initialise the
- * consumers that depend on the spawn type. */
+/* Spawn re-decided after the load message (engines running: READY; or on the ground after all: cold &
+ * dark): re-initialise the consumers that depend on the spawn type. */
 static void elec_spawn_changed(void)
 {
     adirs_reset();
     isis_adapter_plane_loaded();
-    fmsa_cold_and_dark = 0;
-    survh_defaults(0);
+    fmsa_cold_and_dark = a380x_power.spawn_mode == A380X_ELN_SPAWN_COLD_DARK;
+    survh_defaults(fmsa_cold_and_dark);
 }
 
 #include "a380x_native_displays.inc"

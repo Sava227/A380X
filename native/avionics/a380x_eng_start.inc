@@ -20,7 +20,7 @@
  * START; tools/cockpit_feedback_contract.py) and MAN START is the overhead pushbutton position
  * a380x/xp12/ovhd/pb/man_start<n>. X-Plane does the rest: sim/starters/engage_starter_<n> held while the
  * starter runs, sim/cockpit2/engine/actuators/igniter_on, fuel by ENG MASTER (mixture_ratio).
- * Engines being started by a flyPad preset (eln.starting) are left to the preset.
+ * The flyPad READY FOR TAXI preset starts the engines the same way (selector IGN START, then ENG MASTER ON).
  * Unity-build include of a380x_avionics.c after a380x_cockpit_feedback.inc and the ELEC adapter.
  */
 #define ENGS_CUTOUT_N2 50.0f
@@ -115,7 +115,6 @@ static void engs_update(void)
         }
         int started = engs.at_idle[i];
         int want_starter = 0, want_igniter = 0;
-        if (eln.starting[i]) { engs.starter_on[i] = 0; continue; }       /* the flyPad preset owns this one */
         if (master != engs.last_master[i] || sel != engs.last_selector) engs.aborted[i] = 0;   /* cycled: retry */
         if (master && !engs.last_master[i]) engs.master_time[i] = now;
         engs.last_master[i] = master;
