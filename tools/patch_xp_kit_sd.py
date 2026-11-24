@@ -27,6 +27,11 @@ bundle): FBW's DOOR page passes "LIGHT BEACON ON" to every CabinDoor as a TODO p
 armed". Each door now prefers the native per-door state "L:A380X_SLIDE_ARMED:<interactive point>"
 published from the EFB (docs/EFB_DEVELOPMENT.md); without it the FBW proxy stays in effect.
 
+Version 3 (marker MAILBOX_MARKER, user sim check 2026-11-23: the lower quarter of every SD page was
+empty) draws FBW's SDv2 AtcMailbox below the PermanentData area: the 13 % / auto / 18 % column
+frame from y 768 with RECALL, CLOSE and PRINT buttons (FBW .mfd-button colours). As in FBW the
+buttons do nothing; the yellow X in FBW screenshots is its mouse cursor, not part of the page.
+
 Every anchor must occur exactly once in a known input; the result is marked so that a second
 run is a byte-identical no-op. Unknown bundles are rejected, never patched heuristically.
 """
@@ -36,7 +41,8 @@ from pathlib import Path
 
 MARKER = '/*A380X-SD-LIVE-DATA v1*/'
 SLIDES_MARKER = '/*A380X-SD-SLIDES v1*/'
-VERSION = 2
+MAILBOX_MARKER = '/*A380X-SD-MAILBOX v1*/'
+VERSION = 3
 # sd.html as shipped by the verified seven-view xp-kit build (sd-source-manifest bundle a80da77a).
 KNOWN_INPUT_SHA256 = {
     '369149262b09e84929be720859b808404cb1e30eea109f85ac62c81b233e578c',
@@ -164,6 +170,19 @@ SLIDES_EDITS = (
      'u=a>20,E=!u&&(__sv===void 0?o:__sv!==0),', 1),
 )
 SLIDES_ANCHORS = (SLIDES_MARKER, '__sv=Ol(`L:A380X_SLIDE_ARMED:${s}`,Fl())', 'E=!u&&(__sv===void 0?o:__sv!==0)')
+# Version 3: FBW SDv2 AtcMailbox (AtcMailbox.tsx + style.scss), inside the PermanentData overlay.
+MAILBOX = (
+    'function __a380Mail(h){' + MAILBOX_MARKER + 'let B=(x,y,w,l,r)=>h("g",null,h("rect",{x,y,width:w,height:50,'
+    'fill:"#272525",stroke:"#c4c6cf",strokeWidth:2}),h("text",{x:r?x+w-12:x+w/2,y:y+33,className:"F22 White",'
+    'textAnchor:r?"end":"middle"},l));return h("g",null,'
+    'h("path",{className:"SW2 White",d:"M 100,768 l 0,256 M 630,768 l 0,256 M 100,996 l 530,0 M 365,996 l 0,28"}),'
+    'B(1,973,98,"RECALL",0),B(631,769,136,"CLOSE",1),B(631,973,136,"PRINT",1))}'
+)
+MAILBOX_EDITS = (
+    ('function __a380Perm(e){', MAILBOX + 'function __a380Perm(e){', 1),
+    ('T(711,752,"F22 Cyan","KG"))}', 'T(711,752,"F22 Cyan","KG"),__a380Mail(h))}', 1),
+)
+MAILBOX_ANCHORS = (MAILBOX_MARKER, 'function __a380Mail(h){', '__a380Mail(h))}')
 
 # Strings the patched bundle must contain (anchor check usable without any JS engine).
 PATCHED_ANCHORS = (
@@ -210,6 +229,23 @@ def _patch_slides(text):
     return text
 
 
+def _patch_mailbox(text):
+    """Version 3 edit on a v1-patched text; already-applied text is returned unchanged."""
+    if MAILBOX_MARKER in text:
+        missing = [anchor for anchor in MAILBOX_ANCHORS if anchor not in text]
+        if missing or text.count(MAILBOX_MARKER) != 1:
+            raise ValueError('Partially patched SD mailbox (missing %s)' % (missing[0][:40] if missing else 'marker'))
+        return text
+    for anchor, _, count in MAILBOX_EDITS:
+        if text.count(anchor) != count:
+            raise ValueError('SD mailbox anchor count %d != %d: %s' % (text.count(anchor), count, anchor[:60]))
+    for anchor, replacement, _ in MAILBOX_EDITS:
+        text = text.replace(anchor, replacement)
+    if any(anchor not in text for anchor in MAILBOX_ANCHORS) or text.count(MAILBOX_MARKER) != 1:
+        raise ValueError('Patched SD mailbox failed its anchor check')
+    return text
+
+
 def patch_bundle(data):
     """Return the patched bytes of a known sd.html; a fully patched input is returned unchanged."""
     if not is_native_sd_bundle(data):
@@ -219,7 +255,7 @@ def patch_bundle(data):
         missing = [anchor for anchor in PATCHED_ANCHORS if anchor not in text]
         if missing:
             raise ValueError('Partially patched SD bundle (missing %s)' % missing[0][:40])
-        patched = _patch_slides(text).encode('utf-8')
+        patched = _patch_mailbox(_patch_slides(text)).encode('utf-8')
         return data if patched == data else patched
     if sha256(data) not in KNOWN_INPUT_SHA256:
         raise ValueError('Unknown SD bundle %s; refusing to patch' % sha256(data))
@@ -234,7 +270,7 @@ def patch_bundle(data):
     missing = [anchor for anchor in PATCHED_ANCHORS if anchor not in text]
     if missing or text.count(MARKER) != 1 or any(word in text for word in FORBIDDEN):
         raise ValueError('Patched SD bundle failed its anchor check')
-    return _patch_slides(text).encode('utf-8')
+    return _patch_mailbox(_patch_slides(text)).encode('utf-8')
 
 
 def patch_file(path):
@@ -259,7 +295,7 @@ def main():
     data = args.sd_html.read_bytes()
     if args.check:
         text = data.decode('utf-8')
-        missing = [anchor for anchor in (*PATCHED_ANCHORS, *SLIDES_ANCHORS) if anchor not in text]
+        missing = [anchor for anchor in (*PATCHED_ANCHORS, *SLIDES_ANCHORS, *MAILBOX_ANCHORS) if anchor not in text]
         if missing:
             parser.error('missing anchors: %s' % missing)
         print('patched SD bundle anchors OK', sha256(data))
