@@ -248,11 +248,32 @@ static void cfb_toggle_set(void *refcon, float value)
     if (plugin_enabled && isfinite(value)) t->target = value >= 0.5f ? 1.0f : 0.0f;
 }
 
+/* FBW interactive-parts.xml: the meal table moves only with the table out, the keyboard only with the
+ * meal table out; otherwise the keyboard flipped out through the stowed table. */
+static const char *const cfb_toggle_needs[][2] = {
+    {"a380x/xp12/cockpit/captain_meal_table", "a380x/xp12/cockpit/captain_table"},
+    {"a380x/xp12/cockpit/captain_keyboard", "a380x/xp12/cockpit/captain_meal_table"},
+    {"a380x/xp12/cockpit/first_officer_meal_table", "a380x/xp12/cockpit/first_officer_table"},
+    {"a380x/xp12/cockpit/first_officer_keyboard", "a380x/xp12/cockpit/first_officer_meal_table"},
+};
+
+static int cfb_toggle_allowed(const CfbToggle *t)
+{
+    const char *self = cfb_toggle_rows[t - cfb.toggle].dataref;
+    for (size_t n = 0; n < ARRAY_LEN(cfb_toggle_needs); ++n) {
+        if (strcmp(self, cfb_toggle_needs[n][0])) continue;
+        for (int k = 0; k < CFB_TOGGLE_COUNT; ++k)
+            if (!strcmp(cfb_toggle_rows[k].dataref, cfb_toggle_needs[n][1])) return cfb.toggle[k].target >= 0.5f;
+    }
+    return 1;
+}
+
 static int cfb_toggle_command(XPLMCommandRef command, XPLMCommandPhase phase, void *refcon)
 {
     CfbToggle *t = refcon;
     (void)command;
-    if (plugin_enabled && phase == xplm_CommandBegin) t->target = t->target >= 0.5f ? 0.0f : 1.0f;
+    if (plugin_enabled && phase == xplm_CommandBegin && cfb_toggle_allowed(t))
+        t->target = t->target >= 0.5f ? 0.0f : 1.0f;
     return 0;
 }
 
