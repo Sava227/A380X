@@ -75,6 +75,20 @@ void XPLMSetDatavf(XPLMDataRef handle, float *values, int offset, int count)
     assert(ref && ref->registered && offset >= 0 && offset + count <= 20);
     memcpy(ref->array + offset, values, (size_t)count * sizeof(*values));
 }
+int XPLMGetDatavi(XPLMDataRef handle, int *values, int offset, int count)
+{
+    MockRef *ref = handle;
+    int i;
+    assert(ref && ref->registered && offset >= 0 && offset + count <= 20);
+    for (i = 0; i < count; ++i) values[i] = (int)ref->array[offset + i];
+    return count;
+}
+void XPLMSetDataf(XPLMDataRef handle, float value)
+{
+    MockRef *ref = handle;
+    assert(ref && ref->registered);
+    ref->value = value;
+}
 XPLMDataRef XPLMRegisterDataAccessor(const char *name, XPLMDataTypeID type, int writable,
     XPLMGetDatai_f read_i, XPLMSetDatai_f write_i, XPLMGetDataf_f read_f, XPLMSetDataf_f write_f,
     XPLMGetDatad_f read_d, XPLMSetDatad_f write_d, XPLMGetDatavi_f read_vi, XPLMSetDatavi_f write_vi,
@@ -160,6 +174,8 @@ static struct {
 } refs;
 #include "a380x_clock.inc"
 #include "a380x_center_right.inc"
+static int mock_ground_spoilers;
+static int mock_ground_spoilers_out(void) { return mock_ground_spoilers; }
 #include "a380x_cockpit_door.inc"
 
 static void exercise_clock(void)
@@ -335,24 +351,47 @@ static void exercise_center_right(void)
     ((MockRef *)center_right.accumulator_ref)->value=0.98f;
     center_right_update(0.0f);
     assert(center_right.body_accu_psi==4900 && center_right.body_accu_zone==2);
+    /* BCU autobrake (a380x_autobrake.h; its logic is tested in test_autobrake.c): the adapter wiring. */
+    center_right_ground_spoilers=mock_ground_spoilers_out;
+    for (i=0;i<5;++i) ((MockRef *)center_right.gear_ground_ref)->array[i]=1.0f;
     XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_up"));
-    assert(center_right.autobrake_selected==1 && XPLMGetDatai(center_right.autobrake_ref)==5);
-    assert(center_right.btv_reverted && center_right.autobrake_armed==5);
-    XPLMSetDatai(center_right.autobrake_ref,1);
-    center_right_update(0.0f);
+    /* BTV: no OANS exit in the port, so not armed; the selector springs back after 1 s. */
+    assert(center_right.autobrake_selected==1 && center_right.autobrake_armed==0 && !center_right.btv_reverted);
+    assert(XPLMGetDatai(center_right.autobrake_ref)==1);
+    center_right_update(0.6f); center_right_update(0.6f);
     assert(center_right.autobrake_selected==0);
+    /* X-Plane's own autobrake switch is read as the selector and returned to OFF. */
     XPLMSetDatai(center_right.autobrake_ref,3);
     center_right_update(0.0f);
-    assert(center_right.autobrake_selected==3 && center_right.autobrake_armed==3);
-    XPLMSetDatai(center_right.autobrake_ref,1);
+    assert(center_right.autobrake_selected==3 && center_right.autobrake_armed==3 && XPLMGetDatai(center_right.autobrake_ref)==1);
+    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_down"));
+    assert(center_right.autobrake_selected==2 && center_right.autobrake_armed==2);
+    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_down"));
+    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_down"));
+    assert(center_right.autobrake_selected==0 && center_right.autobrake_armed==0);
+    XPLMSetDatai(center_right.autobrake_ref,0);           /* X-Plane RTO switch = RTO pushbutton */
     center_right_update(0.0f);
-    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/rto_toggle"));
-    center_right_update(0.0f);
-    assert(center_right.rto_arm && XPLMGetDatai(center_right.autobrake_ref)==0);
-    XPLMSetDatai(refs.on_ground,0);
-    center_right_update(0.0f);
-    assert(!center_right.rto_arm && XPLMGetDatai(center_right.autobrake_ref)==1);
-    XPLMSetDatai(refs.on_ground,1);
+    assert(center_right.rto_arm && center_right.autobrake_armed==6 && XPLMGetDatai(center_right.autobrake_ref)==1);
+    XPLMCommandOnce(rto);
+    assert(!center_right.rto_arm);
+    XPLMCommandOnce(rto);
+    assert(center_right.rto_arm);
+    /* RTO is rejected 10 s after lift-off. */
+    for (i=0;i<5;++i) ((MockRef *)center_right.gear_ground_ref)->array[i]=0.0f;
+    for (i=0;i<19;++i) center_right_update(0.5f);
+    assert(center_right.rto_arm);
+    center_right_update(0.5f); center_right_update(0.5f);
+    assert(!center_right.rto_arm);
+    /* In flight (more than 10 s): landing modes arm, RTO does not. */
+    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_up"));
+    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_up"));
+    assert(center_right.autobrake_armed==2);
+    XPLMCommandOnce(rto);
+    assert(!center_right.rto_arm && center_right.autobrake_armed==2);
+    for (i=0;i<5;++i) ((MockRef *)center_right.gear_ground_ref)->array[i]=1.0f;
+    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_down"));
+    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_down"));
+    assert(center_right.autobrake_armed==0);
     /* Held RTO animation follows command phase, independent of arm state. */
     rto->callback(rto,xplm_CommandBegin,rto->refcon);
     assert(center_right.rto_pressed && center_right.rto_arm);
@@ -360,28 +399,29 @@ static void exercise_center_right(void)
     assert(!center_right.rto_pressed && center_right.rto_arm);
     XPLMCommandOnce(rto);
     assert(!center_right.rto_arm);
+    /* Anti-skid off: no arming (the selector springs back), no RTO. */
     XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_up"));
+    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_up"));
+    assert(center_right.autobrake_armed==2);
     XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/antiskid_toggle"));
     assert(XPLMGetDatai(center_right.abs_ref) == 0);
     assert(center_right.emergency_braking && !center_right.autobrake_available);
-    assert(!center_right.antiskid_available && !center_right.autobrake_armed && !center_right.autobrake_selected);
+    assert(!center_right.antiskid_available && !center_right.autobrake_armed);
+    center_right_update(0.6f); center_right_update(0.6f);
+    assert(!center_right.autobrake_selected);
     XPLMCommandOnce(rto);
     assert(!center_right.rto_arm);
-    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_up"));
-    assert(!center_right.autobrake_selected);
     XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/antiskid_toggle"));
-    /* Landing modes arm in flight, RTO does not. */
-    XPLMSetDatai(refs.on_ground,0);
     XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_up"));
-    assert(center_right.autobrake_armed==5);
-    XPLMCommandOnce(rto);
-    assert(!center_right.rto_arm && center_right.autobrake_selected==1);
-    XPLMSetDatai(refs.on_ground,1);
+    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_up"));
+    assert(center_right.autobrake_armed==2);
     /* Loss of both hydraulic feeds springs the selector back to DISARM. */
     ((MockRef *)center_right.hydraulic_ref[0])->value=1200.0f;
     ((MockRef *)center_right.hydraulic_ref[1])->value=1200.0f;
     center_right_update(0.0f);
-    assert(!center_right.normal_brakes_available && !center_right.autobrake_selected);
+    assert(!center_right.normal_brakes_available && !center_right.autobrake_armed);
+    center_right_update(0.6f); center_right_update(0.6f);
+    assert(!center_right.autobrake_selected);
     ((MockRef *)center_right.hydraulic_ref[0])->value=1800.0f;
     center_right_update(0.0f);
     assert(!center_right.normal_brakes_available);
@@ -424,36 +464,44 @@ static void exercise_center_right(void)
     center_right_update(0.0f);
     assert(!center_right.reinflate_active && XPLMGetDatai(center_right.electric_pump_ref));
     XPLMSetDatai(center_right.electric_pump_ref,0);
-    /* Native applied body-wheel braking animates two independent needles.
-     * An engaged landing mode disarms on pedal override or spoiler retraction. */
-    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_up"));
+    /* Body-wheel brake needles follow X-Plane's applied braking. An engaged landing mode brakes through
+     * l/r_brake_add and disarms on pedal override or ground spoiler retraction. */
     ((MockRef *)center_right.wheel_brake_ref)->array[3]=0.4f;
     ((MockRef *)center_right.wheel_brake_ref)->array[4]=0.7f;
-    ((MockRef *)center_right.spoiler_ref)->value=1.0f;
     center_right_update(0.0f);
     assert(center_right.brake_left_ratio_milli==400 && center_right.brake_right_ratio_milli==700);
-    assert(center_right.autobrake_active);
-    ((MockRef *)center_right.pedal_ref[0])->value=0.6f;
-    center_right_update(0.0f);
-    assert(!center_right.autobrake_active && !center_right.autobrake_selected);
-    ((MockRef *)center_right.pedal_ref[0])->value=0.0f;
     XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_up"));
+    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_up"));
+    assert(center_right.autobrake_armed==2 && !center_right.autobrake_active);
+    mock_ground_spoilers=1;
+    for (i=0;i<5;++i) center_right_update(0.05f);
+    assert(center_right.autobrake_active && XPLMGetDataf(center_right.brake_add_ref[0])>0.0f);
+    assert(XPLMGetDataf(center_right.brake_add_ref[1])==XPLMGetDataf(center_right.brake_add_ref[0]));
+    ((MockRef *)center_right.pedal_ref[0])->value=0.6f;
+    center_right_update(0.02f);
+    assert(!center_right.autobrake_active && !center_right.autobrake_armed);
+    assert(XPLMGetDataf(center_right.brake_add_ref[0])==0.0f && XPLMGetDataf(center_right.brake_add_ref[1])==0.0f);
+    ((MockRef *)center_right.pedal_ref[0])->value=0.0f;
+    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_down"));
+    XPLMCommandOnce(XPLMFindCommand("a380x/xp12/center_right/autobrake_up"));
+    for (i=0;i<5;++i) center_right_update(0.05f);
     assert(center_right.autobrake_active);
-    ((MockRef *)center_right.spoiler_ref)->value=0.0f;
-    center_right_update(0.0f);
-    assert(!center_right.autobrake_active && !center_right.autobrake_selected);
+    mock_ground_spoilers=0;
+    center_right_update(0.02f);
+    assert(!center_right.autobrake_active && !center_right.autobrake_armed && XPLMGetDataf(center_right.brake_add_ref[0])==0.0f);
     /* RTO keeps its higher pedal override threshold. */
     XPLMCommandOnce(rto);
-    ((MockRef *)center_right.spoiler_ref)->value=1.0f;
-    center_right_update(0.0f);
-    assert(center_right.autobrake_active);
+    mock_ground_spoilers=1;
+    center_right_update(0.05f);
+    assert(center_right.autobrake_active && center_right.rto_arm);
     ((MockRef *)center_right.pedal_ref[0])->value=0.6f;
-    center_right_update(0.0f);
+    center_right_update(0.02f);
     assert(center_right.rto_arm);
     ((MockRef *)center_right.pedal_ref[0])->value=0.8f;
-    center_right_update(0.0f);
-    assert(!center_right.rto_arm);
+    center_right_update(0.02f);
+    assert(!center_right.rto_arm && XPLMGetDataf(center_right.brake_add_ref[0])==0.0f);
     ((MockRef *)center_right.pedal_ref[0])->value=0.0f;
+    mock_ground_spoilers=0;
     ((MockRef *)center_right.spoiler_ref)->value=0.0f;
     memset(((MockRef *)center_right.wheel_brake_ref)->array,0,sizeof(((MockRef *)center_right.wheel_brake_ref)->array));
     ((MockRef *)center_right.accumulator_ref)->value=0.4f;
