@@ -87,7 +87,7 @@ static void xpkit_sd_publish(void) {
     atomic_store_explicit(&out->sequence,seq+1,memory_order_release);
     memcpy(out->json,j.data,j.size+1);out->size=(uint32_t)j.size;
     atomic_store_explicit(&out->sequence,seq+2,memory_order_release);xpkit_sd_hash=hash;
-    if(!sda.manual&&!sda.all) {
+    if(!sda.manual&&!sda.all&&sda_auto_page<0) {   /* automatic APU / ENGINE start pages win */
         int page=SD_ENGINE;XPLMDataRef ground=xpkit_sd_inputs[0].ref,alt=xpkit_sd_inputs[1].ref;
         if(ground&&alt&&!XPLMGetDatai(ground)&&XPLMGetDataf(alt)>20000)page=SD_CRUISE;
         if(sda.page!=page){sda.page=page;sda.force=1;xpkit_sd_action=-1;}

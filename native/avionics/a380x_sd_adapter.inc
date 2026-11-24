@@ -149,6 +149,9 @@ static float sda_button_get(void *refcon)
         && sda.page==sda_eng_config.page?1.0f:0.0f;
 }
 
+/* The automatic page shown (SD_ENGINE / SD_APU) or -1; the xp-kit phase default yields to it. */
+static int sda_auto_page=-1;
+
 static void sda_screen_draw(void *refcon)
 {
     (void)refcon;
@@ -296,7 +299,7 @@ static void sda_update(float dt,int powered,const EwdData *engines)
     {   /* FBW automatic pages: ENGINE while ENG START is at CRANK / IGN START, APU from APU MASTER SW on until
          * 10 s after APU AVAIL; then the page shown before comes back, unless another page was selected. */
         static XPLMDataRef selector, apu_switch, apu_n1;
-        static int auto_page=-1, before=-1;
+        static int before=-1;
         static float avail_for;
         int want=-1;
         if(!selector) selector=XPLMFindDataRef("a380x/xp12/eng_start/selector");
@@ -305,11 +308,11 @@ static void sda_update(float dt,int powered,const EwdData *engines)
         avail_for=apu_n1 && XPLMGetDataf(apu_n1)>=95.0f ? avail_for+fmaxf(0,dt) : 0.0f;
         if(selector && XPLMGetDatai(selector)!=1) want=SD_ENGINE;
         else if(apu_switch && XPLMGetDatai(apu_switch)>=1 && avail_for<10.0f) want=SD_APU;
-        if(want!=auto_page) {
-            if(want>=0) { if(auto_page<0) before=sda.page; sda.page=want; sda.force=1; }
-            else if(before>=0 && sda.page==auto_page) { sda.page=before; sda.force=1; }
+        if(want!=sda_auto_page) {
+            if(want>=0) { if(sda_auto_page<0) before=sda.page; sda.page=want; sda.force=1; }
+            else if(before>=0 && sda.page==sda_auto_page) { sda.page=before; sda.force=1; }
             if(want<0) before=-1;
-            auto_page=want;
+            sda_auto_page=want;
         }
     }
     int on=powered && sda.brightness>.001f;
