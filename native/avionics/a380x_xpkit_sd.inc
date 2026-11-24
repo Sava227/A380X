@@ -13,7 +13,7 @@ static struct { const char *name; XPLMDataRef ref; } xpkit_sd_inputs[]={
  SDRAW("sim/cockpit2/engine/indicators/N2_percent"),SDRAW("sim/cockpit2/engine/indicators/fuel_flow_kg_sec"),
  SDRAW("sim/cockpit2/engine/indicators/oil_temperature_deg_C"),SDRAW("sim/cockpit2/engine/indicators/oil_pressure_psi"),
  SDRAW("sim/cockpit2/engine/indicators/engine_running"),SDRAW("sim/aircraft/engine/acf_oilT_is_C"),
- SDRAW("sim/cockpit2/electrical/APU_N1_percent"),SDRAW("sim/cockpit2/electrical/APU_EGT_c"),
+ SDRAW("a380x/xp12/apu/n_percent"),SDRAW("sim/cockpit2/electrical/APU_EGT_c"),
  SDRAW("sim/cockpit2/electrical/APU_running"),SDRAW("sim/cockpit2/electrical/APU_starter_switch"),
  SDRAW("sim/cockpit2/electrical/bus_volts"),SDRAW("sim/cockpit2/electrical/generator_volts"),SDRAW("sim/cockpit2/electrical/generator_on"),
  SDRAW("sim/cockpit2/electrical/battery_voltage_actual_volts"),SDRAW("sim/cockpit2/electrical/battery_amps"),SDRAW("sim/cockpit2/electrical/battery_on"),

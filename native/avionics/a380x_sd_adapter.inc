@@ -29,7 +29,7 @@ static struct { const char *name; XPLMDataRef ref; } sda_inputs[SDA_INPUTS] = {
     {"sim/cockpit2/engine/indicators/oil_temperature_deg_C",NULL},
     {"sim/cockpit2/engine/indicators/oil_pressure_psi",NULL},
     {"sim/aircraft/engine/acf_oilT_is_C",NULL},
-    {"sim/cockpit2/electrical/APU_N1_percent",NULL},
+    {"a380x/xp12/apu/n_percent",NULL},
     {"sim/cockpit2/electrical/APU_EGT_c",NULL},
     {"sim/cockpit2/electrical/APU_running",NULL},
     {"sim/cockpit2/bleedair/actuators/apu_bleed",NULL},
@@ -304,7 +304,7 @@ static void sda_update(float dt,int powered,const EwdData *engines)
         int want=-1;
         if(!selector) selector=XPLMFindDataRef("a380x/xp12/eng_start/selector");
         if(!apu_switch) apu_switch=XPLMFindDataRef("sim/cockpit2/electrical/APU_starter_switch");
-        if(!apu_n1) apu_n1=XPLMFindDataRef("sim/cockpit2/electrical/APU_N1_percent");
+        if(!apu_n1) apu_n1=XPLMFindDataRef("a380x/xp12/apu/n_percent");
         avail_for=apu_n1 && XPLMGetDataf(apu_n1)>=95.0f ? avail_for+fmaxf(0,dt) : 0.0f;
         if(selector && XPLMGetDatai(selector)!=1) want=SD_ENGINE;
         else if(apu_switch && XPLMGetDatai(apu_switch)>=1 && avail_for<10.0f) want=SD_APU;

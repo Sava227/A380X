@@ -241,7 +241,7 @@ static void sdd_emit(XpKitJson *j, const SddContext *ctx)
         state[i] = starter[i] ? 2 : running[i] ? 1 : 0;
         any_ignition |= starter[i] || sdd_get(SDD_XP "cockpit2/engine/actuators/igniter_on", i, 0.0) != 0.0;
     }
-    double apu_n = sdd_get(SDD_XP "cockpit2/electrical/APU_N1_percent", 0, NAN);
+    double apu_n = sdd_get("a380x/xp12/apu/n_percent", 0, NAN);
     int apu_master = sdd_get("a380x/xp12/apu/master_on", 0, 0.0) != 0.0;
     int apu_avail = sdd_get("a380x/xp12/apu/avail", 0, 0.0) != 0.0;
     int apu_start = sdd_get("a380x/xp12/apu/start_on", 0, 0.0) != 0.0;
@@ -345,7 +345,7 @@ static void sdd_emit(XpKitJson *j, const SddContext *ctx)
         /* FBW ECB EGT warning: 900 C, 982 C while starting above FL250 (inlet < 5.45 psi). */
         double egt_warning = starting && isfinite(static_pa) && static_pa < 5.45 * 6894.757 ? 982.0 : 900.0;
         sdd_word(j, "L:A32NX_APU_N", apu_n, apu_ssm);
-        sdd_word(j, "L:A32NX_APU_N2", apu_n, apu_ssm);   /* X-Plane APU is single-spool */
+        sdd_word(j, "L:A32NX_APU_N2", sdd_get("a380x/xp12/apu/n2_percent", 0, apu_n), apu_ssm);
         sdd_word(j, "L:A32NX_APU_EGT", sdd_get(SDD_XP "cockpit2/electrical/APU_EGT_c", 0, NAN), apu_ssm);
         sdd_word(j, "L:A32NX_APU_EGT_WARNING", egt_warning, apu_ssm);
         sdd_word(j, "L:A32NX_APU_LOW_FUEL_PRESSURE_FAULT", 0.0, apu_ssm);

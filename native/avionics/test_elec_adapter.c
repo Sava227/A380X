@@ -299,10 +299,13 @@ static void test_cold_dark_power_up(void)
     assert(geti("a380x/xp12/apu/ecb_powered") && getf("a380x/xp12/apu/flap_open_ratio") > 0.0f);
     assert(fire("sim/electrical/APU_start") == 0 && geti("a380x/xp12/apu/start_on"));   /* intercepted */
     frames(8.5f); assert(apu->value == 2 && geti("contactor/10KA_5KA"));
-    raw("sim/cockpit2/electrical/APU_N1_percent")->value = 60.0; frames(0.1f);
+    /* FBW PW980 from the start contactor: N 55 % (starter cut-out) at 34.2 s, AVAIL 2 s after 95 % (42.3 s) */
+    frames(32.0f); assert(geti("contactor/10KA_5KA") && getf("a380x/xp12/apu/n_percent") < 55.0f);
+    frames(2.0f);
     assert(apu->value == 2 && !geti("contactor/10KA_5KA"));                     /* stock start held */
     raw("sim/cockpit2/electrical/APU_running")->value = 1; frames(0.1f); assert(apu->value == 1);
-    raw("sim/cockpit2/electrical/APU_N1_percent")->value = 100.0; frames(2.5f);
+    frames(5.0f); assert(!geti("a380x/xp12/apu/avail"));
+    frames(3.0f);
     assert(geti("a380x/xp12/apu/avail") && !geti("a380x/xp12/apu/start_on"));
     assert(getf("a380x/xp12/apu/generator_volts") > 100.0f);
     /* EXT 2 + 3 + APU (spec 3.2): AC 1 APU A, AC 2 EXT 2, AC 3 EXT 3, AC 4 APU B */
@@ -340,7 +343,8 @@ static void test_hardware_failures_pause(void)
     XPLMSetDatai(pub("ann_lt"), 1);
     /* pause freezes the network timers: AC lost while paused does not shed 108PH */
     assert(fire("sim/electrical/GPU_off") == 0);
-    raw("sim/cockpit2/electrical/APU_starter_switch")->value = 0; raw("sim/cockpit2/electrical/APU_N1_percent")->value = 0;
+    raw("sim/cockpit2/electrical/APU_starter_switch")->value = 0;
+    eln.apu.state = A380X_PW980_SHUTDOWN; eln.apu.n = eln.apu.n2 = 0.0;   /* past FBW's 60 s cooldown */
     raw("sim/time/paused")->value = 1; frames(30.0f);
     assert(geti("bus/dc_ess_inflt_powered") && !geti("ac_main_powered"));
     raw("sim/time/paused")->value = 0; frames(10.5f);

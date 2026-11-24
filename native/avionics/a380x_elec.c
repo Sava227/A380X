@@ -624,7 +624,7 @@ static void apu_ecb(A380XElnState *s, const A380XElnInputs *in, double dt)
     s->apu_ecb_powered = powered;
     s->apu_master = in->apu_master != 0;
     if (powered) {
-        double target = s->apu_master ? 1.0 : (n_pct < 7.0 ? 0.0 : s->apu_flap);
+        double target = s->apu_master ? 1.0 : (n_pct < A380X_ELN_APU_STOPPED_N ? 0.0 : s->apu_flap);   /* PW980: flap closes at 8 % */
         double step = dt / A380X_ELN_APU_FLAP_S;
         s->apu_flap = s->apu_flap < target ? fmin(target, s->apu_flap + step) : fmax(target, s->apu_flap - step);
     }

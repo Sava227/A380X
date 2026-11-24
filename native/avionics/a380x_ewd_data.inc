@@ -61,7 +61,7 @@ static EwdInputRef ewd_inputs[ER_REF_COUNT] = {
     EWD_INPUT("sim/operation/failures/rel_EGT_ind_0", xplmType_Int),
     EWD_INPUT("sim/operation/failures/rel_EGT_ind_1", xplmType_Int),
     EWD_INPUT("sim/cockpit2/electrical/APU_running", xplmType_Int),
-    EWD_INPUT("sim/cockpit2/electrical/APU_N1_percent", xplmType_Float),
+    EWD_INPUT("a380x/xp12/apu/n_percent", xplmType_Float),
     EWD_INPUT("sim/cockpit2/bleedair/actuators/apu_bleed", xplmType_Int),
     EWD_INPUT("sim/cockpit2/switches/fasten_seat_belts", xplmType_Int),
     EWD_INPUT("sim/flightmodel/controls/parkbrake", xplmType_Float),

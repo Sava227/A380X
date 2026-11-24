@@ -371,6 +371,10 @@ def main() -> None:
     flaps_result = run([str(flaps_binary)]).strip().splitlines()[-1]
     # gcc-only warnings must not first appear at the Windows link (the core is header-only).
     run([mingw, *warnings, "-c", str(FLAPS_TEST), "-o", str(output / "test_flaps_win_check.o")])
+    apu_binary = output / "test_apu_pw980"   # FBW PW980 APU N / N2 (a380x_apu_pw980.h)
+    run([clang, *warnings, str(HERE / "test_apu_pw980.c"), "-lm", "-o", str(apu_binary)])
+    run([str(apu_binary)])
+    run([mingw, *warnings, "-c", str(HERE / "test_apu_pw980.c"), "-o", str(output / "test_apu_pw980_win_check.o")])
     flaps_adapter_binary = output / "test_flaps_adapter"
     run([clang, *warnings, "-Wno-deprecated-declarations", "-DAPL=1", "-DXPLM200=1", "-DXPLM210=1", "-DXPLM300=1",
          "-DXPLM301=1", "-DXPLM400=1", "-I", str(headers), str(FLAPS_ADAPTER_TEST), "-lm",
