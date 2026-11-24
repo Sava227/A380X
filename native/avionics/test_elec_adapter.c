@@ -387,6 +387,10 @@ static void test_presets_and_reload(void)
     assert(geti("spawn_mode") == A380X_ELN_SPAWN_COLD_DARK);
     engines(25.0f, 70.0f, 1); frames(0.2f);
     assert(geti("spawn_mode") == A380X_ELN_SPAWN_READY && spawn_changes == 1);
+    /* every engine reads its own element (READY FOR TAXI waits on ENG 2-4 too) */
+    raw("sim/flightmodel/engine/ENGN_running")->vi[2] = 0;
+    assert(eln_eng_running(0) && eln_eng_running(1) && !eln_eng_running(2) && eln_eng_running(3));
+    raw("sim/flightmodel/engine/ENGN_running")->vi[2] = 1;
     assert(geti("pb/bat1") && geti("pb/bat2") && geti("bus/ac1_powered") && geti("contactor/990XU1"));
     assert(geti("du/capt_pfd_state") == A380X_ELN_DU_ON && geti("du/ewd_state") == A380X_ELN_DU_ON);
     assert(!getf("lamp/gen1_upper") && raw("sim/cockpit2/electrical/generator_on")->vi[3] == 1);

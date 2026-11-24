@@ -131,19 +131,20 @@ static float eln_rawf(int i)
 static void eln_seti(int i, int v) { if (eln.raw[i] && XPLMGetDatai(eln.raw[i]) != v) XPLMSetDatai(eln.raw[i], v); }
 static void eln_setf(int i, float v) { if (eln.raw[i]) XPLMSetDataf(eln.raw[i], v); }
 static int eln_failed(int i) { return eln_rawi(i) >= 6; }
+/* One element at `index`: X-Plane writes it to the first slot of the buffer. */
 static int eln_vi(int i, int index)
 {
-    int v[16] = {0};
+    int v = 0;
     if (!eln.raw[i] || index < 0 || index >= 16) return 0;
-    XPLMGetDatavi(eln.raw[i], v, index, 1);
-    return v[index];
+    XPLMGetDatavi(eln.raw[i], &v, index, 1);
+    return v;
 }
 static float eln_vf(int i, int index)
 {
-    float v[16] = {0};
+    float v = 0.0f;
     if (!eln.raw[i] || index < 0 || index >= 16) return 0.0f;
-    XPLMGetDatavf(eln.raw[i], v, index, 1);
-    return isfinite(v[index]) ? v[index] : 0.0f;
+    XPLMGetDatavf(eln.raw[i], &v, index, 1);
+    return isfinite(v) ? v : 0.0f;
 }
 static void eln_set_vi(int i, int index, int value)
 {
