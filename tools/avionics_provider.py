@@ -191,7 +191,7 @@ CENTER_RIGHT_DATAREFS = tuple("a380x/xp12/center_right/" + name for name in (
     "body_accu_psi", "body_accu_zone", "autobrake_selected",
     "autobrake_armed", "rto_arm", "antiskid_on",
     "rto_pressed", "btv_reverted", "normal_brakes_available", "autobrake_available",
-    "antiskid_available", "emergency_braking", "autobrake_active",
+    "antiskid_available", "emergency_braking", "autobrake_active", "autobrake_decel",
     "brake_left_ratio_milli", "brake_right_ratio_milli",
     "reinflate_pressed", "reinflate_active",
 ))

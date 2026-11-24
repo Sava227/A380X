@@ -759,6 +759,12 @@ static void xpkit_publish_state(double now) {
         xpkit_number(&j,"L:A32NX_LEFT_FLAPS_ANGLE",flaps_feed.flap_deg);
         xpkit_number(&j,"L:A32NX_RIGHT_FLAPS_ANGLE",flaps_feed.flap_deg);
     }
+    {   /* FBW PFD autobrake: FMA BRK mode (cyan armed, green braking), DECEL under the speed tape */
+        xpkit_number(&j,"L:A32NX_AUTOBRAKES_ARMED_MODE",center_right.autobrake_armed);
+        xpkit_number(&j,"L:A32NX_AUTOBRAKES_ACTIVE",center_right.autobrake_active);
+        xpkit_number(&j,"L:A32NX_AUTOBRAKES_DECEL_LIGHT",center_right.autobrake_decel);
+        xpkit_number(&j,"L:A32NX_AUTOBRAKES_RTO_ARMED",center_right.rto_arm);
+    }
     if(speedbrake_feed.ready) {   /* FBW PFD lower area: speed brake symbol, GND SPLRS armed triangle */
         xpkit_number(&j,"L:A32NX_SPOILERS_ARMED",speedbrake_feed.armed);
         xpkit_number(&j,"L:A32NX_SPOILERS_HANDLE_POSITION",speedbrake_feed.handle);

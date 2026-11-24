@@ -56,10 +56,10 @@ class ContractTests(unittest.TestCase):
         expected = {
             'apu_master': ('fault', 'on', 'DC_APU', 'apu_master_fault', 'apu_master_on'),
             'apu_start': ('avail', 'on', 'AC_ESS|DC_APU', 'apu_avail', 'apu_start_on'),
-            'apu_bleed': ('fault', 'on', 'DC_ESS', 'fault', 'apu_bleed_on'),
+            'apu_bleed': ('fault', 'on', 'DC_ESS', 'apu_bleed_fault', 'apu_bleed_on'),
             'eng1_bleed': ('fault', 'off', 'DC2', 'eng_bleed_fault:0', 'eng_bleed_off:0'),
             'eng2_bleed': ('fault', 'off', 'DC_ESS', 'eng_bleed_fault:1', 'eng_bleed_off:1'),
-            'pack1': ('fault', 'off', 'DC1&DC_ESS', 'fault', 'pack_off:0'),
+            'pack1': ('fault', 'off', 'DC1&DC_ESS', 'pack_fault:0', 'pack_off:0'),
             'feed1_main': ('fault', 'off', 'AC_ESS', 'fault', 'feed_pump_off:0'),
             'feed4_main': ('fault', 'off', 'AC2', 'fault', 'feed_pump_off:3'),
             'wing_anti_ice': ('fault', 'on', 'AC_ESS', 'wing_ai_fault', 'wing_ai_on'),

@@ -858,6 +858,7 @@
     "a380x/xp12/center_right/antiskid_available",
     "a380x/xp12/center_right/emergency_braking",
     "a380x/xp12/center_right/autobrake_active",
+    "a380x/xp12/center_right/autobrake_decel",
     "a380x/xp12/center_right/brake_left_ratio_milli",
     "a380x/xp12/center_right/brake_right_ratio_milli",
     "a380x/xp12/center_right/reinflate_pressed",
@@ -1956,11 +1957,11 @@
   "files": [
     {
       "path": "plugins/A380XAvionics/mac_x64/A380XAvionics.xpl",
-      "sha256": "4a37c9ac8ed5bd6132eb1eb961b2d898e999e250001986464cce4ebc14df4d42"
+      "sha256": "ca899aacad82881594188479abb6a917788a3573fb732fafd7da43923874343b"
     },
     {
       "path": "plugins/A380XAvionics/win_x64/A380XAvionics.xpl",
-      "sha256": "8a278fed968f3d8135bc69a4d8eac09292a868e5f947d33d1c850b1b8d881170"
+      "sha256": "c0bac578eed18788dcc8bd312075375e7d424b48218fcaef18b1a81799b5c8be"
     },
     {
       "path": "plugins/A380XAvionics/sounds/priority_left.pcm",
@@ -2080,7 +2081,7 @@
     },
     {
       "path": "plugins/A380XAvionics/sounds/cockpit/cavalry_charge.wav",
-      "sha256": "03ffaa512dc4156e0d97340d9e6aa421925618f4666319080edd86b19d2210a6"
+      "sha256": "707dd7159b7d0aab2ccf4086ea3417424a8c21eee4d1800f897ef6744364e757"
     },
     {
       "path": "plugins/A380XAvionics/sounds/cockpit/cchord.wav",
@@ -2100,7 +2101,7 @@
     },
     {
       "path": "plugins/A380XAvionics/sounds/cockpit/provenance.json",
-      "sha256": "b1769de41d08f12f5b87c49370dd97e41683216f4e7903741a110e499fdef210"
+      "sha256": "987f1593e7d9a5dc2e1fd3953d2bb8f1b46e82aa5f6119f99124ae7aa13a315d"
     },
     {
       "path": "plugins/A380XAvionics/sounds/cockpit/pull_up_new.wav",
@@ -2132,7 +2133,7 @@
     },
     {
       "path": "plugins/A380XAvionics/build-report.json",
-      "sha256": "22f9d31c0dc6f63dba42f7a6597cebb0a055be0cb9c758bcc890a5b3f7663f86"
+      "sha256": "390f17f7d5e405d7a4632e5b89ce798db348f9a4a4924a0bfe841f1096d776c1"
     }
   ],
   "runtime_tested": false,

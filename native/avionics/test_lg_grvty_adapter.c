@@ -91,6 +91,20 @@ void XPLMSetDatavf(XPLMDataRef handle, float *values, int offset, int count)
     assert(r && r->registered && offset >= 0 && offset + count <= 20);
     memcpy(r->array + offset, values, (size_t)count * sizeof(*values));
 }
+int XPLMGetDatavi(XPLMDataRef handle, int *values, int offset, int count)
+{
+    MockRef *r = handle;
+    int i;
+    assert(r && r->registered && offset >= 0 && offset + count <= 20);
+    for (i = 0; i < count; ++i) values[i] = (int)r->array[offset + i];
+    return count;
+}
+void XPLMSetDataf(XPLMDataRef handle, float value)
+{
+    MockRef *r = handle;
+    assert(r && r->registered && !r->get_i && !r->get_f);
+    r->value = value;
+}
 XPLMDataRef XPLMRegisterDataAccessor(const char *name, XPLMDataTypeID type, int writable,
     XPLMGetDatai_f read_i, XPLMSetDatai_f write_i, XPLMGetDataf_f read_f, XPLMSetDataf_f write_f,
     XPLMGetDatad_f read_d, XPLMSetDatad_f write_d, XPLMGetDatavi_f read_vi, XPLMSetDatavi_f write_vi,

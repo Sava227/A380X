@@ -109,6 +109,14 @@ static struct {
     CockpitSound click;
 } spb;
 
+#ifdef A380X_HAVE_CENTER_RIGHT
+/* For the autobrake (a380x_center_right.inc, hooked at init): PRIM ground spoilers extended. */
+static int speedbrake_ground_spoilers_out(void)
+{
+    return spb.ready && spb.core.computer.ground_spoilers_out != 0;
+}
+#endif
+
 /* ---------------------------------------------------------------- dataref accessors */
 static int spb_raw_int(int r);
 static int spb_accepts_input(void) { return plugin_enabled && spb.ready && !spb.replay && !spb_raw_int(SPB_RAW_REPLAY); }
@@ -358,6 +366,9 @@ static void speedbrake_plane_loaded(void)
 static void speedbrake_shutdown(void)
 {
     int i;
+#ifdef A380X_HAVE_CENTER_RIGHT
+    center_right_ground_spoilers = NULL;
+#endif
     speedbrake_release_controls();
     for (i = 0; i < SPB_STOCK_COUNT; ++i) if (spb.stock[i]) {
         XPLMUnregisterCommandHandler(spb.stock[i], spb_stock_handler, 1, (void *)(intptr_t)i);
@@ -379,6 +390,9 @@ static int speedbrake_init(void)
 {
     int i;
     A380XSpoilerInputs in;
+#ifdef A380X_HAVE_CENTER_RIGHT
+    center_right_ground_spoilers = speedbrake_ground_spoilers_out;
+#endif
     memset(&spb, 0, sizeof(spb));
     memset(&speedbrake_feed, 0, sizeof(speedbrake_feed));
     memset(&in, 0, sizeof(in));

@@ -142,7 +142,19 @@ typedef struct {
     double cst_capture_ft, ias_prev, ias_rate;
     /* LAND/FLARE/ROLL OUT/RETARD/GA sub-state and the yaw (rudder) actuator output. */
     A380XLandingState land;
+    /* Why the guidance last disconnected the AP (A380X_DROP_*), for the AFS log, and how long the AP has
+     * been riding through a guidance fault (2026-11-15: a law hiccup no longer drops the AP at once). */
+    int drop_reason;
+    double guidance_fault_seconds;
 } A380XGuidanceState;
+
+enum {
+    A380X_DROP_NONE = 0, A380X_DROP_TIME_STEP, A380X_DROP_FLIGHT_DATA, A380X_DROP_GS_BELOW_100,
+    A380X_DROP_LAW_OUTPUT, A380X_DROP_NO_VERTICAL_MODE, A380X_DROP_NO_FD_AP, A380X_DROP_LAND_NO_RA,
+    A380X_DROP_GROUND_GA
+};
+/* Text for A380XGuidanceState.drop_reason. */
+const char *a380x_guidance_drop_text(int reason);
 
 /* FMA vertical message including the ALT CST / ALT CRZ qualifiers (for the native PFD and FMS). */
 A380XB1Message a380x_guidance_fma_vertical(const A380XGuidanceState *state);
