@@ -161,9 +161,9 @@ static void sda_screen_draw(void *refcon)
     if(plugin_enabled && !sda.powered && SDA_CDS_OVERLAY()) {
         /* Thales boot / self-test (A380 network) */
     } else if(plugin_enabled && sda.powered) {
-        /* ENGINE: FBW's page with the FBW-named data (a380x_sd_data.inc) when the xp-kit view is live,
-         * the native page otherwise. APU stays native. */
-        if(sda.checklist || sda.abnormal || sda.page==SD_APU || !xpkit_draw_sd())mfd_gl_draw(&sda.list,0,0,1,0);
+        /* ENGINE and APU: FBW's pages with the FBW-named data (a380x_sd_data.inc) when the xp-kit view is
+         * live, the native pages otherwise (user check 2026-11-23: the native APU page looked half done). */
+        if(sda.checklist || sda.abnormal || !xpkit_draw_sd())mfd_gl_draw(&sda.list,0,0,1,0);
         else if(sda.overlay.cmd_count)mfd_gl_draw(&sda.overlay,0,0,1,0);
     }
     glPopMatrix();
