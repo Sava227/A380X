@@ -7,6 +7,9 @@ typedef struct { const char *dataref; const char *command; } CfbPressRow;
 typedef struct { const char *dataref; int positions, initial, switch_kind; } CfbPositionRow;
 typedef struct { const char *dataref; int page; } CfbEcamLampRow;
 typedef struct { const char *dataref; float travel, initial; } CfbToggleRow;
+typedef struct { const char *dataref, *command; int initial; } CfbLatchRow;
+typedef struct { const char *dataref; int rule, index; const char *arg; } CfbLampRuleRow;
+enum { CFB_RULE_EFIS, CFB_RULE_ENG_FIRE, CFB_RULE_ENG_FAULT, CFB_RULE_DOOR_OPEN, CFB_RULE_TEST, CFB_RULE_PRESSED, CFB_RULE_LATCH_OFF, CFB_RULE_LATCH_ON };
 typedef struct { const char *dataref, *up, *down; float step, initial, travel; int wrap, hooked; } CfbRotaryRow;
 
 static const CfbPressRow cfb_press_rows[] = {
@@ -566,6 +569,7 @@ static const CfbPressRow cfb_press_rows[] = {
     {"a380x/xp12/cockpit/captain_wxr_vd_azim_push_pressed", "a380x/xp12/cockpit/captain_wxr_vd_azim_push"},
     {"a380x/xp12/cockpit/first_officer_wxr_vd_azim_push_pressed", "a380x/xp12/cockpit/first_officer_wxr_vd_azim_push"},
     {"a380x/xp12/cockpit/oxygen_crew_pressed", "sim/oxy/crew_valve_toggle"},
+    {"a380x/xp12/fire/test_pressed", "a380x/xp12/fire/test"},
 };
 
 static const CfbPositionRow cfb_position_rows[] = {
@@ -743,7 +747,6 @@ static const CfbToggleRow cfb_toggle_rows[] = {
     {"a380x/xp12/cockpit/captain_keyboard", 1.0f, 0.0f},
     {"a380x/xp12/cockpit/captain_footrest", 1.5f, 0.0f},
     {"a380x/xp12/cockpit/captain_sliding_window", 3.0f, 0.0f},
-    {"a380x/xp12/cockpit/captain_small_shade", 1.0f, 0.0f},
     {"a380x/xp12/cockpit/first_officer_small_armrest_stow", 1.0f, 0.0f},
     {"a380x/xp12/cockpit/first_officer_small_armrest_fwd", 0.8f, 0.0f},
     {"a380x/xp12/cockpit/first_officer_table", 2.5f, 0.0f},
@@ -751,10 +754,6 @@ static const CfbToggleRow cfb_toggle_rows[] = {
     {"a380x/xp12/cockpit/first_officer_keyboard", 1.0f, 0.0f},
     {"a380x/xp12/cockpit/first_officer_footrest", 1.5f, 0.0f},
     {"a380x/xp12/cockpit/first_officer_sliding_window", 3.0f, 0.0f},
-    {"a380x/xp12/cockpit/first_officer_small_shade", 1.0f, 0.0f},
-    {"a380x/xp12/cockpit/sunshade_fwd_lh", 1.5f, 0.0f},
-    {"a380x/xp12/cockpit/sunshade_fwd_rh", 1.5f, 0.0f},
-    {"a380x/xp12/cockpit/sunshade_fwd_ctr", 1.5f, 0.0f},
     {"a380x/xp12/cockpit/aft_oxy_door", 0.8f, 0.0f},
     {"a380x/xp12/cockpit/aft_oit_door", 0.8f, 0.0f},
     {"a380x/xp12/cockpit/cas_lh_door", 0.8f, 0.0f},
@@ -791,6 +790,48 @@ static const CfbRotaryRow cfb_rotary_rows[] = {
     {"a380x/xp12/cockpit/first_officer_seat_fwd_aft", "a380x/xp12/cockpit/first_officer_seat_fwd_aft_up", "a380x/xp12/cockpit/first_officer_seat_fwd_aft_down", 0.1f, 0.0f, 0.25f, 0, 0},
     {"a380x/xp12/cockpit/first_officer_armrest_height", "a380x/xp12/cockpit/first_officer_armrest_height_up", "a380x/xp12/cockpit/first_officer_armrest_height_down", 0.1f, 0.0f, 0.25f, 0, 0},
     {"a380x/xp12/cockpit/first_officer_armrest_tilt", "a380x/xp12/cockpit/first_officer_armrest_tilt_up", "a380x/xp12/cockpit/first_officer_armrest_tilt_down", 0.1f, 0.0f, 0.25f, 0, 0},
+};
+
+static const CfbLatchRow cfb_latch_rows[] = {
+    {"a380x/xp12/cockpit/door_locking_sys", "a380x/xp12/cockpit/door_locking_sys", 1},
+    {"a380x/xp12/cockpit/gnd_hf_datalink", "a380x/xp12/cockpit/gnd_hf_datalink", 0},
+};
+
+static const CfbLampRuleRow cfb_lamp_rules[] = {
+    {"a380x/xp12/eng_master/lamp/fire1", CFB_RULE_ENG_FIRE, 0, ""},
+    {"a380x/xp12/eng_master/lamp/fault1", CFB_RULE_ENG_FAULT, 0, ""},
+    {"a380x/xp12/eng_master/lamp/fire2", CFB_RULE_ENG_FIRE, 1, ""},
+    {"a380x/xp12/eng_master/lamp/fault2", CFB_RULE_ENG_FAULT, 1, ""},
+    {"a380x/xp12/eng_master/lamp/fire3", CFB_RULE_ENG_FIRE, 2, ""},
+    {"a380x/xp12/eng_master/lamp/fault3", CFB_RULE_ENG_FAULT, 2, ""},
+    {"a380x/xp12/eng_master/lamp/fire4", CFB_RULE_ENG_FIRE, 3, ""},
+    {"a380x/xp12/eng_master/lamp/fault4", CFB_RULE_ENG_FAULT, 3, ""},
+    {"a380x/xp12/efis/captain/lamp/cstr", CFB_RULE_EFIS, 0, "cstr"},
+    {"a380x/xp12/efis/captain/lamp/wpt", CFB_RULE_EFIS, 0, "wpt"},
+    {"a380x/xp12/efis/captain/lamp/vord", CFB_RULE_EFIS, 0, "vord"},
+    {"a380x/xp12/efis/captain/lamp/ndb", CFB_RULE_EFIS, 0, "ndb"},
+    {"a380x/xp12/efis/captain/lamp/arpt", CFB_RULE_EFIS, 0, "arpt"},
+    {"a380x/xp12/efis/captain/lamp/vor", CFB_RULE_EFIS, 0, "vor1"},
+    {"a380x/xp12/efis/captain/lamp/adf", CFB_RULE_EFIS, 0, "vor2"},
+    {"a380x/xp12/efis/captain/lamp/wx", CFB_RULE_EFIS, 0, "wx_requested"},
+    {"a380x/xp12/efis/captain/lamp/terr", CFB_RULE_EFIS, 0, "terr"},
+    {"a380x/xp12/efis/captain/lamp/traf", CFB_RULE_EFIS, 0, "traf"},
+    {"a380x/xp12/efis/captain/lamp/taxi", CFB_RULE_EFIS, 0, "taxi_requested"},
+    {"a380x/xp12/efis/first_officer/lamp/cstr", CFB_RULE_EFIS, 1, "cstr"},
+    {"a380x/xp12/efis/first_officer/lamp/wpt", CFB_RULE_EFIS, 1, "wpt"},
+    {"a380x/xp12/efis/first_officer/lamp/vord", CFB_RULE_EFIS, 1, "vord"},
+    {"a380x/xp12/efis/first_officer/lamp/ndb", CFB_RULE_EFIS, 1, "ndb"},
+    {"a380x/xp12/efis/first_officer/lamp/arpt", CFB_RULE_EFIS, 1, "arpt"},
+    {"a380x/xp12/efis/first_officer/lamp/vor", CFB_RULE_EFIS, 1, "vor1"},
+    {"a380x/xp12/efis/first_officer/lamp/adf", CFB_RULE_EFIS, 1, "vor2"},
+    {"a380x/xp12/efis/first_officer/lamp/wx", CFB_RULE_EFIS, 1, "wx_requested"},
+    {"a380x/xp12/efis/first_officer/lamp/terr", CFB_RULE_EFIS, 1, "terr"},
+    {"a380x/xp12/efis/first_officer/lamp/traf", CFB_RULE_EFIS, 1, "traf"},
+    {"a380x/xp12/efis/first_officer/lamp/taxi", CFB_RULE_EFIS, 1, "taxi_requested"},
+    {"a380x/xp12/cockpit/lamp/oxygen_tmr_reset_fault", CFB_RULE_TEST, 0, ""},
+    {"a380x/xp12/cockpit/lamp/oxygen_tmr_reset_on", CFB_RULE_PRESSED, 0, "a380x/xp12/cockpit/oxygen_tmr_reset_pressed"},
+    {"a380x/xp12/cockpit/lamp/door_locking_sys_off", CFB_RULE_LATCH_OFF, 0, "a380x/xp12/cockpit/door_locking_sys"},
+    {"a380x/xp12/cockpit/lamp/gnd_hf_datalink_ovrd", CFB_RULE_LATCH_ON, 0, "a380x/xp12/cockpit/gnd_hf_datalink"},
 };
 
 static const char *const cfb_wiper_selectors[] = {

@@ -10,6 +10,8 @@
  *   NORM                                no starter; a start in progress is aborted.
  *   IGN START with an engine running    continuous ignition.
  *   A start that has not reached the cut-out after 120 s is aborted until MASTER or the selector is cycled.
+ *   The starters are air turbines: they turn only with bleed air, from the APU (APU AVAIL and APU BLEED ON)
+ *   or from an engine already running (crossbleed).
  *
  * The selector state is the cockpit-feedback selector a380x/xp12/eng_start/selector (0 CRANK, 1 NORM, 2 IGN
  * START; tools/cockpit_feedback_contract.py) and MAN START is the overhead pushbutton position
@@ -25,7 +27,7 @@ enum { ENGS_N2, ENGS_RUNNING, ENGS_MIXTURE, ENGS_IGNITER, ENGS_REFS };
 
 static struct {
     int initialized, selector_index, man_start_pb[4];
-    int starter_on[4], igniter_set[4], aborted[4], last_master[4], last_selector;
+    int starter_on[4], igniter_set[4], aborted[4], last_master[4], last_selector, no_air_logged;
     float start_time[4], now;
     XPLMCommandRef starter[4];
     XPLMDataRef refs[ENGS_REFS];
@@ -86,6 +88,8 @@ static void engs_update(void)
     if (engs.refs[ENGS_MIXTURE]) XPLMGetDatavf(engs.refs[ENGS_MIXTURE], mixture, 0, 4);
     if (engs.refs[ENGS_RUNNING]) XPLMGetDatavi(engs.refs[ENGS_RUNNING], running, 0, 4);
     if (engs.refs[ENGS_IGNITER]) XPLMGetDatavi(engs.refs[ENGS_IGNITER], igniter, 0, 8);
+    int air = ovhd_in.apu_avail && ovhd_in.apu_bleed;
+    for (int i = 0; i < 4; ++i) air |= running[i] && isfinite(n2[i]) && n2[i] >= ENGS_CUTOUT_N2;
     for (int i = 0; i < 4; ++i) {
         int master = isfinite(mixture[i]) && mixture[i] > 0.5f;
         int man = engs.man_start_pb[i] >= 0 && ovhd_in.pb[engs.man_start_pb[i]];
@@ -101,6 +105,13 @@ static void engs_update(void)
         } else if (sel == ENGS_CRANK && man && !started) {
             want_starter = 1;                                                /* dry crank: no ignition */
         }
+        if (want_starter && !air) {                                         /* no bleed air: no rotation */
+            if (!engs.no_air_logged) XPLMDebugString("A380X ENG START: no bleed air - APU BLEED ON with the APU "
+                                                     "available, or a running engine, is needed to start\n");
+            engs.no_air_logged = 1;
+            want_starter = 0;
+            if (!started) want_igniter = 0;
+        }
         if (want_starter && !engs.starter_on[i]) engs.start_time[i] = now;
         if (want_starter && now - engs.start_time[i] > ENGS_TIMEOUT_S) engs.aborted[i] = 1;
         if (engs.aborted[i]) want_starter = want_igniter = 0;
@@ -112,6 +123,12 @@ static void engs_update(void)
     }
     engs.last_selector = sel;
     if (write_igniter && engs.refs[ENGS_IGNITER]) XPLMSetDatavi(engs.refs[ENGS_IGNITER], igniter, 0, 4);
+}
+
+/* ENG MASTER FAULT light (a380x_cockpit_feedback.inc): the start was aborted (timeout). */
+static int engs_start_fault(int engine)
+{
+    return engs.initialized && engine >= 0 && engine < 4 && engs.aborted[engine];
 }
 
 static void engs_shutdown(void) { if (engs.initialized) engs_release(); memset(&engs, 0, sizeof(engs)); }

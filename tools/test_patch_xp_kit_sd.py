@@ -167,6 +167,26 @@ class SlidesEdit(unittest.TestCase):
         self.assertIn('PARSE OK', parsed.stdout)
 
 
+
+class MailboxEdit(unittest.TestCase):
+    """Version 3: FBW's ATC mailbox frame and buttons below the PermanentData area."""
+
+    def test_mailbox_edit_is_anchored_marked_and_idempotent(self):
+        patched = patcher.patch_bundle(installed_bundle())
+        text = patched.decode()
+        for anchor in (*patcher.PATCHED_ANCHORS, *patcher.SLIDES_ANCHORS, *patcher.MAILBOX_ANCHORS):
+            self.assertIn(anchor, text)
+        self.assertEqual(text.count(patcher.MAILBOX_MARKER), 1)
+        self.assertEqual(patcher.patch_bundle(patched), patched)
+        for label in ('"RECALL"', '"CLOSE"', '"PRINT"'):
+            self.assertIn(label, text)
+
+    def test_partial_mailbox_patch_is_rejected(self):
+        text = patcher.patch_bundle(installed_bundle()).decode()
+        broken = text.replace('__a380Mail(h))}', '0)}', 1)
+        with self.assertRaisesRegex(ValueError, 'Partially patched SD mailbox'):
+            patcher.patch_bundle(broken.encode())
+
 JS_HARNESS = r'''
 var te=v=>({v,set(x){this.v=x},get(){return this.v}});
 var T0={sent:{},send(k,v){this.sent[k]=v}};

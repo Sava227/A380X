@@ -149,6 +149,9 @@ static float sda_button_get(void *refcon)
         && sda.page==sda_eng_config.page?1.0f:0.0f;
 }
 
+/* The automatic page shown (SD_ENGINE / SD_APU) or -1; the xp-kit phase default yields to it. */
+static int sda_auto_page=-1;
+
 static void sda_screen_draw(void *refcon)
 {
     (void)refcon;
@@ -161,9 +164,9 @@ static void sda_screen_draw(void *refcon)
     if(plugin_enabled && !sda.powered && SDA_CDS_OVERLAY()) {
         /* Thales boot / self-test (A380 network) */
     } else if(plugin_enabled && sda.powered) {
-        /* ENGINE: FBW's page with the FBW-named data (a380x_sd_data.inc) when the xp-kit view is live,
-         * the native page otherwise. APU stays native. */
-        if(sda.checklist || sda.abnormal || sda.page==SD_APU || !xpkit_draw_sd())mfd_gl_draw(&sda.list,0,0,1,0);
+        /* ENGINE and APU: FBW's pages with the FBW-named data (a380x_sd_data.inc) when the xp-kit view is
+         * live, the native pages otherwise (user check 2026-11-23: the native APU page looked half done). */
+        if(sda.checklist || sda.abnormal || !xpkit_draw_sd())mfd_gl_draw(&sda.list,0,0,1,0);
         else if(sda.overlay.cmd_count)mfd_gl_draw(&sda.overlay,0,0,1,0);
     }
     glPopMatrix();
@@ -293,6 +296,25 @@ static void sda_update(float dt,int powered,const EwdData *engines)
     ecam_button_update(&sda.eng_motion,&sda_eng_config,dt);
     if(engines)sda.warnings=*engines;
     if(sda.all) {sda.all_elapsed+=fmaxf(0,dt);if(sda.all_elapsed>=1){sda.all_elapsed=fmodf(sda.all_elapsed,1);sda.page=(sda.page+1)%SD_PAGES;++sda.select_count;sda.force=1;}}
+    {   /* FBW automatic pages: ENGINE while ENG START is at CRANK / IGN START, APU from APU MASTER SW on until
+         * 10 s after APU AVAIL; then the page shown before comes back, unless another page was selected. */
+        static XPLMDataRef selector, apu_switch, apu_n1;
+        static int before=-1;
+        static float avail_for;
+        int want=-1;
+        if(!selector) selector=XPLMFindDataRef("a380x/xp12/eng_start/selector");
+        if(!apu_switch) apu_switch=XPLMFindDataRef("sim/cockpit2/electrical/APU_starter_switch");
+        if(!apu_n1) apu_n1=XPLMFindDataRef("sim/cockpit2/electrical/APU_N1_percent");
+        avail_for=apu_n1 && XPLMGetDataf(apu_n1)>=95.0f ? avail_for+fmaxf(0,dt) : 0.0f;
+        if(selector && XPLMGetDatai(selector)!=1) want=SD_ENGINE;
+        else if(apu_switch && XPLMGetDatai(apu_switch)>=1 && avail_for<10.0f) want=SD_APU;
+        if(want!=sda_auto_page) {
+            if(want>=0) { if(sda_auto_page<0) before=sda.page; sda.page=want; sda.force=1; }
+            else if(before>=0 && sda.page==sda_auto_page) { sda.page=before; sda.force=1; }
+            if(want<0) before=-1;
+            sda_auto_page=want;
+        }
+    }
     int on=powered && sda.brightness>.001f;
     {   /* SD on DC 2: a CDS state change (boot / self-test / on) redraws the device */
         static int cds_state=-2;

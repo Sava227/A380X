@@ -1012,6 +1012,13 @@ version 2 edit of `tools/patch_xp_kit_sd.py` (marker `/*A380X-SD-SLIDES v1*/`, a
 original bundle) makes each CabinDoor prefer that value; without it the FBW proxy stays in effect.
 (This note is kept outside the generated census above so `sd_pages_census.py --write` keeps it.)
 
+ATC mailbox (2026-11-23, user check against FBW's APU page): the bundle had no lower area, so the
+bottom quarter of every page was empty. The version 3 edit (marker `/*A380X-SD-MAILBOX v1*/`) draws
+FBW's SDv2 `AtcMailbox` frame (13 % / auto / 18 % columns from y 768) with RECALL, CLOSE and PRINT in
+FBW's `.mfd-button` colours; as in FBW they do nothing (the yellow X in FBW screenshots is its cursor).
+Still different from FBW on the APU page: N2 repeats N1 (X-Plane's APU is single-spool) and APU FU is
+NCD (no APU fuel-flow source).
+
 ## Tests and build
 
 * `native/avionics/test_sd_data.c` (built and run by `build.py`, also compiled with MinGW

@@ -91,6 +91,9 @@ static void test_supply_and_conditions(void)
     in.pb[pb("man_start1")] = 1; assert(lo(&in, "man_start1") == 1.0f);         /* MAN START ON (AC ESS) */
     in.pb[pb("xfeed1")] = 1; assert(lo(&in, "xfeed1") == 1.0f && up(&in, "xfeed1") == 1.0f);   /* ON + OPEN */
     in.pb[pb("fire_eng1_agent1")] = 1; assert(up(&in, "fire_eng1_agent1") == 0.0f);          /* SQUIB stays test */
+    in.fire_test = 1;                                                          /* FIRE TEST held: SQUIB lit */
+    assert(up(&in, "fire_eng1_agent1") == 1.0f && up(&in, "fire_apu_agent") == 1.0f && up(&in, "cargo_btl1") == 0.0f);
+    in.fire_test = 0;
     assert(a380x_ovhd_has_pb(pb("prim1")) && !a380x_ovhd_has_pb(pb("feed1_main")) && a380x_ovhd_pb_default(pb("prim1")));
     in.pb[pb("xfeed1")] = 0;
     in.ann_lt = A380X_OVHD_ANN_DIM;

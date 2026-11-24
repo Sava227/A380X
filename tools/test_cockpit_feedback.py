@@ -39,6 +39,31 @@ class Contract(unittest.TestCase):
             if c.click and c.kind != 'follow':
                 self.assertIsNotNone(contract.click_manipulator(c))
 
+    def test_lamp_rules(self):
+        from ovhd_lamps_contract import LEGENDS
+        latches = {c.commands[0] for c in contract.CONTROLS if c.kind == 'press' and c.latch >= 0}
+        presses = {c.dataref for c in contract.CONTROLS if c.kind == 'press'}
+        for c in contract.CONTROLS:
+            for lamp in c.lamps:
+                if not lamp.rule:
+                    continue
+                rule, *args = lamp.rule.split(':')
+                self.assertIn(rule, contract.LAMP_RULES, lamp.dataref)
+                if rule == 'efis':
+                    self.assertIn(args[0], ('0', '1'))
+                    self.assertIn(args[1], contract.EFIS_FIELDS)
+                elif rule in ('eng_fire', 'eng_fault'):
+                    self.assertIn(int(args[0]), range(4))
+                elif rule == 'pressed':
+                    self.assertIn(args[0], presses)
+                elif rule in ('latch_off', 'latch_on'):
+                    self.assertIn(args[0], latches)
+                self.assertIsNotNone(lamp.cell, lamp.dataref)
+        # the painted cells are free of the overhead legend cells and of each other
+        cells = [cell for _t, _c, cell in contract.EXTRA_LEGEND_CELLS.values()]
+        self.assertEqual(len(cells), len(set(cells)))
+        self.assertFalse(set(cells) & {cell for _t, _c, cell in LEGENDS.values()})
+
     def test_hooked_commands_belong_to_other_modules(self):
         from avionics_provider import KCCU_COMMANDS, SD_COMMANDS
         from ovhd_lamps_contract import COMMANDS as OVHD_COMMANDS
@@ -79,6 +104,20 @@ class Motion(unittest.TestCase):
         for cid in ('ecam_hyd', 'switching_fms', 'eng1_master_decals', 'kccu_captain_a'):
             for line in cf.stage_lines(cf.compile_motion(self.source, self.by_id[cid])):
                 self.assertFalse(has_exponent(line), line)
+
+    def test_foreign_quad_follows_key_once(self):
+        stage = dict(kind='translation', dataref='a380x/xp12/glareshield/master_warning_left_pressed',
+                     values=[0.0, 1.0], poses=[(0, 0, 0), (0, -0.001, 0)], times=[0, 1])
+        motion = dict(stages=[stage], chain=lambda _i: [stage], face_index={'FACE_SEQ1': 7})
+        text = '\n'.join(['# FCU ANNUNCIATOR FACE_SEQ1', 'ANIM_begin', 'ANIM_hide\t-0.5\t0.5\tlit', 'TRIS\t10\t6',
+                          'ANIM_end', '# FCU ANNUNCIATOR OTHER_SEQ1', 'ANIM_begin', 'TRIS\t16\t6', 'ANIM_end'])
+        face = lambda line: line.split()[-1]
+        out, done = cf.follow_foreign_quads(text, {'FACE_SEQ1': motion}, face)
+        self.assertEqual(done, ['FACE_SEQ1'])
+        self.assertIn(f'{cf.MARKER} FOLLOW FACE_SEQ1\nANIM_begin\nANIM_trans_begin\t{stage["dataref"]}', out)
+        self.assertIn('TRIS\t16\t6', out.split('OTHER_SEQ1')[1])          # other quads untouched
+        again, done = cf.follow_foreign_quads(out, {'FACE_SEQ1': motion}, face)
+        self.assertEqual((again, done), (out, []))                         # re-running is a no-op
 
 
 @unittest.skipUnless((AIRCRAFT / cf.CONTROLS_OBJ).is_file(), 'installable aircraft not present')

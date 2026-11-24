@@ -45,12 +45,13 @@ ANY_DC = "DC_ESS|DC1|DC2"
 # Lamp conditions (native lamp logic a380x_ovhd_lamps.h).  None: ANN LT TEST only (the system
 # behind the pushbutton is not simulated, the FBW normal position shows no light).
 #   "test"            ANN LT TEST only
+#   "fire_test"       the overhead FIRE TEST pushbutton held (a380x/xp12/fire/test_pressed), or ANN LT TEST
 #   "fault"           writable fail/<id> input only (no X-Plane failure exists)
 #   "<kind>:<n>"      indexed kinds below
 SOURCES = (
     "test", "fault", "apu_master_on", "apu_master_fault", "apu_start_on", "apu_avail", "apu_bleed_on",
     "eng_bleed_off", "eng_bleed_fault", "pack_off", "eng_ai_on", "eng_ai_fault", "wing_ai_on",
-    "wing_ai_fault", "window_heat_on", "feed_pump_off", "crew_oxy_off", "pb_off", "pb_on",
+    "wing_ai_fault", "window_heat_on", "feed_pump_off", "crew_oxy_off", "pb_off", "pb_on", "fire_test",
 )
 
 # id, panel caption, FBW pushbutton node, upper (SEQ1) legend, lower (SEQ2) legend,
@@ -147,15 +148,15 @@ PUSHBUTTONS = (
     ("hyd_y_elec_a", "YELLOW ELEC PUMP A", "PUSH_OVHD_HYD_Y_A", "fault", "off", "AC2", "fault", "test"),
     ("hyd_y_elec_b", "YELLOW ELEC PUMP B", "PUSH_OVHD_HYD_Y_B", "fault", "off", "AC2", "fault", "test"),
     # FIRE
-    ("fire_eng1_agent1", "ENG 1 AGENT 1", "PUSH_OVHD_FIRE_ENG1_AGENT1", "squib", "disch_amber", "AC_ESS", "test", "test"),
-    ("fire_eng1_agent2", "ENG 1 AGENT 2", "PUSH_OVHD_FIRE_ENG1_AGENT2", "squib", "disch_amber", "AC2", "test", "test"),
-    ("fire_eng2_agent1", "ENG 2 AGENT 1", "PUSH_OVHD_FIRE_ENG2_AGENT1", "squib", "disch_amber", "AC2", "test", "test"),
-    ("fire_eng2_agent2", "ENG 2 AGENT 2", "PUSH_OVHD_FIRE_ENG2_AGENT2", "squib", "disch_amber", "AC_ESS", "test", "test"),
-    ("fire_eng3_agent1", "ENG 3 AGENT 1", "PUSH_OVHD_FIRE_ENG3_AGENT1", "squib", "disch_amber", "AC_ESS", "test", "test"),
-    ("fire_eng3_agent2", "ENG 3 AGENT 2", "PUSH_OVHD_FIRE_ENG3_AGENT2", "squib", "disch_amber", "AC2", "test", "test"),
-    ("fire_eng4_agent1", "ENG 4 AGENT 1", "PUSH_OVHD_FIRE_ENG4_AGENT1", "squib", "disch_amber", "AC2", "test", "test"),
-    ("fire_eng4_agent2", "ENG 4 AGENT 2", "PUSH_OVHD_FIRE_ENG4_AGENT2", "squib", "disch_amber", "AC_ESS", "test", "test"),
-    ("fire_apu_agent", "APU AGENT", "PUSH_OVHD_FIRE_AGENT", "squib", "disch_amber", "AC_ESS", "test", "test"),
+    ("fire_eng1_agent1", "ENG 1 AGENT 1", "PUSH_OVHD_FIRE_ENG1_AGENT1", "squib", "disch_amber", "AC_ESS", "fire_test", "test"),
+    ("fire_eng1_agent2", "ENG 1 AGENT 2", "PUSH_OVHD_FIRE_ENG1_AGENT2", "squib", "disch_amber", "AC2", "fire_test", "test"),
+    ("fire_eng2_agent1", "ENG 2 AGENT 1", "PUSH_OVHD_FIRE_ENG2_AGENT1", "squib", "disch_amber", "AC2", "fire_test", "test"),
+    ("fire_eng2_agent2", "ENG 2 AGENT 2", "PUSH_OVHD_FIRE_ENG2_AGENT2", "squib", "disch_amber", "AC_ESS", "fire_test", "test"),
+    ("fire_eng3_agent1", "ENG 3 AGENT 1", "PUSH_OVHD_FIRE_ENG3_AGENT1", "squib", "disch_amber", "AC_ESS", "fire_test", "test"),
+    ("fire_eng3_agent2", "ENG 3 AGENT 2", "PUSH_OVHD_FIRE_ENG3_AGENT2", "squib", "disch_amber", "AC2", "fire_test", "test"),
+    ("fire_eng4_agent1", "ENG 4 AGENT 1", "PUSH_OVHD_FIRE_ENG4_AGENT1", "squib", "disch_amber", "AC2", "fire_test", "test"),
+    ("fire_eng4_agent2", "ENG 4 AGENT 2", "PUSH_OVHD_FIRE_ENG4_AGENT2", "squib", "disch_amber", "AC_ESS", "fire_test", "test"),
+    ("fire_apu_agent", "APU AGENT", "PUSH_OVHD_FIRE_AGENT", "squib", "disch_amber", "AC_ESS", "fire_test", "test"),
     ("cargo_smoke_fwd", "CARGO SMOKE FWD DISCH", "PUSH_OVHD_CARGOSMOKE_FWD", "smoke", "disch", "AC_ESS", "test", "test"),
     ("cargo_smoke_aft", "CARGO SMOKE AFT DISCH", "PUSH_OVHD_CARGOSMOKE_AFT", "smoke", "disch", "AC_ESS", "test", "test"),
     ("cargo_btl1", "CARGO SMOKE BTL 1", "PUSH_OVHD_CARGOSMOKE_FWD2", "btl1", None, ANY_DC, "test", None),

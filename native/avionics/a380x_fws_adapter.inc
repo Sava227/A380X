@@ -67,7 +67,7 @@ static const char *const fwsa_names[FR_COUNT] = {
 /* Pass-through command taps: level while held + a latch so a press inside one frame is not lost. */
 enum {
     FC_CLR, FC_CLR2, FC_RCL, FC_CL, FC_CHECK_LH, FC_CHECK_RH, FC_UP, FC_DOWN, FC_ABN, FC_TO_CONFIG,
-    FC_MW_L, FC_MW_R, FC_MC_L, FC_MC_R, FC_AP_DISC, FC_ATHR_DISC, FC_COUNT
+    FC_MW_L, FC_MW_R, FC_MC_L, FC_MC_R, FC_AP_DISC, FC_ATHR_DISC, FC_FIRE_TEST, FC_COUNT
 };
 static const char *const fwsa_command_names[FC_COUNT] = {
     "a380x/xp12/ecam/sd/clear_left", "a380x/xp12/ecam/sd/clear_right", "a380x/xp12/ecam/sd/recall",
@@ -76,7 +76,7 @@ static const char *const fwsa_command_names[FC_COUNT] = {
     "a380x/xp12/ecam/sd/to_config",
     "a380x/xp12/glareshield/master_warning_left", "a380x/xp12/glareshield/master_warning_right",
     "a380x/xp12/glareshield/master_caution_left", "a380x/xp12/glareshield/master_caution_right",
-    "a380x/xp12/fcu/ap_disconnect", "a380x/xp12/fcu/athr_disconnect",
+    "a380x/xp12/fcu/ap_disconnect", "a380x/xp12/fcu/athr_disconnect", "a380x/xp12/fire/test",
 };
 
 static struct {
@@ -106,7 +106,8 @@ static void fwsa_bind(void)
     int i;
     for (i = 0; i < FR_COUNT; ++i) if (!fwsa.ref[i]) fwsa.ref[i] = XPLMFindDataRef(fwsa_names[i]);
     for (i = 0; i < FC_COUNT; ++i) if (!fwsa.command[i]) {
-        fwsa.command[i] = XPLMFindCommand(fwsa_command_names[i]);
+        /* find or create: the FIRE TEST command belongs to the feedback module, registered later */
+        fwsa.command[i] = XPLMCreateCommand(fwsa_command_names[i], fwsa_command_names[i]);
         if (fwsa.command[i]) XPLMRegisterCommandHandler(fwsa.command[i], fwsa_command, 1, (void *)(intptr_t)i);
     }
 }
@@ -429,6 +430,7 @@ static void fwsa_read_inputs(FwsInputs *in)
 
     /* ---- crew buttons ---- */
     in->to_config_pb = (unsigned char)fwsa_level(FC_TO_CONFIG);
+    in->fire_test_pb = (unsigned char)fwsa_level(FC_FIRE_TEST);
     in->rcl_pb = (unsigned char)(fwsa.held[FC_RCL] || fwsa.latched[FC_RCL]);
     in->master_warning_pb = (unsigned char)(fwsa_level(FC_MW_L) | fwsa_level(FC_MW_R));
     in->master_caution_pb = (unsigned char)(fwsa_level(FC_MC_L) | fwsa_level(FC_MC_R));

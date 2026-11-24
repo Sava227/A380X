@@ -410,10 +410,12 @@ static void xpkit_guidance_words(XpKitJson *j) {
         /* VMAX: VMO/MMO, VFE and landing-gear limits (a380x_pfd_inputs.inc): the overspeed barber pole. */
         XPW("V_MAX",pfd_guidance.vmax_knots,pfd_guidance.vmax_knots>0);
         /* Low-speed envelope: VSW (red/black barber pole) from the port stall-warning speed; alpha prot /
-         * alpha max only from an aircraft-systems provider (no alpha protection in this port). */
-        XPW("V_STALL_WARN",pfd_guidance.stall_warning_knots,pfd_guidance.stall_warning_knots>0);
-        XPW("V_ALPHA_PROT",pfd_guidance.alpha_prot_knots,pfd_guidance.alpha_prot_knots>0);
-        XPW("V_ALPHA_LIM",pfd_guidance.alpha_limit_knots,pfd_guidance.alpha_limit_knots>0);
+         * alpha max only from an aircraft-systems provider (no alpha protection in this port).
+         * NCD on the ground, as FBW's PRIM and the native renderer: otherwise the barber pole filled the
+         * parked speed scale (user sim check 2026-11-23). */
+        XPW("V_STALL_WARN",pfd_guidance.stall_warning_knots,pfd_guidance.stall_warning_knots>0 && !pfd_guidance.on_ground);
+        XPW("V_ALPHA_PROT",pfd_guidance.alpha_prot_knots,pfd_guidance.alpha_prot_knots>0 && !pfd_guidance.on_ground);
+        XPW("V_ALPHA_LIM",pfd_guidance.alpha_limit_knots,pfd_guidance.alpha_limit_knots>0 && !pfd_guidance.on_ground);
         XPW("V_LS",pfd_guidance.vls_knots,pfd_guidance.clean_performance_valid && pfd_guidance.vls_knots>0);
         XPW("V_MAN",pfd_guidance.green_dot_knots,pfd_guidance.clean_performance_valid && pfd_guidance.green_dot_knots>0);
         XPW("V_FE_NEXT",pfd_guidance.vfe_next_knots,pfd_guidance.envelope_valid && pfd_guidance.vfe_next_knots>0);
