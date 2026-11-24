@@ -1404,6 +1404,8 @@
     "a380x/xp12/apu/generator_volts",
     "a380x/xp12/apu/generator_hz",
     "a380x/xp12/apu/generator_load_percent",
+    "a380x/xp12/apu/n_percent",
+    "a380x/xp12/apu/n2_percent",
     "a380x/xp12/ovhd/lamp/apu_master_upper",
     "a380x/xp12/ovhd/lamp/apu_master_lower",
     "a380x/xp12/ovhd/lamp/apu_start_upper",
@@ -1956,11 +1958,11 @@
   "files": [
     {
       "path": "plugins/A380XAvionics/mac_x64/A380XAvionics.xpl",
-      "sha256": "4a37c9ac8ed5bd6132eb1eb961b2d898e999e250001986464cce4ebc14df4d42"
+      "sha256": "24d1304cc50bb88a92192957a8d28abc695f31be35843ca17209e600626cacb4"
     },
     {
       "path": "plugins/A380XAvionics/win_x64/A380XAvionics.xpl",
-      "sha256": "8a278fed968f3d8135bc69a4d8eac09292a868e5f947d33d1c850b1b8d881170"
+      "sha256": "ba3bedd256c37fb5d815cbf0a6f208a2e024c9bc62cc303cfc4883d97872517f"
     },
     {
       "path": "plugins/A380XAvionics/sounds/priority_left.pcm",
@@ -2132,7 +2134,7 @@
     },
     {
       "path": "plugins/A380XAvionics/build-report.json",
-      "sha256": "22f9d31c0dc6f63dba42f7a6597cebb0a055be0cb9c758bcc890a5b3f7663f86"
+      "sha256": "d3b47921fc1ea02196813359e41cd9c3df8969d6e3e53ae0fb98f46aa02b4517"
     }
   ],
   "runtime_tested": false,
