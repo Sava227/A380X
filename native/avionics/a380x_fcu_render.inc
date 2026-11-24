@@ -12,8 +12,10 @@
 static float fcu_lcd_level=1.0f;
 /* Reference capture of the FBW A380X AFS CP in MSFS: background #3F23F3,
  * inactive (ghosted) mode legends slightly darker. Shared with the EFIS LCDs. */
-static const Color FCU_LCD_BACKGROUND={63.f/255,35.f/255,243.f/255};
-static const Color FCU_LCD_GHOST={54.f/255,32.f/255,214.f/255};
+/* LCD backlight #16145E and its inactive-segment ghost at the original ratio (2026-11-12 user choice;
+ * was 63,35,243 / 54,32,214). */
+static const Color FCU_LCD_BACKGROUND={22.f/255,20.f/255,94.f/255};
+static const Color FCU_LCD_GHOST={0.0739f,0.0717f,0.3246f};
 static const Color FCU_LCD_INK={1,1,1};
 enum {FCU_GLASS_X=0,FCU_GLASS_Y=1280,FCU_GLASS_W=2048,FCU_GLASS_H=212,FCU_GLASS_SCREEN_COUNT=2,
       FCU_LCD_W=FCU_GLASS_W/FCU_GLASS_SCREEN_COUNT};

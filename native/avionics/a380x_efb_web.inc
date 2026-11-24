@@ -175,17 +175,16 @@ static void efb_preset_slides(int preset)
     efb_changed();
 }
 
-/* An armed passenger door cannot be opened, whichever path asks for it. */
+/* An armed passenger door opens from its handles / door_toggle like any other: its escape slide then
+ * deploys (A380XDoors, 2026-11-15). Only the flyPad's own door buttons keep refusing armed doors. */
 static int efb_door_intercept(XPLMCommandRef command, XPLMCommandPhase phase, void *refcon)
 {
     int door = (int)(intptr_t)refcon;
     (void)command;
-    if (a380x_efb_door_toggle_rule(door, efb_door_ratio(door), slide_armed[door]) == A380X_EFB_DOOR_ARMED) {
-        if (phase == xplm_CommandBegin) {
-            set_status("Disarm the %s slide before opening the door", a380x_efb_door_name(door));
-            efb_changed();
-        }
-        return 0;
+    if (phase == xplm_CommandBegin &&
+        a380x_efb_door_toggle_rule(door, efb_door_ratio(door), slide_armed[door]) == A380X_EFB_DOOR_ARMED) {
+        set_status("%s opened with its slide armed: slide deploying", a380x_efb_door_name(door));
+        efb_changed();
     }
     return 1;
 }

@@ -9,6 +9,8 @@
 #include "a380x_fbw_laws.h"
 #include "vendor/fbw/A380FgOuterLoops.h"
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <new>
 
 static double bound(double x, double lo, double hi) { return std::fmax(lo, std::fmin(x, hi)); }
@@ -16,7 +18,17 @@ struct FbwLawContext {
     A380FgOuterLoops law;
     bool initialized=false;
     double altitude_hold_target=0;
+    char fault[240]="";
 };
+/* Replace a non-finite law input by a safe value and note its name (2026-11-15: one bad input made the
+ * law output NaN, which dropped the AP the frame after engagement). */
+static void sane(double &v, double fallback, const char *name, char *list, size_t size) {
+    if (std::isfinite(v)) return;
+    v = fallback;
+    size_t n = std::strlen(list);
+    if (n + std::strlen(name) + 2 < size) std::snprintf(list + n, size - n, "%s%s", n ? " " : "", name);
+}
+extern "C" const char *a380x_fbw_laws_fault(void *p) { return p ? static_cast<FbwLawContext *>(p)->fault : ""; }
 extern "C" void *a380x_fbw_laws_create(void) {
     auto *context = new (std::nothrow) FbwLawContext;
     if (context) context->law.init();
@@ -110,6 +122,25 @@ extern "C" int a380x_fbw_laws_step(void *p, const A380XGuidanceInputs *i, A380XG
     u.FPA_c_deg=s->selected_fpa_deg; u.V_c_kn=s->speed_target_knots;
     u.GS_track_mode=s->vertical_mode==A380X_B1_GS;
     auto *context=static_cast<FbwLawContext *>(p);
+    {
+        char bad[200]="";
+#define SANE(field, fallback) sane(field, fallback, #field, bad, sizeof(bad))
+        SANE(d.Theta_deg,0); SANE(d.Phi_deg,0); SANE(d.qk_deg_s,0); SANE(d.pk_deg_s,0); SANE(d.rk_deg_s,0);
+        SANE(d.V_ias_kn,250); SANE(d.V_tas_kn,250); SANE(d.V_mach,0.4); SANE(d.V_gnd_kn,250);
+        SANE(d.alpha_deg,3); SANE(d.beta_deg,0); SANE(d.H_ft,10000); SANE(d.H_ind_ft,d.H_ft); SANE(d.H_radio_ft,2500);
+        SANE(d.H_dot_ft_min,0); SANE(d.Psi_magnetic_deg,0); SANE(d.Psi_magnetic_track_deg,d.Psi_magnetic_deg);
+        SANE(d.Psi_true_deg,d.Psi_magnetic_deg); SANE(d.Chi_true_deg,d.Psi_true_deg);
+        SANE(d.bx_m_s2,0); SANE(d.by_m_s2,0); SANE(d.bz_m_s2,0);
+        SANE(d.nav_loc_deg,d.Psi_magnetic_deg); SANE(d.nav_gs_deg,-3); SANE(d.nav_dme_nmi,10); SANE(d.nav_loc_magvar_deg,0);
+        SANE(d.nav_loc_error_deg,0); SANE(d.nav_gs_error_deg,0); SANE(d.fms_xtk_nmi,0); SANE(d.fms_tae_deg,0);
+        SANE(d.fms_phi_deg,0); SANE(d.fms_H_c_profile_ft,d.H_ind_ft); SANE(d.fms_H_dot_c_profile_ft_min,0);
+        SANE(d.VLS_kn,0); SANE(d.VMAX_kn,450); SANE(d.total_weight_kg,450000); SANE(d.zeta_deg,0);
+        SANE(u.Psi_c_deg,d.Psi_magnetic_deg); SANE(u.Chi_c_deg,u.Psi_c_deg); SANE(u.H_c_ft,d.H_ind_ft);
+        SANE(u.H_dot_c_fpm,0); SANE(u.FPA_c_deg,0); SANE(u.V_c_kn,d.V_ias_kn);
+#undef SANE
+        if (bad[0]) std::snprintf(context->fault, sizeof(context->fault), "non-finite inputs replaced: %s", bad);
+        else context->fault[0]=0;
+    }
     /* ALT_HOLD latches pressure-corrected target while its law is inactive.
      * PRIM normally provides this transition. Seed it when starting in flight
      * or when ALT pb requests a new hold altitude, including ALT-to-ALT. */
@@ -120,7 +151,14 @@ extern "C" int a380x_fbw_laws_step(void *p, const A380XGuidanceInputs *i, A380XG
     context->initialized=true; context->altitude_hold_target=s->altitude_target_ft;
     context->law.step(&in,&out);
     if (!std::isfinite(out.autopilot.Theta_c_deg) || !std::isfinite(out.autopilot.Phi_c_deg) ||
-        !std::isfinite(out.flight_director.Theta_c_deg) || !std::isfinite(out.flight_director.Phi_c_deg)) return 0;
+        !std::isfinite(out.flight_director.Theta_c_deg) || !std::isfinite(out.flight_director.Phi_c_deg)) {
+        size_t n=std::strlen(context->fault);
+        std::snprintf(context->fault+n, sizeof(context->fault)-n,
+                      "%slaw output not finite (lat law %d, vert law %d, AP %d, Theta %.1f Phi %.1f IAS %.0f H %.0f)",
+                      n?"; ":"", (int)u.lateral_law, (int)u.vertical_law, (int)u.ap_engaged, d.Theta_deg, d.Phi_deg, d.V_ias_kn, d.H_ind_ft);
+        context->law.reset(); context->initialized=false;   /* restart the law from the current state */
+        return 0;
+    }
     s->pitch_command_deg=bound(out.autopilot.Theta_c_deg,-15,25);
     s->roll_command_deg=bound(out.autopilot.Phi_c_deg,-30,30);
     /* FBW pitch FD command uses screen coordinates (negative means fly up).
