@@ -19,6 +19,7 @@
 #include "a380x_elec.h"
 #include "a380x_elec_presets.h"
 #include "a380x_elec_power.h"
+#include "a380x_apu_pw980.h"   /* FBW PW980 N / N2: the ECB and the displays use it, not X-Plane's APU N1 */
 
 /* CDS boot / self-test screen, drawn by a380x_avionics.c (needs the EIS font). */
 static int cds_overlay(int du, float x, float y, float w, float h);
@@ -119,6 +120,7 @@ static struct {
     double start_elapsed[4];
     char preset_text[64];
     XPLMCommandRef starter[4], flaps_down;
+    A380XPw980 apu;
 } eln;
 
 static int eln_rawi(int i) { return eln.raw[i] ? XPLMGetDatai(eln.raw[i]) : 0; }
@@ -272,8 +274,16 @@ static void eln_read_inputs(double sim_dt)
     if (eln.raw[ENR_N2]) XPLMGetDatavf(eln.raw[ENR_N2], n2, 0, 4);
     for (i = 0; i < 4; ++i) in->eng_n2[i] = isfinite(n2[i]) ? n2[i] : 0.0;
     for (i = 0; i < 4; ++i) in->ext_connected[i] = (unsigned char)(elec_io.ext_connected != 0);
-    in->apu_n = eln_rawf(ENR_APU_N);
     in->apu_master = eln_rawi(ENR_APU_SWITCH) >= 1;
+    /* FBW turbine on the ECB's last outputs (start motor = start contactor); a load with X-Plane's APU
+     * already running adopts it. */
+    if (eln.since_load <= 1.0 && eln.apu.state == A380X_PW980_SHUTDOWN && eln_rawi(ENR_APU_RUNNING) &&
+        eln_rawf(ENR_APU_N) >= 95.0f)
+        a380x_pw980_set_running(&eln.apu);
+    a380x_pw980_update(&eln.apu, a380x_pw980_signal(&eln.apu, eln.st.apu_ecb_powered, in->apu_master,
+                                                    a380x_eln_contactor(&eln.st, A380X_ELN_K_10KA_5KA), 0),
+                       in->apu_master, eln.preset.running && eln.preset.expedited, sim_dt);
+    in->apu_n = eln.apu.n;
     for (i = 0; i < 3; ++i) in->adiru_on[i] = adirs.unit[i].mode != A380X_ADIRS_OFF;
     memset(&in->fail, 0, sizeof(in->fail));
     for (i = 0; i < 4; ++i) {
@@ -345,6 +355,7 @@ static void eln_apu(void)
     int stock = eln_rawi(ENR_APU_SWITCH), command = a380x_eln_apu_starter_command(&eln.st);
     if (eln.st.apu_emergency_shutdown) {
         eln.st.apu_emergency_shutdown = 0;
+        a380x_pw980_begin_stop(&eln.apu);
         eln_seti(ENR_APU_SWITCH, 0);
         XPLMDebugString("A380X ELEC: battery power lost with the APU turning: APU emergency shutdown\n");
         return;
@@ -675,7 +686,7 @@ enum {
     EK_GALLEY_SHED, EK_DU_STATE, EK_ISIS_POWERED, EK_SPAWN, EK_DEFAULT_SPAWN, EK_SELFTEST, EK_ACTIVE,
     EK_AC_MAIN, EK_FAIL, EK_PRESET_ACTIVE, EK_PRESET_STEP, EK_PRESET_TOTAL, EK_PRESET_TEXT,
     EK_PRESET_EXPEDITED, EK_PRESET_DONE, EK_APU_MASTER, EK_APU_START, EK_APU_AVAIL, EK_APU_FLAP,
-    EK_APU_ECB, EK_APU_ALIAS_VOLTS, EK_APU_ALIAS_HZ, EK_APU_ALIAS_LOAD
+    EK_APU_ECB, EK_APU_ALIAS_VOLTS, EK_APU_ALIAS_HZ, EK_APU_ALIAS_LOAD, EK_APU_N, EK_APU_N2
 };
 enum { ET_INT, ET_FLOAT, ET_INTV, ET_FLOATV, ET_BYTES };
 typedef struct { char name[96]; int kind, index, count, type, writable; XPLMDataRef handle; } ElnRef;
@@ -741,6 +752,9 @@ static double eln_scalar(const ElnRef *r, int i)
     case EK_APU_ALIAS_VOLTS: return fmaxf(s->apu_gen_volts[0], s->apu_gen_volts[1]);
     case EK_APU_ALIAS_HZ: return fmaxf(s->apu_gen_hz[0], s->apu_gen_hz[1]);
     case EK_APU_ALIAS_LOAD: return fmaxf(s->apu_gen_load_pct[0], s->apu_gen_load_pct[1]);
+    /* Native network off: X-Plane's single-spool APU N1 for both. */
+    case EK_APU_N: return eln.ready && eln.active ? eln.apu.n : eln_rawf(ENR_APU_N);
+    case EK_APU_N2: return eln.ready && eln.active ? eln.apu.n2 : eln_rawf(ENR_APU_N);
     default: return 0.0;
     }
 }
@@ -868,6 +882,8 @@ static void eln_build_refs(void)
     eln_add("apu/generator_volts", EK_APU_ALIAS_VOLTS, 0, 1, ET_FLOAT, 0);
     eln_add("apu/generator_hz", EK_APU_ALIAS_HZ, 0, 1, ET_FLOAT, 0);
     eln_add("apu/generator_load_percent", EK_APU_ALIAS_LOAD, 0, 1, ET_FLOAT, 0);
+    eln_add("apu/n_percent", EK_APU_N, 0, 1, ET_FLOAT, 0);
+    eln_add("apu/n2_percent", EK_APU_N2, 0, 1, ET_FLOAT, 0);
 }
 
 /* ---------------------------------------------------------------- own commands */

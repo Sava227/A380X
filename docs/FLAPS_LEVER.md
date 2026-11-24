@@ -137,6 +137,12 @@ ACF changes (`tools/flaps_lever_cockpit.py` `ACF_CHANGES`, both `output/A380X-XP
 | `acf/_Vfe1_kts`, `acf/_Vfem_kts` | 250, 180 | 263, 182 | FBW VfeF1 / VfeFF for X-Plane's own overspeed reference |
 
 The flap/slat aerodynamic coefficients (`_flap*_cl/cd/cm`, `_slat*_inc`, wing assignments) are unchanged.
+
+2026-11-24: the A388 donor flight model (docs/A388_FLIGHTMODEL_ADAPTATION.md, 14 Nov) brought its own flap
+tables (`_flap_detents` 4, 45 s flaps, 7 s slats), so `xp_layout_ok` is 0 and the fallback request above is
+used. Only the travel times were set back to FBW's (37.567 s flaps, 31.747 s slats, the `ACF_CHANGES` values);
+the donor's detents, angles and coefficients stay. Re-running `adapt_a388_flightmodel.py` copies the
+donor's `flap*` / `slat*` families again and undoes this.
 X-Plane moves its surfaces with its own timing toward the commanded configuration; the visible surfaces and
 every indication follow the FBW drives instead (see the decisions below).
 

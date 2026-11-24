@@ -25,8 +25,10 @@ ENG START selector NORM, wipers OFF.
 1. APU / ENG FIRE pushbuttons in and guarded, agents not discharged.
 2. **FIRE TEST** (aft overhead) → press and hold: master warning and chime, ENG / APU FIRE on the ECAM,
    agent SQUIB lights. (The FIRE pushbuttons themselves have no lit art in this port.)
-3. APU MASTER SW → ON: the SD shows the APU page by itself. APU START → ON; APU AVAIL lights in about a
-   minute and the SD goes back to its previous page 10 s later.
+3. APU MASTER SW → ON: the SD shows the APU page by itself. APU START → ON; the intake flap opens (8 s), then the
+   APU follows FBW's PW980 curve: starter off at N 55 % (34 s), APU AVAIL 2 s after N 95 % (about 42 s).
+   The SD goes back to its previous page 10 s later. APU MASTER OFF: FBW's 60 s cooldown at 100 %
+   (APU GEN still on line), then the spool-down.
 4. APU BLEED → ON (needed for the engine start).
 
 ## 4. Cockpit preparation and FMS
@@ -46,11 +48,13 @@ ENG START selector NORM, wipers OFF.
 
 ## 6. Engine start (pedestal ENG panel)
 1. ENG START selector → **IGN START**: the SD shows the ENGINE page by itself.
-2. After about 10 s: ENG MASTER 1, then 2 → ON. Each starts automatically (starter and igniter until
-   N2 50 %, then idle). Then ENG MASTER 3 and 4.
+2. After about 10 s: ENG MASTER 1, then 2 → ON. Each starts automatically as FBW's FADEC: 1.7 s after
+   MASTER ON the starter and igniter engage and stay on until the engine is at idle (Log.txt: "A380X ENG
+   START: engine N at idle ... s after MASTER ON"). Then ENG MASTER 3 and 4. The spool-up itself is
+   X-Plane's engine model (FBW's comes from MSFS's engine model), so the time to idle is X-Plane's.
 3. Starting needs bleed air: APU BLEED ON with the APU available, or an engine already running. Without
    it the starters do not turn (Log.txt: "A380X ENG START: no bleed air").
-4. A start that does not reach 50 % N2 within 120 s is aborted and ENG MASTER FAULT lights; cycle the
+4. A start that does not reach idle within 120 s is aborted and ENG MASTER FAULT lights; cycle the
    ENG MASTER or the selector to retry.
 
 ## 7. After start and taxi

@@ -261,8 +261,8 @@ Every variable read by the pages, with the class (see `tools/sd_pages_census.py`
 | `L:A32NX_ATT_HDG_SWITCHING_KNOB` | useSimVar `Position` | live | native ADIRS `captain\|first_officer_adr_source` (0 CAPT 3, 1 NORM, 2 F/O 3) |
 | `L:A32NX_ADIRS_ADR_1_CORRECTED_AVERAGE_STATIC_PRESSURE` | useArinc429Var `number` | live | `sim/weather/aircraft/barometer_current_pas` / 100 (hPa), SSM from `a380x/xp12/adirs/adrN_valid` |
 | `L:A32NX_ADIRS_ADR_3_CORRECTED_AVERAGE_STATIC_PRESSURE` | useArinc429Var `number` | live | `sim/weather/aircraft/barometer_current_pas` / 100 (hPa), SSM from `a380x/xp12/adirs/adrN_valid` |
-| `L:A32NX_APU_N` | useArinc429Var `number` | live | `sim/cockpit2/electrical/APU_N1_percent`, SSM NO while the ECB is powered |
-| `L:A32NX_APU_N2` | useArinc429Var `number` | derived | X-Plane APU is single-spool: N2 = N |
+| `L:A32NX_APU_N` | useArinc429Var `number` | live | `a380x/xp12/apu/n_percent` (FBW PW980 model, a380x_apu_pw980.h), SSM NO while the ECB is powered |
+| `L:A32NX_APU_N2` | useArinc429Var `number` | live | `a380x/xp12/apu/n2_percent` (FBW PW980 model) |
 | `L:A32NX_APU_EGT` | useArinc429Var `number` | live | `sim/cockpit2/electrical/APU_EGT_c` |
 | `L:A32NX_APU_EGT_WARNING` | useArinc429Var `number` | derived | FBW ECB: 900 C; 982 C while starting above FL250 |
 | `L:A32NX_APU_FUEL_USED` | useArinc429Var `number` | ncd | X-Plane has no APU fuel-flow source: NCD (FUEL page totals engines only) |

@@ -58,7 +58,7 @@ static void setup(void)
     int i,j;
     memset(mock,0,sizeof(mock));
     for (i=0;i<ER_REF_COUNT;++i) {
-        mock[i].present=strncmp(ewd_inputs[i].name,"a380x/",6)!=0;
+        mock[i].present=strncmp(ewd_inputs[i].name,"a380x/",6)!=0 || i==ER_APU_N1;   /* FBW APU N (ELEC) */
         mock[i].type=ewd_inputs[i].type;
         mock[i].count=4;
     }
