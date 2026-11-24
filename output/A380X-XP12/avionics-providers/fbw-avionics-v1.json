@@ -858,6 +858,7 @@
     "a380x/xp12/center_right/antiskid_available",
     "a380x/xp12/center_right/emergency_braking",
     "a380x/xp12/center_right/autobrake_active",
+    "a380x/xp12/center_right/autobrake_decel",
     "a380x/xp12/center_right/brake_left_ratio_milli",
     "a380x/xp12/center_right/brake_right_ratio_milli",
     "a380x/xp12/center_right/reinflate_pressed",
@@ -1956,11 +1957,11 @@
   "files": [
     {
       "path": "plugins/A380XAvionics/mac_x64/A380XAvionics.xpl",
-      "sha256": "c3fe71c7406016aaa1850f2202a47ed6d74b3e4f4b23e73527105123f5507c8c"
+      "sha256": "ca899aacad82881594188479abb6a917788a3573fb732fafd7da43923874343b"
     },
     {
       "path": "plugins/A380XAvionics/win_x64/A380XAvionics.xpl",
-      "sha256": "338130d2c807d2aa5d9b031186db3c8a92bbd2780f5dac81c5842c6729f60d1f"
+      "sha256": "c0bac578eed18788dcc8bd312075375e7d424b48218fcaef18b1a81799b5c8be"
     },
     {
       "path": "plugins/A380XAvionics/sounds/priority_left.pcm",
@@ -2132,7 +2133,7 @@
     },
     {
       "path": "plugins/A380XAvionics/build-report.json",
-      "sha256": "d1376fb54809d16d7fe66b9ac1cd7290562ccc4186cb1cde8ada02b683c596e7"
+      "sha256": "390f17f7d5e405d7a4632e5b89ce798db348f9a4a4924a0bfe841f1096d776c1"
     }
   ],
   "runtime_tested": false,
