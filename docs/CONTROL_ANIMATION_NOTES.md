@@ -286,3 +286,15 @@ roll/speedbrake, full flaps with speedbrakes, and armed touchdown. Verify the ac
 loaded aircraft is fresh. Offline native-output tests do not establish correct
 live ground-spoiler triggering or A380 flight-control behavior. Live wing flex and
 Windows runtime remain untested.
+
+## Wing flex (plugin side ready; needs a wing re-export)
+
+FBW's eight wing-flex clips (`left|right_inboard_flex`, `_inner_midboard_flex`, `_outer_midboard_flex`,
+`_outboard_flex`) were exported frozen at their zero-flex frame. The avionics plugin now runs a port of FBW's
+wing flex model (`native/avionics/a380x_wing_flex.h`: 5 nodes per wing, spring-dampers, lift from weight x
+load factor blended out by weight on wheels, fuel on the inner nodes) and publishes FBW's bend angles as
+`a380x/xp12/wing/flex_<left|right>_<inboard|inboard_mid|outboard_mid|outboard>` (degrees).
+`config/animation_datarefs.json` maps each clip to its angle with A380_WINGS.xml's `angle x gain + offset`
+(0..100), so a wing re-export (`tools/export_exterior_mac.sh`) picks them up; `tools/test_wing_flex_mapping.py`
+pins the ranges. Until that re-export, the installed wings stay rigid. Typical output: about -1.4 deg total
+droop parked with full fuel, +1.6 deg in 1 g cruise, more under g.
