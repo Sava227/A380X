@@ -45,6 +45,8 @@ typedef struct {
     unsigned char fault[A380X_OVHD_PB_COUNT];   /* writable fail/<id> inputs */
     unsigned char pb[A380X_OVHD_PB_COUNT];      /* latched position of a pushbutton with no simulated
                                                    system (1 = pressed in), a380x/xp12/ovhd/pb/<id> */
+    unsigned char sys_fault[A380X_OVHD_PB_COUNT];/* FAULT from a simulated system (a380x_hyd.inc) */
+    unsigned char sys_on[A380X_OVHD_PB_COUNT];   /* ON also lit by a system (HSMU automatic EMP start) */
     /* supply */
     uint32_t buses;        /* powered native buses (A380X_ELN_BIT) */
     int network;           /* buses valid (native A380 network running) */
@@ -82,7 +84,7 @@ static inline int a380x_ovhd_condition(const A380XOvhdInputs *in, int pb, int se
     info = &a380x_ovhd_pbs[pb];
     i = info->index[seq] & 3;
     switch (info->source[seq]) {
-    case A380X_OVHD_SRC_FAULT: return in->fault[pb] != 0;
+    case A380X_OVHD_SRC_FAULT: return in->fault[pb] || in->sys_fault[pb];
     case A380X_OVHD_SRC_APU_MASTER_ON: return in->apu_master != 0;
     /* FBW: the ECB fault (auto shutdown) shows while MASTER SW is on; port: X-Plane APU failure. */
     case A380X_OVHD_SRC_APU_MASTER_FAULT: return in->fault[pb] || (in->apu_master && in->apu_failed);
@@ -103,7 +105,7 @@ static inline int a380x_ovhd_condition(const A380XOvhdInputs *in, int pb, int se
     case A380X_OVHD_SRC_CREW_OXY_OFF: return !in->crew_oxy;
     case A380X_OVHD_SRC_FIRE_TEST: return in->fire_test != 0;
     case A380X_OVHD_SRC_PB_OFF: return !in->pb[pb];        /* OFF while released */
-    case A380X_OVHD_SRC_PB_ON: return in->pb[pb] != 0;     /* ON / MAN / OVRD / DISC while pressed in */
+    case A380X_OVHD_SRC_PB_ON: return in->pb[pb] || in->sys_on[pb];   /* ON / MAN / OVRD / DISC while pressed in */
     default: return 0;                                   /* NONE, TEST: ANN LT TEST only */
     }
 }

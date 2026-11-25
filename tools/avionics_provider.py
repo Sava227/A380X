@@ -349,17 +349,29 @@ SD_DATAREFS = tuple("a380x/xp12/ecam/sd/" + name for name in
 SD_DEVICES = ("a380x.xp12.ecam.sd",)
 # Cockpit aurals (a380x_aurals.inc): GPWS voice new / old A380 recording (also on the EFB).
 AURAL_COMMANDS = ("a380x/xp12/aurals/gpws_voice_toggle",)
+# A380 hydraulics (a380x_hyd.inc, docs/HYDRAULICS.md).
+HYD_COMMANDS = (*(f"a380x/xp12/hyd/edp_reset_{n}" for n in range(1, 5)), "a380x/xp12/hyd/service")
+HYD_DATAREFS = (*(f"a380x/xp12/hyd/{system}/{name}" for system in ("green", "yellow") for name in (
+                    "pressure_psi", "pressure_switch", "aux_pressure_psi", "accumulator_psi", "section_psi",
+                    "section_switch", "reservoir_level_l", "reservoir_nominal_l", "reservoir_level_low",
+                    "reservoir_air_psi", "reservoir_air_low", "fluid_temp_c", "overheat", "emp_mode")),
+                *("a380x/xp12/hyd/" + name for name in (
+                    "edp_active", "edp_fault", "edp_disconnected", "edp_clutch_engaged", "disc_fault", "fire_valve_open",
+                    "emp_active", "emp_running", "emp_fault", "emp_ovht", "emp_ctl_memo", "emp_on_light", "emp_rpm",
+                    "native_bridge", "gsp/ground_cart", "gsp/air_cart", "gsp/depress", "gsp/refill", "hsmu/flight_parity",
+                    "fail/edp", "fail/emp", "fail/emp_ovht", "fail/rsvr_ovht", "fail/leak", "fail/air_leak")))
 AVIONICS_COMMANDS = (*EFB_COMMANDS, *FCU_COMMANDS, *EFIS_COMMANDS, *LIGHTING_COMMANDS, *DU_COMMANDS,
                      *GLARESHIELD_COMMANDS, *CLOCK_COMMANDS, *CENTER_RIGHT_COMMANDS,
                      *COCKPIT_DOOR_COMMANDS, *ADIRS_COMMANDS, *KCCU_COMMANDS, *MFD_COMMANDS, *SD_COMMANDS,
                      *ELEC_COMMANDS, *ELEC_NETWORK_COMMANDS, *OVHD_COMMANDS, *GRVTY_COMMANDS, *THRUST_COMMANDS,
-                     *FLAPS_COMMANDS, *SPEEDBRAKE_COMMANDS, *AURAL_COMMANDS, *FCTL_COMMANDS)
+                     *FLAPS_COMMANDS, *SPEEDBRAKE_COMMANDS, *AURAL_COMMANDS, *FCTL_COMMANDS, *HYD_COMMANDS)
 AVIONICS_DATAREFS = (*FCU_DATAREFS, *FCU_MOTION_DATAREFS, *FCU_LIGHT_DATAREFS,
                      *PFD_DATAREFS, *EFIS_DATAREFS, *LIGHTING_DATAREFS, *DU_DATAREFS,
                      *GLARESHIELD_DATAREFS, *CLOCK_DATAREFS, *CENTER_RIGHT_DATAREFS,
                      *COCKPIT_DOOR_DATAREFS, *ADIRS_DATAREFS, *KCCU_DATAREFS, *MFD_DATAREFS,
                      *FMS_DATAREFS, *SURV_DATAREFS, *SD_DATAREFS, *ELEC_DATAREFS, *ELEC_NETWORK_DATAREFS,
-                     *OVHD_DATAREFS, *GRVTY_DATAREFS, *THRUST_DATAREFS, *FLAPS_DATAREFS, *SPEEDBRAKE_DATAREFS, *FCTL_DATAREFS)
+                     *OVHD_DATAREFS, *GRVTY_DATAREFS, *THRUST_DATAREFS, *FLAPS_DATAREFS, *SPEEDBRAKE_DATAREFS, *FCTL_DATAREFS,
+                     *HYD_DATAREFS)
 
 
 def digest(path: Path) -> str:

@@ -6,6 +6,7 @@
  * pushbutton).
  */
 #include "a380x_elec_power.h"
+#include "a380x_hyd_view.h"
 #include "a380x_autobrake.h"
 typedef struct {
     int gear_lever, gear_nose, gear_wing, gear_body, gear_arrow;
@@ -289,6 +290,9 @@ static void center_right_update(float dt)
         if (isfinite(value)) hydraulic_pressure=fmaxf(hydraulic_pressure,value);
         pedal[i]=center_right_ratio(XPLMGetDataf(center_right.pedal_ref[i]));
     }
+    /* A380 hydraulic model (a380x_hyd.inc): system pressures in psi, FBW's units. */
+    if (a380x_hyd_view.available)
+        hydraulic_pressure=(float)fmax(a380x_hyd_view.psi[0],a380x_hyd_view.psi[1]);
     /* FBW A380 BCU normal-brake hysteresis (hydraulic/mod.rs). The native
      * scaffold uses 3000-PSI engine systems 1/2, so its pressure units already
      * match these thresholds. The full three-ADIRS alignment computer is not

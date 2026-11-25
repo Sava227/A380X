@@ -263,10 +263,21 @@ static void sdd_emit(XpKitJson *j, const SddContext *ctx)
     pack_operating[0] = pack_on[0] && avail_l > 0.05 && ac_main;
     pack_operating[1] = pack_on[1] && avail_r > 0.05 && ac_main;
 
-    /* ---- hydraulics: X-Plane system 1 = GREEN, 2 = YELLOW */
+    /* ---- hydraulics: the A380 model (a380x/xp12/hyd, docs/HYDRAULICS.md); without it X-Plane system 1 = GREEN,
+     *      2 = YELLOW scaled to 5000 psi */
     double hyd_psi[2], hyd_level_gal[2];
     static const double reservoir_gal[2] = {12.0, 12.7};   /* FBW A380 reservoir normal fill */
+    static const char *const hyd_sys[2] = {"green", "yellow"};
+    int hyd_model = sdd_ref("a380x/xp12/hyd/green/pressure_psi") != NULL;
     for (k = 0; k < 2; ++k) {
+        if (hyd_model) {
+            char port[80];
+            snprintf(port, sizeof(port), "a380x/xp12/hyd/%s/pressure_psi", hyd_sys[k]); hyd_psi[k] = sdd_get(port, 0, NAN);
+            snprintf(port, sizeof(port), "a380x/xp12/hyd/%s/pressure_switch", hyd_sys[k]); sdd.hyd_switch[k] = sdd_get(port, 0, 0.0) != 0.0;
+            snprintf(port, sizeof(port), "a380x/xp12/hyd/%s/reservoir_level_l", hyd_sys[k]);
+            hyd_level_gal[k] = sdd_get(port, 0, NAN) / 3.785411784;
+            continue;
+        }
         hyd_psi[k] = sdd_get(k ? SDD_XP "cockpit2/hydraulics/indicators/hydraulic_pressure_2"
                                : SDD_XP "cockpit2/hydraulics/indicators/hydraulic_pressure_1", 0, NAN) * SDD_HYD_SCALE;
         hyd_level_gal[k] = sdd_get(k ? SDD_XP "cockpit2/hydraulics/indicators/hydraulic_fluid_ratio_2"
@@ -533,7 +544,56 @@ static void sdd_emit(XpKitJson *j, const SddContext *ctx)
     {
         static const char *const color[2] = {"GREEN", "YELLOW"};
         static const char *const epump[2][2] = {{"GA", "GB"}, {"YA", "YB"}};
-        for (k = 0; k < 2; ++k) {
+        if (hyd_model) {
+            /* A380 hydraulic model: every L-var from a380x/xp12/hyd and the overhead pb latches */
+            static const char *const pb_edp[8] = {"hyd_eng1a", "hyd_eng1b", "hyd_eng2a", "hyd_eng2b",
+                                                  "hyd_eng3a", "hyd_eng3b", "hyd_eng4a", "hyd_eng4b"};
+            static const char *const pb_emp_off[4] = {"hyd_g_elec_a", "hyd_g_elec_b", "hyd_y_elec_a", "hyd_y_elec_b"};
+            char port[80];
+            for (k = 0; k < 2; ++k) {
+                snprintf(name, sizeof(name), "L:A32NX_HYD_%s_SYSTEM_1_SECTION_PRESSURE", color[k]); sdd_num(j, name, hyd_psi[k]);
+                snprintf(name, sizeof(name), "L:A32NX_HYD_%s_SYSTEM_1_SECTION_PRESSURE_SWITCH", color[k]);
+                sdd_flag(j, name, sdd.hyd_switch[k]);
+                snprintf(name, sizeof(name), "L:A32NX_HYD_%s_RESERVOIR_LEVEL", color[k]); sdd_num(j, name, hyd_level_gal[k]);
+                snprintf(port, sizeof(port), "a380x/xp12/hyd/%s/reservoir_level_low", hyd_sys[k]);
+                snprintf(name, sizeof(name), "L:A32NX_HYD_%s_RESERVOIR_LEVEL_IS_LOW", color[k]); sdd_flag(j, name, sdd_get(port, 0, 0.0) != 0.0);
+                snprintf(port, sizeof(port), "a380x/xp12/hyd/%s/reservoir_air_low", hyd_sys[k]);
+                snprintf(name, sizeof(name), "L:A32NX_HYD_%s_RESERVOIR_AIR_PRESSURE_IS_LOW", color[k]); sdd_flag(j, name, sdd_get(port, 0, 0.0) != 0.0);
+                snprintf(port, sizeof(port), "a380x/xp12/hyd/%s/overheat", hyd_sys[k]);
+                snprintf(name, sizeof(name), "L:A32NX_HYD_%s_RESERVOIR_OVHT", color[k]); sdd_flag(j, name, sdd_get(port, 0, 0.0) != 0.0);
+                snprintf(port, sizeof(port), "a380x/xp12/hyd/%s/section_switch", hyd_sys[k]);
+                for (i = 0; i < 4; ++i) {
+                    int engine = 2 * k + i / 2, b = i & 1;
+                    snprintf(name, sizeof(name), "L:A32NX_OVHD_HYD_ENG_%d%c_PUMP_PB_IS_AUTO", engine + 1, b ? 'B' : 'A');
+                    {
+                        char pb[64];
+                        snprintf(pb, sizeof(pb), "a380x/xp12/ovhd/pb/%s", pb_edp[2 * engine + b]);
+                        sdd_flag(j, name, sdd_get(pb, 0, 1.0) != 0.0);
+                    }
+                    snprintf(name, sizeof(name), "L:A32NX_HYD_%s_PUMP_%d_SECTION_PRESSURE_SWITCH", color[k], i + 1);
+                    sdd_flag(j, name, sdd_get(port, i, 0.0) != 0.0);
+                    snprintf(name, sizeof(name), "L:A32NX_HYD_%s_PUMP_%d_FIRE_VALVE_OPENED", color[k], i + 1);
+                    sdd_flag(j, name, sdd_get("a380x/xp12/hyd/fire_valve_open", engine, 1.0) != 0.0);
+                }
+                for (i = 0; i < 2; ++i) {
+                    char pb[64];
+                    snprintf(name, sizeof(name), "L:A32NX_HYD_%s_EPUMP_ACTIVE", epump[k][i]);
+                    sdd_flag(j, name, sdd_get("a380x/xp12/hyd/emp_active", 2 * k + i, 0.0) != 0.0);
+                    snprintf(name, sizeof(name), "L:A32NX_HYD_%s_EPUMP_OVHT", epump[k][i]);
+                    sdd_flag(j, name, sdd_get("a380x/xp12/hyd/emp_ovht", 2 * k + i, 0.0) != 0.0);
+                    snprintf(pb, sizeof(pb), "a380x/xp12/ovhd/pb/%s", pb_emp_off[2 * k + i]);
+                    snprintf(name, sizeof(name), "L:A32NX_OVHD_HYD_EPUMP%s_OFF_PB_IS_AUTO", epump[k][i]);
+                    sdd_flag(j, name, sdd_get(pb, 0, 1.0) != 0.0);
+                    snprintf(name, sizeof(name), "L:A32NX_HYD_%s_PUMP_%d_SECTION_PRESSURE_SWITCH", color[k], 5 + i);
+                    sdd_flag(j, name, sdd_get(port, 4 + i, 0.0) != 0.0);
+                }
+            }
+            for (i = 1; i <= 4; ++i) {
+                snprintf(name, sizeof(name), "L:A32NX_HYD_ENG_%dAB_PUMP_DISC", i);
+                sdd_flag(j, name, sdd_get("a380x/xp12/hyd/edp_disconnected", i - 1, 0.0) != 0.0);
+            }
+        }
+        else for (k = 0; k < 2; ++k) {
             snprintf(name, sizeof(name), "L:A32NX_HYD_%s_SYSTEM_1_SECTION_PRESSURE", color[k]); sdd_num(j, name, hyd_psi[k]);
             snprintf(name, sizeof(name), "L:A32NX_HYD_%s_SYSTEM_1_SECTION_PRESSURE_SWITCH", color[k]);
             sdd_flag(j, name, sdd.hyd_switch[k]);
@@ -566,7 +626,7 @@ static void sdd_emit(XpKitJson *j, const SddContext *ctx)
                 sdd_flag(j, name, active && sdd.hyd_switch[k]);
             }
         }
-        for (i = 1; i <= 4; ++i) {
+        if (!hyd_model) for (i = 1; i <= 4; ++i) {
             snprintf(name, sizeof(name), "L:A32NX_HYD_ENG_%dAB_PUMP_DISC", i); sdd_flag(j, name, 0);
         }
     }

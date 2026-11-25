@@ -144,6 +144,7 @@ static int fwss_pulse(FwsPulseNode *n, int input)
 #define PH_TO_CFG (B(5) | B(6) | B(7) | B(8) | B(9) | B(10) | B(12))
 #define PH_TO_SPD (B(1) | B(4) | B(5) | B(6) | B(7) | B(8) | B(9) | B(10) | B(12))
 #define PH_HYD (B(4) | B(5) | B(6) | B(7) | B(9) | B(10))
+#define PH_EMP (B(2) | B(3) | B(4) | B(5) | B(6) | B(7) | B(8) | B(9) | B(10) | B(11))   /* ELEC PMP FAULT */
 #define PH_FEED (B(1) | B(3) | B(4) | B(5) | B(6) | B(7) | B(9) | B(10) | B(12))
 #define PH_DOOR (B(1) | B(4) | B(5) | B(6) | B(7) | B(9) | B(10) | B(12))
 #define PH_LG (B(1) | B(2) | B(3) | B(4) | B(5) | B(6) | B(7) | B(10) | B(11) | B(12))
@@ -273,6 +274,10 @@ static const FwsAlertDesc fwss_alerts[] = {
     STD(281800102u, "FEED TKs 1+2 LEVEL LO", 2, PH_FEED, FWS_SD_FUEL, 7, 281800002u),
     STD(281800103u, "FEED TKs 3+4 LEVEL LO", 2, PH_FEED, FWS_SD_FUEL, 7, 281800002u),
     /* ---- ATA 29 (FwsAbnormalSensed:3249-3565) ---- */
+    STD(290800001u, "G ELEC PMP A FAULT", 2, PH_EMP, FWS_SD_HYD, 1, 0),
+    STD(290800002u, "G ELEC PMP B FAULT", 2, PH_EMP, FWS_SD_HYD, 1, 0),
+    STD(290800003u, "Y ELEC PMP A FAULT", 2, PH_EMP, FWS_SD_HYD, 1, 0),
+    STD(290800004u, "Y ELEC PMP B FAULT", 2, PH_EMP, FWS_SD_HYD, 1, 0),
     STD(290800005u, "G ENG 1 PMP A PRESS LO", 2, B(1) | PH_HYD | B(12), FWS_SD_HYD, 2, 0),
     STD(290800006u, "G ENG 1 PMP B PRESS LO", 2, B(1) | PH_HYD | B(12), FWS_SD_HYD, 2, 0),
     STD(290800007u, "G ENG 2 PMP A PRESS LO", 2, B(1) | PH_HYD | B(12), FWS_SD_HYD, 2, 0),
@@ -281,8 +286,12 @@ static const FwsAlertDesc fwss_alerts[] = {
     STD(290800010u, "Y ENG 3 PMP B PRESS LO", 2, B(1) | PH_HYD | B(12), FWS_SD_HYD, 2, 0),
     STD(290800011u, "Y ENG 4 PMP A PRESS LO", 2, B(1) | PH_HYD | B(12), FWS_SD_HYD, 2, 0),
     STD(290800012u, "Y ENG 4 PMP B PRESS LO", 2, B(1) | PH_HYD | B(12), FWS_SD_HYD, 2, 0),
+    STD(290800019u, "G RSVR AIR PRESS LO", 2, PH_HYD, FWS_SD_HYD, 4, 0),
+    STD(290800020u, "Y RSVR AIR PRESS LO", 2, PH_HYD, FWS_SD_HYD, 4, 0),
     STD(290800021u, "G RSVR LEVEL LO", 2, PH_HYD, FWS_SD_HYD, 5, 0),
     STD(290800022u, "Y RSVR LEVEL LO", 2, PH_HYD, FWS_SD_HYD, 5, 0),
+    STD(290800031u, "G SYS OVERHEAT", 2, PH_HYD, FWS_SD_HYD, 5, 0),
+    STD(290800032u, "Y SYS OVERHEAT", 2, PH_HYD, FWS_SD_HYD, 5, 0),
     STD(290800035u, "G SYS LO PRESS", 2, PH_HYD, FWS_SD_HYD, 8, 290800039u),
     STD(290800036u, "Y SYS LO PRESS", 2, PH_HYD, FWS_SD_HYD, 5, 290800039u),
     STD(290800039u, "G + Y SYS LO PRESS", 2, PH_HYD, FWS_SD_HYD, 11, 0),
@@ -1070,7 +1079,6 @@ static void fwss_update_core(FwsSignals *s, double dt)
         s->yellow_lo = (unsigned char)(!s->yellow_press_sw && c34);
         s->green_yellow_lo = (unsigned char)(s->green_lo && s->yellow_lo);
         for (i = 0; i < 4; i++) {
-            /* RSVR AIR PRESS LO / RSVR OVHT are not simulated (false) */
             int sys_lo = i < 2 ? s->green_lo : s->yellow_lo;
             for (j = 0; j < 2; j++) {
                 below[i][j] = in->hyd_valid && in->eng_pump_section_low[i][j];
@@ -2098,6 +2106,31 @@ static void fwss_eval(const FwsSignals *s, int index, FwsAlertEval *e)
         CK(0, s->all_crossfeed_open, 0, 0, 0, 0, 0);
         break;
     /* ---------------- ATA 29 ---------------- */
+    case 290800001u: case 290800002u: case 290800003u: case 290800004u: {
+        int p = (int)(id - 290800001u);
+        ACTIVE(in->hyd_valid && in->elec_pump_fault[p]);
+        SH(1);
+        CK(in->elec_pump_off[p]);
+        break;
+    }
+    case 290800019u: case 290800020u: {
+        int y = id == 290800020u, e1 = y ? 2 : 0, e2 = y ? 3 : 1;
+        ACTIVE(in->hyd_valid && (y ? in->yellow_rsv_air_low : in->green_rsv_air_low));
+        SH(1, s->eng_running[e1], s->eng_running[e2], fwss_conf_read(&s->engines_off_on_ground_conf));
+        CK(0, !in->eng_pump_pb_auto[e1][0] && !in->eng_pump_pb_auto[e1][1],
+           !in->eng_pump_pb_auto[e2][0] && !in->eng_pump_pb_auto[e2][1],
+           in->elec_pump_off[2 * y] && in->elec_pump_off[2 * y + 1]);
+        break;
+    }
+    case 290800031u: case 290800032u: {
+        int y = id == 290800032u, e1 = y ? 2 : 0, e2 = y ? 3 : 1;
+        ACTIVE(in->hyd_valid && (y ? in->yellow_rsv_ovht : in->green_rsv_ovht));
+        SH(s->eng_running[e1], s->eng_running[e2], 1, 1, fwss_conf_read(&s->engines_off_on_ground_conf));
+        CK(!in->eng_pump_pb_auto[e1][0] && !in->eng_pump_pb_auto[e1][1],
+           !in->eng_pump_pb_auto[e2][0] && !in->eng_pump_pb_auto[e2][1], in->eng_pump_disc[e1], in->eng_pump_disc[e2],
+           in->elec_pump_off[2 * y] && in->elec_pump_off[2 * y + 1]);
+        break;
+    }
     case 290800005u: case 290800006u: case 290800007u: case 290800008u:
     case 290800009u: case 290800010u: case 290800011u: case 290800012u: {
         int p = (int)(id - 290800005u), g = p / 2, ab = p % 2;
@@ -2110,9 +2143,10 @@ static void fwss_eval(const FwsSignals *s, int index, FwsAlertEval *e)
         int y = id == 290800022u, e1 = y ? 2 : 0, e2 = y ? 3 : 1;
         ACTIVE(in->hyd_valid && (y ? in->yellow_rsv_level_low : in->green_rsv_level_low));
         SH(s->eng_running[e1], s->eng_running[e2], 1, 1, fwss_conf_read(&s->engines_off_on_ground_conf));
-        /* FBW checks the YELLOW elec pumps in both procedures; elec pump pb states are not simulated */
+        /* [DEV] FBW checks the YELLOW elec pumps in both procedures; the port checks the system's own */
         CK(!in->eng_pump_pb_auto[e1][0] && !in->eng_pump_pb_auto[e1][1],
-           !in->eng_pump_pb_auto[e2][0] && !in->eng_pump_pb_auto[e2][1], in->eng_pump_disc[e1], in->eng_pump_disc[e2], 0);
+           !in->eng_pump_pb_auto[e2][0] && !in->eng_pump_pb_auto[e2][1], in->eng_pump_disc[e1], in->eng_pump_disc[e2],
+           in->elec_pump_off[2 * y] && in->elec_pump_off[2 * y + 1]);
         break;
     }
     case 290800035u:
@@ -3205,6 +3239,7 @@ int fws_signals_normal_sensed(const FwsSignals *s, unsigned proc_id, signed char
 #undef PH_TO_CFG
 #undef PH_TO_SPD
 #undef PH_HYD
+#undef PH_EMP
 #undef PH_FEED
 #undef PH_DOOR
 #undef PH_LG
