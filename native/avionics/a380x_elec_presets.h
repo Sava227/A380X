@@ -41,7 +41,7 @@ typedef enum {
     A380X_PI_NO_SMOKING,    /* 0 OFF, 1 AUTO, 2 ON */
     A380X_PI_FUEL_PUMP,     /* index 0..3: feed tank n main pump */
     A380X_PI_COCKPIT_DOOR,  /* 1 locked */
-    A380X_PI_ENG_MASTER,    /* index 0..3; set 1 starts (master + starter), 0 shuts down */
+    A380X_PI_ENG_MASTER,    /* index 0..3: ENG MASTER (the FADEC starts it with IGN START selected) */
     A380X_PI_ENG_RUNNING,   /* read-only, index 0..3 */
     A380X_PI_ENG_STOPPED,   /* read-only, index 0..3: N1 < 3 % */
     A380X_PI_FLAPS,         /* detent index (0 UP, 1 = 1+F) */
@@ -55,6 +55,8 @@ typedef enum {
     A380X_PI_AUTOBRAKE_RTO,
     A380X_PI_TERR_ND,
     A380X_PI_TRANSPONDER,   /* 0 standby, 1 auto/on */
+    A380X_PI_ENG_MODE_SEL,  /* ENG START selector: 0 CRANK, 1 NORM, 2 IGN START */
+    A380X_PI_TO_CONFIG,     /* ECP T.O CONFIG held (1) / released (0) */
     A380X_PI_COUNT
 } A380XPresetItem;
 

@@ -72832,10 +72832,10 @@ P acf/_flap2_type 2
 P acf/_flap_EQ 1
 P acf/_flap_arm 0.000000000
 P acf/_flap_detents 4
-P acf/_flap_ext_time 45.000000000
+P acf/_flap_ext_time 37.567411463
 P acf/_flap_extend_protect 0
 P acf/_flap_pumps 1.000000000
-P acf/_flap_ret_time 45.000000000
+P acf/_flap_ret_time 37.567411463
 P acf/_flap_retract_protect 0
 P acf/_flap_speed_rat_at_0 1.000000000
 P acf/_flaps_are_infinite 0
@@ -73530,10 +73530,10 @@ P acf/_slat2_dn_max_deg 20.000000000
 P acf/_slat2_inc 8.000000000
 P acf/_slat2_type 1
 P acf/_slat_EQ 1
-P acf/_slat_ext1_time 7.000000000
-P acf/_slat_ext2_time 7.000000000
-P acf/_slat_ret1_time 7.000000000
-P acf/_slat_ret2_time 7.000000000
+P acf/_slat_ext1_time 31.746645872
+P acf/_slat_ext2_time 31.746645872
+P acf/_slat_ret1_time 31.746645872
+P acf/_slat_ret2_time 31.746645872
 P acf/_slat_with_Vind 0.000000000
 P acf/_slat_with_stall_EQ 0
 P acf/_slung_len 0.000000000

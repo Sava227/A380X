@@ -15,7 +15,7 @@ A380X_PUSH_TEXT_EMIS = fbw-cockpit-source .../texture/push_text_emis_2048.png. S
    (hide_lit_legend_decals.py) with one lamp becomes '# A380X LIT DECAL GLOW <face>': ATTR_light_level on
    that lamp instead of ANIM_hide. Everything else in the object stays dark (a never-written dataref,
    as Laminar's laminar/no_ref). Two-lamp faces (ENG 2 BLEED: one face covers both legends) keep the
-   hide + overlay quads.
+   hide + overlay quads. The legend faces are matte (ATTR_shiny_rat 0): no windshield reflection.
 3. a380x_cockpit_controls.obj: the overlay quads of the converted lamps get an unconditional ANIM_hide.
 
 Run after hide_lit_legend_decals.py and seat_lamp_quads.py. Re-running is a no-op. Needs numpy + Pillow.
@@ -75,7 +75,10 @@ def convert_decal(text: str):
             i = j + 2
             continue
         out.append(lines[i]); i += 1
-    text = "".join(out)
+    # Matte legend faces: without NORMAL_METALNESS X-Plane 12 shades this object the legacy way (shine from
+    # ATTR_shiny_rat and the normal map's alpha 255), so the glareshield lenses mirrored the windshield and
+    # the MASTER WARN / AUTO LAND legends vanished in daylight (user screenshots 2026-11-24).
+    text = re.sub(r"(\n\s*)ATTR_shiny_rat\t[0-9.]+\n", r"\1ATTR_shiny_rat\t0\n", "".join(out))
     if LIT_REF not in text:
         text = re.sub(r"(TEXTURE [^\n]*\n)", rf"\1{LIT_REF}\n", text, count=1)
     if f"\n{DARK}\n" not in text:

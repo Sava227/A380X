@@ -308,9 +308,10 @@ static void test_power_up(void)
     /* APU START (native ECB): ON while starting, AVAIL at 95 % N + 2 s */
     assert(fire("sim/electrical/APU_start") == 0);
     frames(0.2f); assert(lamp("apu_start_lower") == 1.0f && lamp("apu_start_upper") == 0.0f);
-    frames(8.5f);
-    raw("sim/cockpit2/electrical/APU_N1_percent")->value = 100.0;
-    raw("sim/cockpit2/electrical/APU_running")->value = 1; frames(2.5f);
+    raw("sim/cockpit2/electrical/APU_N1_percent")->value = 100.0;   /* X-Plane's APU is not the ECB's N */
+    raw("sim/cockpit2/electrical/APU_running")->value = 1; frames(39.5f);
+    assert(lamp("apu_start_upper") == 0.0f);        /* FBW PW980: AVAIL 42.3 s after the start (+ flap) */
+    frames(11.0f);
     assert(lamp("apu_start_upper") == 1.0f && lamp("apu_start_lower") == 0.0f);
     raw("sim/cockpit2/bleedair/actuators/apu_bleed")->value = 1; frames(0.1f);
     assert(lamp("apu_bleed_lower") == 1.0f);
@@ -322,6 +323,7 @@ static void test_simple_supply_and_lifecycle(void)
     click("ext2_press"); click("gpu_connect_toggle");
     raw("sim/cockpit2/electrical/APU_starter_switch")->value = 0;
     raw("sim/cockpit2/electrical/APU_N1_percent")->value = 0.0; raw("sim/cockpit2/electrical/APU_running")->value = 0;
+    eln.apu.state = A380X_PW980_SHUTDOWN; eln.apu.n = eln.apu.n2 = 0.0;   /* past FBW's 60 s cooldown */
     click("bat_ess_toggle"); click("bat_apu_toggle"); click("bat2_toggle"); frames(12.0f);
     assert(geti("a380x/xp12/elec/pb/bat1") && geti("a380x/xp12/elec/pb/bat2") && !geti("a380x/xp12/elec/pb/bat_ess"));
     assert(!geti("a380x/xp12/elec/bus/dc_ess_powered") && elamp("bat_ess_lower") == 0.0f);

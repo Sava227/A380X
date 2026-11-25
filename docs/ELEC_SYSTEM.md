@@ -99,7 +99,7 @@ nav & logo, seat belts, no smoking AUTO, feed fuel pumps, await APU AVAIL, APU B
 POWERUP_OFF reverses it, waits until AC 1 is unpowered and removes the GPU.
 
 These FBW steps are left out because the port has nothing to act on: ENG fire test, RCDR GND
-CTL, EMER EXIT LT, RMP volumes/TX, ENG MODE SEL, cabin ready, T.O CONFIG test, FWC init, and
+CTL, EMER EXIT LT, RMP volumes/TX, cabin ready, FWC init, and
 the standby, transfer and trim fuel pumps (the cockpit maps only the four feed main pumps). The
 RWY TURN OFF lights are a native state only, because X-Plane has no separate switch. X-Plane
 cannot do AUTO for the strobe or the no-smoking sign: strobe AUTO keeps the stock strobe off on

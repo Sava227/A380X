@@ -383,6 +383,7 @@ static void test_presets(void)
     CHECK(mock[A380X_PI_ADIRS_ALIGN_NOW][0] == 1 && mock[A380X_PI_ENG_MASTER][3] == 1 && mock[A380X_PI_FLAPS][0] == 1);
     CHECK(mock[A380X_PI_GPU][0] == 0 && mock[A380X_PI_EXT_PB][1] == 0 && mock[A380X_PI_BEACON][0] == 1);
     CHECK(mock[A380X_PI_APU_MASTER][0] == 0 && mock[A380X_PI_AUTOBRAKE_RTO][0] == 1);
+    CHECK(mock[A380X_PI_ENG_MODE_SEL][0] == 1 && mock[A380X_PI_TO_CONFIG][0] == 0);  /* IGN START -> NORM, T.O CONFIG released */
     /* cold & dark from there: engines off, everything off in reverse */
     a380x_preset_start(&r, A380X_PRESET_COLD_DARK, 1);
     for (frames = 0; frames < 400 && r.running; ++frames) a380x_preset_update(&r, &host, 0.1);

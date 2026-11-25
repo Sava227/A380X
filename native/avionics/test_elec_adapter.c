@@ -299,10 +299,13 @@ static void test_cold_dark_power_up(void)
     assert(geti("a380x/xp12/apu/ecb_powered") && getf("a380x/xp12/apu/flap_open_ratio") > 0.0f);
     assert(fire("sim/electrical/APU_start") == 0 && geti("a380x/xp12/apu/start_on"));   /* intercepted */
     frames(8.5f); assert(apu->value == 2 && geti("contactor/10KA_5KA"));
-    raw("sim/cockpit2/electrical/APU_N1_percent")->value = 60.0; frames(0.1f);
+    /* FBW PW980 from the start contactor: N 55 % (starter cut-out) at 34.2 s, AVAIL 2 s after 95 % (42.3 s) */
+    frames(32.0f); assert(geti("contactor/10KA_5KA") && getf("a380x/xp12/apu/n_percent") < 55.0f);
+    frames(2.0f);
     assert(apu->value == 2 && !geti("contactor/10KA_5KA"));                     /* stock start held */
     raw("sim/cockpit2/electrical/APU_running")->value = 1; frames(0.1f); assert(apu->value == 1);
-    raw("sim/cockpit2/electrical/APU_N1_percent")->value = 100.0; frames(2.5f);
+    frames(5.0f); assert(!geti("a380x/xp12/apu/avail"));
+    frames(3.0f);
     assert(geti("a380x/xp12/apu/avail") && !geti("a380x/xp12/apu/start_on"));
     assert(getf("a380x/xp12/apu/generator_volts") > 100.0f);
     /* EXT 2 + 3 + APU (spec 3.2): AC 1 APU A, AC 2 EXT 2, AC 3 EXT 3, AC 4 APU B */
@@ -340,7 +343,8 @@ static void test_hardware_failures_pause(void)
     XPLMSetDatai(pub("ann_lt"), 1);
     /* pause freezes the network timers: AC lost while paused does not shed 108PH */
     assert(fire("sim/electrical/GPU_off") == 0);
-    raw("sim/cockpit2/electrical/APU_starter_switch")->value = 0; raw("sim/cockpit2/electrical/APU_N1_percent")->value = 0;
+    raw("sim/cockpit2/electrical/APU_starter_switch")->value = 0;
+    eln.apu.state = A380X_PW980_SHUTDOWN; eln.apu.n = eln.apu.n2 = 0.0;   /* past FBW's 60 s cooldown */
     raw("sim/time/paused")->value = 1; frames(30.0f);
     assert(geti("bus/dc_ess_inflt_powered") && !geti("ac_main_powered"));
     raw("sim/time/paused")->value = 0; frames(10.5f);
@@ -383,12 +387,29 @@ static void test_presets_and_reload(void)
     assert(geti("spawn_mode") == A380X_ELN_SPAWN_COLD_DARK);
     engines(25.0f, 70.0f, 1); frames(0.2f);
     assert(geti("spawn_mode") == A380X_ELN_SPAWN_READY && spawn_changes == 1);
+    /* every engine reads its own element (READY FOR TAXI waits on ENG 2-4 too) */
+    raw("sim/flightmodel/engine/ENGN_running")->vi[2] = 0;
+    assert(eln_eng_running(0) && eln_eng_running(1) && !eln_eng_running(2) && eln_eng_running(3));
+    raw("sim/flightmodel/engine/ENGN_running")->vi[2] = 1;
     assert(geti("pb/bat1") && geti("pb/bat2") && geti("bus/ac1_powered") && geti("contactor/990XU1"));
     assert(geti("du/capt_pfd_state") == A380X_ELN_DU_ON && geti("du/ewd_state") == A380X_ELN_DU_ON);
     assert(!getf("lamp/gen1_upper") && raw("sim/cockpit2/electrical/generator_on")->vi[3] == 1);
     /* ready spawn directly from the load message */
     elec_plane_loaded(); eln_plane_loaded();
     assert(geti("spawn_mode") == A380X_ELN_SPAWN_READY && a380x_power_du_on(A380X_ELN_DU_FO_PFD, 0));
+    /* new flight: plugins load before X-Plane puts the aircraft on the ground -> READY at load, then cold &
+     * dark (batteries OFF) once the spawn checks end on the ground with the engines stopped */
+    engines(0.0f, 0.0f, 0);
+    raw("sim/flightmodel/failures/onground_any")->value = 0;
+    spawn_changes = 0;
+    elec_plane_loaded(); eln_plane_loaded();
+    assert(geti("spawn_mode") == A380X_ELN_SPAWN_READY && geti("pb/bat1"));
+    raw("sim/flightmodel/failures/onground_any")->value = 1;
+    frames(1.0f);
+    assert(geti("spawn_mode") == A380X_ELN_SPAWN_READY && !spawn_changes);
+    frames(4.0f);
+    assert(geti("spawn_mode") == A380X_ELN_SPAWN_COLD_DARK && spawn_changes == 1);
+    assert(!geti("pb/bat1") && !geti("pb/bat2") && !geti("pb/bat_ess") && !geti("pb/bat_apu") && !geti("ext/connected"));
     /* disable stops a running preset; the CDS overlay hook is the renderer's (stubbed here) */
     click("preset/3"); assert(geti("preset/active") == 3); eln_disable(); assert(!geti("preset/active"));
     assert(!cds_overlay(A380X_ELN_DU_EWD, 0, 0, 768, 1024));

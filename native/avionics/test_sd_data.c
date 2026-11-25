@@ -213,7 +213,7 @@ static void full_state(void)
     seti("a380x/xp12/elec/pb/bat_ess", 1); seti("a380x/xp12/elec/pb/bat_apu", 0);
     seti("a380x/xp12/apu/master_on", 1); seti("a380x/xp12/apu/avail", 1); seti("a380x/xp12/apu/start_on", 0);
     seti("a380x/xp12/apu/ecb_powered", 1); setf("a380x/xp12/apu/flap_open_ratio", 1.0);
-    setf("sim/cockpit2/electrical/APU_N1_percent", 100.0); setf("sim/cockpit2/electrical/APU_EGT_c", 420.0);
+    setf("a380x/xp12/apu/n_percent", 100.0); setf("sim/cockpit2/electrical/APU_EGT_c", 420.0);
     seti("sim/cockpit2/bleedair/actuators/apu_bleed", 0);
     setf("sim/time/total_running_time_sec", 100.0);
     setf("sim/cockpit2/temperature/outside_air_temp_degc", 10.0);

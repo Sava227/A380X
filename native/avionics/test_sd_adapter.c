@@ -103,7 +103,7 @@ static void test_automatic_pages(const EwdData *engines)
                              NULL,NULL,NULL,NULL,NULL,NULL,&auto_selector,NULL);
     XPLMRegisterDataAccessor("sim/cockpit2/electrical/APU_starter_switch",xplmType_Int,0,auto_geti,NULL,NULL,NULL,
                              NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,&auto_apu_switch,NULL);
-    XPLMRegisterDataAccessor("sim/cockpit2/electrical/APU_N1_percent",xplmType_Float,0,NULL,NULL,auto_getf,NULL,
+    XPLMRegisterDataAccessor("a380x/xp12/apu/n_percent",xplmType_Float,0,NULL,NULL,auto_getf,NULL,
                              NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,&auto_apu_n1,NULL);
     run_command(SDA_PREFIX "bleed",xplm_CommandBegin);sda_update(.01f,1,engines);CHECK(sda.page==SD_BLEED);
     auto_apu_switch=1;sda_update(.01f,1,engines);CHECK(sda.page==SD_APU);

@@ -3,13 +3,16 @@
  * ENG START selector (CRANK / NORM / IGN START) and the engine start it commands, following the A380 FADEC
  * start logic (FBW A380X: L:A32NX_ENGINE_STATE / ENG START selector, overhead MAN START pushbuttons):
  *
- *   IGN START + ENG MASTER ON           automatic start: starter engaged and ignition on until N2 reaches the
- *                                       starter cut-out (50 %), then the engine accelerates to idle on its own.
+ *   IGN START + ENG MASTER ON           automatic start: after FBW's 1.7 s delay the starter engages with
+ *                                       ignition until the engine reaches idle (FBW EngineControl_A380X: the
+ *                                       starter valve is open while STARTING, until N3 >= idle N3 - 0.1).
  *   IGN START + MAN START, MASTER OFF   motoring (starter, no ignition); MASTER ON then lights it.
  *   CRANK + MAN START                   dry crank: starter only, never ignition.
  *   NORM                                no starter; a start in progress is aborted.
  *   IGN START with an engine running    continuous ignition.
- *   A start that has not reached the cut-out after 120 s is aborted until MASTER or the selector is cycled.
+ *   A start that has not reached idle after 120 s is aborted until MASTER or the selector is cycled (port
+ *   safety; FBW has no abort). Idle = running, N2 >= 50 % and N2 settled (< 0.1 %/s): X-Plane's idle N2
+ *   depends on the flight model, so FBW's idle N3 table is not used. Each start logs MASTER ON -> idle time.
  *   The starters are air turbines: they turn only with bleed air, from the APU (APU AVAIL and APU BLEED ON)
  *   or from an engine already running (crossbleed).
  *
@@ -17,18 +20,21 @@
  * START; tools/cockpit_feedback_contract.py) and MAN START is the overhead pushbutton position
  * a380x/xp12/ovhd/pb/man_start<n>. X-Plane does the rest: sim/starters/engage_starter_<n> held while the
  * starter runs, sim/cockpit2/engine/actuators/igniter_on, fuel by ENG MASTER (mixture_ratio).
- * Engines being started by a flyPad preset (eln.starting) are left to the preset.
+ * The flyPad READY FOR TAXI preset starts the engines the same way (selector IGN START, then ENG MASTER ON).
  * Unity-build include of a380x_avionics.c after a380x_cockpit_feedback.inc and the ELEC adapter.
  */
 #define ENGS_CUTOUT_N2 50.0f
 #define ENGS_TIMEOUT_S 120.0f
+#define ENGS_MASTER_DELAY_S 1.7f   /* FBW engineStartProcedure: master-switch to start delay */
+#define ENGS_IDLE_RATE 0.1f        /* N2 %/s: settled at idle */
 enum { ENGS_CRANK, ENGS_NORM, ENGS_IGN_START };
 enum { ENGS_N2, ENGS_RUNNING, ENGS_MIXTURE, ENGS_IGNITER, ENGS_REFS };
 
 static struct {
     int initialized, selector_index, man_start_pb[4];
     int starter_on[4], igniter_set[4], aborted[4], last_master[4], last_selector, no_air_logged;
-    float start_time[4], now;
+    int at_idle[4];
+    float start_time[4], master_time[4], prev_n2[4], now;
     XPLMCommandRef starter[4];
     XPLMDataRef refs[ENGS_REFS];
 } engs;
@@ -77,10 +83,11 @@ static int engs_init(void)
 
 static void engs_update(void)
 {
-    float n2[4] = {0}, mixture[4] = {0}, now;
+    float n2[4] = {0}, mixture[4] = {0}, now, dt;
     int running[4] = {0}, igniter[8] = {0}, write_igniter = 0, sel;
     if (!engs.initialized) return;
     now = XPLMGetElapsedTime();
+    dt = now - engs.now;
     engs.now = now;
     if (!plugin_enabled) { engs_release(); return; }
     sel = engs_selector();
@@ -93,14 +100,29 @@ static void engs_update(void)
     for (int i = 0; i < 4; ++i) {
         int master = isfinite(mixture[i]) && mixture[i] > 0.5f;
         int man = engs.man_start_pb[i] >= 0 && ovhd_in.pb[engs.man_start_pb[i]];
-        int started = running[i] && isfinite(n2[i]) && n2[i] >= ENGS_CUTOUT_N2;
+        int lit = running[i] && isfinite(n2[i]) && n2[i] >= ENGS_CUTOUT_N2;
+        int settled = dt > 0.0f && (n2[i] - engs.prev_n2[i]) / dt < ENGS_IDLE_RATE;
+        engs.prev_n2[i] = isfinite(n2[i]) ? n2[i] : 0.0f;
+        if (!lit) engs.at_idle[i] = 0;
+        else if (!engs.at_idle[i] && settled) {
+            char line[128];
+            engs.at_idle[i] = 1;
+            if (engs.starter_on[i]) {
+                snprintf(line, sizeof(line), "A380X ENG START: engine %d at idle (N2 %.1f %%) %.1f s after MASTER ON\n",
+                         i + 1, n2[i], now - engs.master_time[i]);
+                XPLMDebugString(line);
+            }
+        }
+        int started = engs.at_idle[i];
         int want_starter = 0, want_igniter = 0;
-        if (eln.starting[i]) { engs.starter_on[i] = 0; continue; }       /* the flyPad preset owns this one */
         if (master != engs.last_master[i] || sel != engs.last_selector) engs.aborted[i] = 0;   /* cycled: retry */
+        if (master && !engs.last_master[i]) engs.master_time[i] = now;
         engs.last_master[i] = master;
         if (sel == ENGS_IGN_START) {
             if (started) want_igniter = 1;                                   /* continuous ignition */
-            else if (master) { want_starter = 1; want_igniter = 1; }        /* automatic (or manual) start */
+            else if (master) {                                               /* automatic (or manual) start */
+                want_starter = want_igniter = now - engs.master_time[i] >= ENGS_MASTER_DELAY_S || man;
+            }
             else if (man) want_starter = 1;                                  /* motoring before fuel */
         } else if (sel == ENGS_CRANK && man && !started) {
             want_starter = 1;                                                /* dry crank: no ignition */

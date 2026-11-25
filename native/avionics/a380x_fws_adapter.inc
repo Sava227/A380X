@@ -32,7 +32,7 @@ static const char *const fwsa_names[FR_COUNT] = {
     "sim/cockpit2/bleedair/actuators/engine_bleed_sov", "sim/cockpit2/engine/actuators/eng_mode_selector",
     "sim/cockpit2/annunciators/engine_fires", "sim/operation/failures/rel_apu_fire",
     "a380x/xp12/engine/fire_pushbutton",
-    "sim/cockpit2/bleedair/actuators/apu_bleed", "sim/cockpit2/electrical/APU_N1_percent",
+    "sim/cockpit2/bleedair/actuators/apu_bleed", "a380x/xp12/apu/n_percent",
     "sim/cockpit2/bleedair/actuators/pack_left", "sim/cockpit2/bleedair/actuators/pack_right",
     "sim/cockpit2/pressurization/indicators/cabin_altitude_ft",
     "sim/cockpit2/pressurization/indicators/pressure_diffential_psi",

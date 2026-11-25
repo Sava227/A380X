@@ -40,7 +40,8 @@ DATAREFS = (
     *(PREFIX + f"fail/{failure}" for failure in FAILURES),
     *(PREFIX + f"preset/{name}" for name in ("active", "step", "step_count", "step_name", "expedited", "done")),
     *(APU_PREFIX + name for name in ("master_on", "start_on", "avail", "flap_open_ratio", "ecb_powered",
-                                     "generator_volts", "generator_hz", "generator_load_percent")),
+                                     "generator_volts", "generator_hz", "generator_load_percent",
+                                     "n_percent", "n2_percent")),   # FBW PW980 N / N2 (a380x_apu_pw980.h)
 )
 COMMANDS = (
     *(PREFIX + f"preset/{n}" for n in range(1, 6)),
