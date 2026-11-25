@@ -296,5 +296,5 @@ load factor blended out by weight on wheels, fuel on the inner nodes) and publis
 `a380x/xp12/wing/flex_<left|right>_<inboard|inboard_mid|outboard_mid|outboard>` (degrees).
 `config/animation_datarefs.json` maps each clip to its angle with A380_WINGS.xml's `angle x gain + offset`
 (0..100), so a wing re-export (`tools/export_exterior_mac.sh`) picks them up; `tools/test_wing_flex_mapping.py`
-pins the ranges. Until that re-export, the installed wings stay rigid. Typical output: about -1.4 deg total
+pins the ranges. The installed wing objects were not re-exported (the converter can only move single-bone faces, so about 58 % of the skin would stay frozen and tear, and the slat skin repair would be lost): `tools/wing_flex/wing_flex_obj.py` adds the bend to them as 13 rigid segments per wing cut along FBW's bone axes; see [WING_FLEX_OBJ.md](WING_FLEX_OBJ.md). Typical output: about -1.4 deg total
 droop parked with full fuel, +1.6 deg in 1 g cruise, more under g.
