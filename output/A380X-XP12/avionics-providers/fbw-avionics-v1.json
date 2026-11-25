@@ -605,7 +605,12 @@
     "a380x/xp12/fbw/toggle",
     "a380x/xp12/steering/toggle",
     "a380x/xp12/steering/tiller_left",
-    "a380x/xp12/steering/tiller_right"
+    "a380x/xp12/steering/tiller_right",
+    "a380x/xp12/hyd/edp_reset_1",
+    "a380x/xp12/hyd/edp_reset_2",
+    "a380x/xp12/hyd/edp_reset_3",
+    "a380x/xp12/hyd/edp_reset_4",
+    "a380x/xp12/hyd/service"
   ],
   "datarefs": [
     "a380x/xp12/fcu/selected_speed",
@@ -1914,7 +1919,60 @@
     "a380x/xp12/fbw/alpha_max",
     "a380x/xp12/steering/nose_deg",
     "a380x/xp12/steering/body_deg",
-    "a380x/xp12/steering/tiller"
+    "a380x/xp12/steering/tiller",
+    "a380x/xp12/hyd/green/pressure_psi",
+    "a380x/xp12/hyd/green/pressure_switch",
+    "a380x/xp12/hyd/green/aux_pressure_psi",
+    "a380x/xp12/hyd/green/accumulator_psi",
+    "a380x/xp12/hyd/green/section_psi",
+    "a380x/xp12/hyd/green/section_switch",
+    "a380x/xp12/hyd/green/reservoir_level_l",
+    "a380x/xp12/hyd/green/reservoir_nominal_l",
+    "a380x/xp12/hyd/green/reservoir_level_low",
+    "a380x/xp12/hyd/green/reservoir_air_psi",
+    "a380x/xp12/hyd/green/reservoir_air_low",
+    "a380x/xp12/hyd/green/fluid_temp_c",
+    "a380x/xp12/hyd/green/overheat",
+    "a380x/xp12/hyd/green/emp_mode",
+    "a380x/xp12/hyd/yellow/pressure_psi",
+    "a380x/xp12/hyd/yellow/pressure_switch",
+    "a380x/xp12/hyd/yellow/aux_pressure_psi",
+    "a380x/xp12/hyd/yellow/accumulator_psi",
+    "a380x/xp12/hyd/yellow/section_psi",
+    "a380x/xp12/hyd/yellow/section_switch",
+    "a380x/xp12/hyd/yellow/reservoir_level_l",
+    "a380x/xp12/hyd/yellow/reservoir_nominal_l",
+    "a380x/xp12/hyd/yellow/reservoir_level_low",
+    "a380x/xp12/hyd/yellow/reservoir_air_psi",
+    "a380x/xp12/hyd/yellow/reservoir_air_low",
+    "a380x/xp12/hyd/yellow/fluid_temp_c",
+    "a380x/xp12/hyd/yellow/overheat",
+    "a380x/xp12/hyd/yellow/emp_mode",
+    "a380x/xp12/hyd/edp_active",
+    "a380x/xp12/hyd/edp_fault",
+    "a380x/xp12/hyd/edp_disconnected",
+    "a380x/xp12/hyd/edp_clutch_engaged",
+    "a380x/xp12/hyd/disc_fault",
+    "a380x/xp12/hyd/fire_valve_open",
+    "a380x/xp12/hyd/emp_active",
+    "a380x/xp12/hyd/emp_running",
+    "a380x/xp12/hyd/emp_fault",
+    "a380x/xp12/hyd/emp_ovht",
+    "a380x/xp12/hyd/emp_ctl_memo",
+    "a380x/xp12/hyd/emp_on_light",
+    "a380x/xp12/hyd/emp_rpm",
+    "a380x/xp12/hyd/native_bridge",
+    "a380x/xp12/hyd/gsp/ground_cart",
+    "a380x/xp12/hyd/gsp/air_cart",
+    "a380x/xp12/hyd/gsp/depress",
+    "a380x/xp12/hyd/gsp/refill",
+    "a380x/xp12/hyd/hsmu/flight_parity",
+    "a380x/xp12/hyd/fail/edp",
+    "a380x/xp12/hyd/fail/emp",
+    "a380x/xp12/hyd/fail/emp_ovht",
+    "a380x/xp12/hyd/fail/rsvr_ovht",
+    "a380x/xp12/hyd/fail/leak",
+    "a380x/xp12/hyd/fail/air_leak"
   ],
   "stock_xplane_efis_modes_consumed": true,
   "logic_sources": [
@@ -1959,11 +2017,11 @@
   "files": [
     {
       "path": "plugins/A380XAvionics/mac_x64/A380XAvionics.xpl",
-      "sha256": "b99ce7a165d620e596cf74e63d03fa95026b70d2754a20f56689937c28fc695c"
+      "sha256": "e148ae14c2344e59d144807a3fd56d428b5e040e759174225b91dd7b081ef00b"
     },
     {
       "path": "plugins/A380XAvionics/win_x64/A380XAvionics.xpl",
-      "sha256": "ebd29f3a69507879764ee23fd3eabaa991853394b015dfab9bc27daedba91add"
+      "sha256": "c20acdc82f661824e9cd07898aab0b7bf797a1385059ca6b80c99743da70a869"
     },
     {
       "path": "plugins/A380XAvionics/sounds/priority_left.pcm",
@@ -2135,7 +2193,7 @@
     },
     {
       "path": "plugins/A380XAvionics/build-report.json",
-      "sha256": "a4412989d06d2e5ead5af1171e8b2cf08e0868801550d9f502ce48ec3cad1ef1"
+      "sha256": "216ecb1fc044e0b8963ad85f05e8fd586cc3f3861f14f0173aec99132784b666"
     }
   ],
   "runtime_tested": false,
@@ -4329,6 +4387,7 @@
     "commands": [
       "a380x/xp12/efb/slides_arm_all",
       "a380x/xp12/efb/slides_disarm_all",
+      "a380x/xp12/efb/emergency_ops_toggle",
       "a380x/xp12/efb/captain/popup",
       "a380x/xp12/efb/first_officer/popup"
     ],
@@ -4343,7 +4402,8 @@
       "a380x/xp12/efb/first_officer/web_live",
       "a380x/xp12/efb/actions_processed",
       "a380x/xp12/efb/actions_rejected",
-      "a380x/xp12/efb/touch_events"
+      "a380x/xp12/efb/touch_events",
+      "a380x/xp12/efb/emergency_ops"
     ]
   }
 }

@@ -31,6 +31,7 @@ button { font-family: var(--sans); }
 .btn { height: 44px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--line3); background: #1C2430; color: var(--text);
   font: 600 14px/1 var(--sans); white-space: nowrap; }
 .btn.primary { border-color: var(--accent); color: var(--accent); }
+.btn.danger { border-color: var(--red); color: #06121A; background: var(--red); font-weight: 700; }
 .btn:disabled, .btn.disabled { opacity: .45; }
 .btn.pressed, .tile.pressed, .seg button.pressed, .chipbtn.pressed, .rail button.pressed, .tab.pressed, .key.pressed,
 .row.pressed, .sw.pressed, .field.pressed { background: #243040; }
@@ -45,6 +46,7 @@ button { font-family: var(--sans); }
 .chip { font: 600 11px/1 var(--sans); letter-spacing: .08em; padding: 5px 8px; border-radius: 6px; border: 1px solid #3A4656; color: var(--muted); white-space: nowrap; }
 .chip.live { border-color: var(--green2); color: var(--green); }
 .chip.warn { border-color: var(--amber); color: var(--amber-text); }
+.chip.danger { border-color: var(--red); color: var(--red); }
 .chip.plan { border-color: var(--amber); color: var(--amber-text); height: 30px; box-sizing: border-box; display: inline-flex; align-items: center; }
 .field { height: 44px; width: 100%; box-sizing: border-box; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line3);
   background: var(--bar); color: var(--text); font: 500 16px/42px var(--mono); overflow: hidden; white-space: nowrap; }

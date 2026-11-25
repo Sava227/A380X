@@ -31,21 +31,36 @@ int main(void) {
     printf("rotation 9 deg on the ground: tilt body %.2f wing %.2f\n", tilt(3), tilt(1)); assert(fabsf(tilt(3) + 9.0f) < 0.05f);
     ground(0); for (k = 0; k < 5; ++k) m_defl[k] = 0;
     run(0.5); printf("0.5 s after lift-off (height %.2f): body %.2f\n", hgt(3), tilt(3));
-    m_agl += 20; run(4); printf("climbing: body %.2f wing %.2f\n", tilt(3), tilt(1)); assert(fabsf(tilt(3) - 10) < 0.01f);
-    m_dep[3] = 0.9f; run(0.1); printf("retracting, deploy 0.9: body %.2f\n", tilt(3)); assert(fabsf(tilt(3) - 10.0f / 3) < 0.05f);
+    assert(tilt(3) <= -9.0f + 0.01f && tilt(3) >= -10.0f - 0.01f);
+    m_agl += 20; run(4); printf("climbing: body %.2f wing %.2f (front wheels down)\n", tilt(3), tilt(1));
+    assert(fabsf(tilt(3) + 10) < 0.01f && fabsf(tilt(1) + 10) < 0.01f);
+    m_theta = 0.0f; run(2); printf("level flight: body %.2f\n", tilt(3)); assert(fabsf(tilt(3) + 10) < 0.01f);
+    m_dep[3] = 0.9f; run(0.1); printf("retracting, deploy 0.9: body %.2f\n", tilt(3)); assert(fabsf(tilt(3) + 10.0f / 3) < 0.05f);
     m_dep[3] = 0.5f; run(0.1); assert(tilt(3) == 0.0f);
     m_dep[3] = 1.0f; m_theta = 4.0f;                   /* approach, 4 deg nose up */
-    float agl_touch = 5.0f - 0.7f + 4.0f * 0.0f;        /* height at which the body wheel point reaches the ground */
-    float hs[] = {3.0f, 0.5f, 0.2f, 0.05f, 0.0f};
-    for (k = 0; k < 5; ++k) {
-        m_agl = 4.3f + 6.0f * sinf(4.0f * 0.0174533f) + hs[k] - 0.0f;   /* body gear 6 m aft: nose up lowers it */
-        run(0.3);
-        float h = hgt(3), rear_drop = 1.66f * sinf((tilt(3) + 4.0f) * 0.0174533f);
-        printf("approach: body wheel height %.3f -> tilt %.2f, rear axle drop %.3f (clear %.3f)\n", h, tilt(3), rear_drop, h - rear_drop);
-        assert(h - rear_drop > -0.005f);
+    /* descend to each body gear height (the mock's rotation about the CG left a calibration offset, so steer by
+     * the computed height); check both axles of the body and wing gears */
+    float hs[] = {3.0f, 0.5f, 0.2f, 0.1f, 0.05f, 0.02f, 0.0f};
+    int n = (int)(sizeof(hs) / sizeof(hs[0])), j, gk[2] = {3, 1};
+    float arm[2] = {1.66f, 0.867f};
+    for (k = 0; k < n; ++k) {
+        run(0.02); m_agl += hs[k] - hgt(3); run(0.3);
+        for (j = 0; j < 2; ++j) {
+            float h = hgt(gk[j]), g = (tilt(gk[j]) + 4.0f) * 0.0174533f;   /* bogie angle to the ground, + = rear down */
+            float front = h + arm[j] * sinf(g), rear = h - arm[j] * sinf(g);
+            printf("approach: %s height %.3f -> tilt %6.2f, front axle %.3f, rear axle %.3f above the runway\n",
+                   j ? "wing" : "body", h, tilt(gk[j]), front, rear);
+            assert(front > -0.005f && rear > -0.005f);
+            if (h > 0.01f) assert(front < rear);                      /* front wheels lowest: they touch first */
+        }
+        if (hs[k] >= 3.0f) assert(fabsf(tilt(3) + 10) < 0.01f);
+        if (hs[k] == 0.05f) assert(tilt(3) > -6.0f && tilt(3) < -5.0f);   /* front axle limit: -asin(.05/1.66)-4 */
     }
-    (void)agl_touch;
     ground(1); m_defl[3] = 0.05f; run(0.1); printf("touchdown: body %.2f\n", tilt(3)); assert(fabsf(tilt(3) + 4.0f) < 0.05f);
+    m_theta = 0.0f; run(0.5); printf("nose wheel down: body %.2f\n", tilt(3)); assert(fabsf(tilt(3)) < 0.05f);
+    ground(0); m_defl[3] = 0; m_agl += 20; run(0.5);              /* go-around: free again, trimmer rate */
+    printf("go-around 0.5 s: body %.2f\n", tilt(3)); assert(fabsf(tilt(3) + 4.0f) < 0.1f);
+    run(1.0); printf("go-around 1.5 s: body %.2f\n", tilt(3)); assert(fabsf(tilt(3) + 10) < 0.01f);
     puts("bogie tilt OK");
     return 0;
 }

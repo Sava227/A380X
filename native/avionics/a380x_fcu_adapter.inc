@@ -7,6 +7,7 @@
  * (a380x_autoland.inc) with the same ownership and release rules as pitch/roll.
  */
 #include "a380x_elec_power.h"
+#include "a380x_hyd_view.h"
 #include "a380x_fbw_laws.h"
 typedef struct {
     XPLMDataRef paused, replay, magvar, tas, pitch_rate, roll_rate, yaw_rate;
@@ -429,6 +430,8 @@ static void read_guidance_inputs(float dt)
     for (i=0;i<2;++i) {
         Side *side=&refs.side[i];
         float pressure=XPLMGetDataf(fcu.hydraulic_pressure[i]);
+        /* A380 hydraulic model: psi (nominal 5000) in the same Plane Maker scale (nominal 3000) */
+        if (a380x_hyd_view.available) pressure=(float)(a380x_hyd_view.psi[i]*3000.0/5000.0);
         guidance_inputs.side_radio_height_valid[i]=side->radio_altitude_valid;
         guidance_inputs.side_radio_height_ft[i]=side->radio_altitude_valid ? side->radio_altitude_value : 0;
         guidance_inputs.side_attitude_valid[i]=side->display_valid && side->attitude_valid && side->heading_valid && side->navigation_valid;

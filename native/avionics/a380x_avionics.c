@@ -286,6 +286,7 @@ static int xpkit_draw_sd(void);
 #include "a380x_engine_indications.inc"
 #include "a380x_sd_adapter.inc"
 #include "a380x_fms_adapter.inc"
+#include "a380x_hyd.inc"              /* A380 hydraulics (GREEN / YELLOW): after OVHD lamps, center right, FMS */
 #include "a380x_isis_adapter.inc"
 #include "a380x_rmp_adapter.inc"      /* RMP 1-3: FBW radio management panels, COM 1/2 and transponder */
 #include "a380x_cockpit_feedback.inc"
@@ -326,6 +327,8 @@ static float flight_loop(float elapsed_since_last_call, float elapsed_since_last
         du_brightness[A380X_ELN_DU_CAPT_OIT] = du_brightness[A380X_ELN_DU_FO_OIT] = 1.0f;
         eln_update(elapsed_since_last_call > 0.0f ? elapsed_since_last_call : dt, du_brightness);
     }
+    /* Hydraulics after the network (EMP buses) and before every pressure consumer and the overhead lamps. */
+    hyda_update(elapsed_since_last_call > 0.0f ? elapsed_since_last_call : dt);
     /* Thrust levers first: cockpit drags, hardware adoption and interlocks are in X-Plane's
      * handles before anything below reads them (docs/THRUST_LEVERS.md). */
     thrust_levers_update(elapsed_since_last_call > 0.0f ? elapsed_since_last_call : dt);
@@ -643,6 +646,7 @@ PLUGIN_API int XPluginStart(char *name, char *signature, char *description)
     else if (!eln_init()) XPLMDebugString("A380X ELEC network: unavailable; displays keep the stock avionics-master power\n");
     /* Overhead annunciator lamp datarefs before the aircraft OBJs bind them (ATTR_light_level). */
     if (!ovhd_init()) XPLMDebugString("A380X OVHD lamps: registration failed; overhead legends stay dark\n");
+    if (!hyda_init()) XPLMDebugString("A380X HYD: registration failed; X-Plane's native hydraulics remain\n");
     if (fwsa_init()) {
         char fws_line[160];
         snprintf(fws_line, sizeof(fws_line), "A380X FWS: native flight warning system ready (%d alert definitions, "
@@ -676,6 +680,7 @@ PLUGIN_API int XPluginStart(char *name, char *signature, char *description)
         isis_adapter_shutdown();
         engs_shutdown();
         wf_shutdown();
+        hyda_shutdown();
         cfb_shutdown();
         rmpa_shutdown();
         sda_shutdown();
@@ -710,6 +715,7 @@ PLUGIN_API void XPluginStop(void)
     xpkit_shutdown();
     native_displays_shutdown();
     XPLMUnregisterFlightLoopCallback(flight_loop, NULL);
+    hyda_shutdown();
     ovhd_shutdown();
     aurals_stop();
     fwsa_shutdown();
@@ -803,6 +809,7 @@ PLUGIN_API void XPluginReceiveMessage(XPLMPluginID from, int message, void *para
         elec_plane_loaded();
         eln_plane_loaded();
         ovhd_plane_loaded();
+        hyda_plane_loaded();   /* hydraulics re-seeded (pressurised if the engines run) */
         fwsa_plane_loaded();
         aurals_reset();
         fmsa_plane_loaded();

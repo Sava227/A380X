@@ -22,6 +22,7 @@
  * a380x_pfd_inputs.inc, which the PFD and the FWS adapter read).
  */
 #include "a380x_flaps.h"
+#include "a380x_hyd_view.h"
 
 #define FLP_NAME(suffix) "a380x/xp12/flaps/" suffix
 #define FLP_HYD_SCALE (A380X_FLAPS_TARGET_PSI / 3000.0)   /* ACF engine pumps 3000 psi -> FBW 5250 psi */
@@ -158,6 +159,8 @@ static void flp_read_layout(void)
 static double flp_side_factor(int r)
 {
     double psi;
+    /* A380 hydraulic model (a380x_hyd.inc): GREEN / YELLOW system pressure in psi */
+    if (a380x_hyd_view.available) return a380x_flaps_pressure_factor(a380x_hyd_view.psi[r == FLP_RAW_HYD_1 ? 0 : 1]);
     if (!flp.raw[r]) return 1.0;
     if (!flp_raw_number(r, -100.0, 100000.0, &psi)) return 0.0;
     return a380x_flaps_pressure_factor(psi * FLP_HYD_SCALE);

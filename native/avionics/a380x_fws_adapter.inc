@@ -389,7 +389,34 @@ static void fwsa_read_inputs(FwsInputs *in)
     if (fwsa_vf(FR_FUEL_PUMP, v8, 4)) for (k = 0; k < 4; ++k) in->feed_pump_main_on[k] = v8[k] > 0.5f;
     if (fwsa_i(FR_CROSSFEED, &iv)) for (k = 0; k < 4; ++k) in->crossfeed_open[k] = iv != 0;
 
-    /* ---- HYDRAULICS (1 = green, 2 = yellow) ---- */
+    /* ---- HYDRAULICS: the A380 model (a380x_hyd.inc); without it X-Plane systems 1 = green, 2 = yellow ---- */
+#ifdef A380X_HYD_ADAPTER
+    if (hyda.ready) {
+        const A380XHyd *h = &hyda.model;
+        int e, ab, n;
+        in->hyd_valid = 1;
+        in->hyd_green_psi = (float)h->c[0].psi;
+        in->hyd_yellow_psi = (float)h->c[1].psi;
+        for (e = 0; e < 4; ++e) {
+            for (ab = 0; ab < 2; ++ab) {
+                in->eng_pump_pb_auto[e][ab] = (unsigned char)hyda_pb(A380X_OVHD_PB_HYD_ENG1A + 2 * e + ab);
+                in->eng_pump_section_low[e][ab] = (unsigned char)!h->c[e / 2].sec_sw[2 * (e % 2) + ab];
+            }
+            in->eng_pump_disc[e] = h->disc_cmd[e];
+        }
+        in->green_rsv_level_low = h->c[0].level_low;
+        in->yellow_rsv_level_low = h->c[1].level_low;
+        in->green_rsv_air_low = h->c[0].air_low;
+        in->yellow_rsv_air_low = h->c[1].air_low;
+        in->green_rsv_ovht = h->c[0].ovht;
+        in->yellow_rsv_ovht = h->c[1].ovht;
+        for (n = 0; n < 4; ++n) {
+            in->elec_pump_active[n] = h->emp_ctl_memo[n / 2][n % 2];   /* memo G/Y ELEC PMP A/B CTL */
+            in->elec_pump_fault[n] = h->emp_fault[n / 2][n % 2];
+            in->elec_pump_off[n] = (unsigned char)!hyda_pb(A380X_OVHD_PB_HYD_G_ELEC_A + n);
+        }
+    } else
+#endif
     {
         float g, y;
         if (fwsa_f(FR_HYD_1, &g) && fwsa_f(FR_HYD_2, &y)) {

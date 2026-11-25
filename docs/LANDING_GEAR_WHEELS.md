@@ -102,3 +102,19 @@ Only ANIM blocks were added, around 26 draw calls. Vertices and indices are unch
 - **Build-flag fix:** the first wheels build passed its `-DXPLM...` flags as one shell argument under zsh; it worked anyway. This build passes each flag separately.
 - **Preview:** `renders/bogie_tilt_preview.png`.
 - **Not yet tested in X-Plane.**
+
+# Fix 2026-11-24 (evening): the bogies tilt front wheels down
+
+The first tilt version hung the bogies the wrong way (rear wheels down). On the real A380 the wing and body gear bogies hang **front wheels down** in flight, as a photo of an A380 on approach shows, so the front axle touches first. Only the A380XDoors plugin changed. The gear objects already rotate both ways (keys −30…+30), and the dataref convention is unchanged (+ = rear wheels down), so the plugin now sends negative values.
+
+- **In flight, gear down:** −10° (`BOGIE_TILT_FLIGHT_DEG`), front wheels down. The pitch trimmer moves the bogie at 8° per second while it is free of the ground.
+- **Near the ground:** the bogie's angle to the ground is limited so that neither the front nor the rear wheels go below the runway (`BOGIE_TILT_LIMIT_DEG` ±15° overall). Ground limits apply at once.
+- **On approach** at 4° nose up (−6° to the ground), the front axle reaches the runway first. The bogie then levels as the aircraft settles: −4° (flat on the runway) at touchdown, and 0° once the nose wheel is down.
+- **Takeoff:** during rotation it stays flat on the runway (−pitch). After lift-off it goes to −10°, a small move from about −9°.
+- **Go-around:** from the runway it returns to −10° at 8° per second.
+
+**Checks** (`native/doors/test/test_bogie_tilt.c`, offline with a mock XPLM; slides and steering tests also pass):
+- The test descends the body and wing gears to 0 m. The front axle never goes below the runway, and it is the lowest point until touchdown.
+- The front axle limit at 5 cm gives −5.73°, which is −asin(0.05/1.66) − 4.
+- The plugin builds with `-Werror` for Mac and Windows.
+- **Preview:** `Output/A380X-XP12 backups/bogie-tilt-flip-20261124/preview.png`.

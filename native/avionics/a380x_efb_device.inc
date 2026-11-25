@@ -264,13 +264,14 @@ int a380x_efb_atlas_needed(void) { return !efb_devices_bound(); }
 /* ---- Datarefs ------------------------------------------------------------------------------------ */
 enum {
     EFBR_SLIDES_COUNT, EFBR_DOORS_OPEN, EFBR_DEVICES, EFBR_BOUND0, EFBR_BOUND1, EFBR_LIVE0, EFBR_LIVE1,
-    EFBR_PROCESSED, EFBR_REJECTED, EFBR_TOUCHES, EFBR_COUNT
+    EFBR_PROCESSED, EFBR_REJECTED, EFBR_TOUCHES, EFBR_EMER_OPS, EFBR_COUNT
 };
 static const char *const efb_dataref_names[EFBR_COUNT] = {
     "a380x/xp12/efb/slides_armed_count", "a380x/xp12/efb/doors_open_count", "a380x/xp12/efb/devices_active",
     "a380x/xp12/efb/captain/device_bound", "a380x/xp12/efb/first_officer/device_bound",
     "a380x/xp12/efb/captain/web_live", "a380x/xp12/efb/first_officer/web_live",
-    "a380x/xp12/efb/actions_processed", "a380x/xp12/efb/actions_rejected", "a380x/xp12/efb/touch_events"
+    "a380x/xp12/efb/actions_processed", "a380x/xp12/efb/actions_rejected", "a380x/xp12/efb/touch_events",
+    "a380x/xp12/efb/emergency_ops"
 };
 static XPLMDataRef efb_datarefs[EFBR_COUNT], efb_slides_ref;
 
@@ -288,6 +289,7 @@ static int efb_read_int(void *refcon)
     case EFBR_PROCESSED: return (int)efb_actions_processed;
     case EFBR_REJECTED: return (int)efb_actions_rejected;
     case EFBR_TOUCHES: return (int)efb_touch_count;
+    case EFBR_EMER_OPS: return emergency_ops;
     default: return 0;
     }
 }

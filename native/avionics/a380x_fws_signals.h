@@ -221,6 +221,10 @@ typedef struct {
     unsigned char eng_pump_disc[4];
     unsigned char green_rsv_level_low, yellow_rsv_level_low;
     unsigned char elec_pump_active[4];         /* G A, G B, Y A, Y B (memos) */
+    /* A380 hydraulic model (a380x_hyd.inc) */
+    unsigned char elec_pump_fault[4];          /* G A, G B, Y A, Y B: ELEC PMP FAULT */
+    unsigned char elec_pump_off[4];            /* ELEC PMP FAULT/OFF pb released (OFF) */
+    unsigned char green_rsv_air_low, yellow_rsv_air_low, green_rsv_ovht, yellow_rsv_ovht;
 
     /* ---- CABIN / LIGHTS / DOORS / SURVEILLANCE ---- */
     unsigned char seat_belts_on, no_mobile_on, strobe_off, beacon_on;

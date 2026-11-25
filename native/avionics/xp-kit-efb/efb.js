@@ -263,7 +263,12 @@
         '<div style="display:flex;gap:8px">' + btn('doors open', 'Open all') + btn('doors close', 'Close all') + '</div><div class="hr"></div>' +
         lbl('Escape slides') + kv('Armed', '<span style="color:' + ACC + '">' + d.armed + ' / 16</span>') +
         '<div style="display:flex;gap:8px">' + btn('slides arm', 'Arm all slides', 'primary') + btn('slides disarm', 'Disarm all') + '</div>' +
-        '<div class="note">A door must be closed to arm its slide, and disarmed before it can be opened. Cargo and cockpit doors have no slides. Doors are ground-only.</div>' +
+        '<div class="note">A door must be closed to arm its slide, and disarmed before it can be opened, unless EMERGENCY OPS is on. Cargo and cockpit doors have no slides. Doors are ground-only.</div>' +
+        '<div class="hr"></div>' + lbl('Emergency ops') +
+        '<div style="display:flex;gap:8px;align-items:center">' + btn('emerops ' + (d.emerOps ? 0 : 1), d.emerOps ? 'EMERGENCY OPS ON' : 'Emergency ops', d.emerOps ? 'danger' : '') + '</div>' +
+        '<div class="note">' + (d.emerOps ? 'ON: doors with armed slides open from every control (handles, keys, this page) and deploy their slides.'
+          : 'OFF: a door with an armed slide stays closed. Turn on to open armed doors with their slides deploying.') + '</div>' +
+        (d.emerOps ? '<span class="chip danger">EMERGENCY OPS · ARMED DOORS DEPLOY SLIDES</span>' : '') +
         (F.ac.onGround ? '' : '<span class="chip warn">AIRBORNE · DOORS LOCKED</span>')) +
       '</div>';
   }

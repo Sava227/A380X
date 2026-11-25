@@ -143,7 +143,7 @@ static const CheckItem checklist_items[10][8] = {
      {"EFBs", "OFF", CHECK_MANUAL}, {"BATTERIES", "OFF", CHECK_BATTERIES_OFF}}
 };
 
-typedef enum { COMMAND_PAGE, COMMAND_ACTION, COMMAND_POWER, COMMAND_NEXT, COMMAND_SLIDES, COMMAND_POPUP } CommandKind;
+typedef enum { COMMAND_PAGE, COMMAND_ACTION, COMMAND_POWER, COMMAND_NEXT, COMMAND_SLIDES, COMMAND_POPUP, COMMAND_EMER_OPS } CommandKind;
 typedef struct {
     const char *name;
     const char *description;
@@ -152,7 +152,7 @@ typedef struct {
     XPLMCommandRef ref;
 } EfbCommand;
 
-static EfbCommand commands[PAGE_COUNT + 13];
+static EfbCommand commands[PAGE_COUNT + 14];
 static int command_count;
 static EfbPage active_page = PAGE_DASHBOARD;
 static int powered = 1;
@@ -172,6 +172,11 @@ static char status_message[160] = "A380 control panel ready";
 /* Escape slides of the 16 passenger doors (door_open_ratio order). Native state owned here; the web
  * EFB (a380x_efb_web.inc), the door command veto, the SD DOOR page and presets all use it. */
 static unsigned char slide_armed[A380X_EFB_SLIDES];
+/* EMERGENCY OPS (flyPad Doors & slides, a380x/xp12/efb/emergency_ops_toggle): off, a closed passenger door whose
+ * slide is armed stays closed on every path (handles, keys, door_toggle, flyPad); on, it opens and its slide
+ * deploys (A380XDoors). Off at every aircraft load. */
+static int emergency_ops;
+static void efb_emergency_ops_set(int on);
 static void efb_changed(void);
 static void efb_preset_slides(int preset);
 static void efb_tablets_follow_page(int page);
@@ -415,12 +420,13 @@ static void toggle_all_doors(void)
     int i, open_all = 0, kept = 0;
     if (refs.doors != NULL) {
         XPLMGetDatavf(refs.doors, doors, 0, 20);
-        for (i = 0; i < 20; ++i) if (doors[i] < 0.5f && !(i < A380X_EFB_SLIDES && slide_armed[i])) open_all = 1;
+        for (i = 0; i < 20; ++i)
+            if (doors[i] < 0.5f && !(i < A380X_EFB_SLIDES && slide_armed[i] && !emergency_ops)) open_all = 1;
     }
     for (i = 0; i < 20; ++i) {
         char name[64];
-        /* An armed escape slide keeps its door closed (a380x_efb_web.inc). */
-        if (open_all && doors[i] < 0.5f && i < A380X_EFB_SLIDES && slide_armed[i]) { ++kept; continue; }
+        /* An armed escape slide keeps its door closed unless EMERGENCY OPS is on (a380x_efb_web.inc). */
+        if (open_all && doors[i] < 0.5f && i < A380X_EFB_SLIDES && slide_armed[i] && !emergency_ops) { ++kept; continue; }
         if ((open_all && doors[i] < 0.5f) || (!open_all && doors[i] >= 0.5f)) {
             snprintf(name, sizeof(name), "sim/flight_controls/door_toggle_%d", i + 1);
             run_command(name);
@@ -639,6 +645,7 @@ static int command_handler(XPLMCommandRef command, XPLMCommandPhase phase, void 
     else if (entry->kind == COMMAND_NEXT) { set_page(((int)active_page + 1) % PAGE_COUNT); efb_tablets_follow_page(active_page); }
     else if (entry->kind == COMMAND_SLIDES) efb_slides_set_all(entry->value);
     else if (entry->kind == COMMAND_POPUP) efb_toggle_popup(entry->value);
+    else if (entry->kind == COMMAND_EMER_OPS) efb_emergency_ops_set(!emergency_ops);
     efb_changed();
     return 1;
 }
@@ -1216,6 +1223,8 @@ int a380x_efb_init(void)
             || !add_command("a380x/xp12/efb/next_page", "A380X flyPad: next page", COMMAND_NEXT, 0)
             || !add_command("a380x/xp12/efb/slides_arm_all", "A380X EFB: arm the escape slides of all closed passenger doors", COMMAND_SLIDES, 1)
             || !add_command("a380x/xp12/efb/slides_disarm_all", "A380X EFB: disarm all escape slides", COMMAND_SLIDES, 0)
+            || !add_command("a380x/xp12/efb/emergency_ops_toggle",
+                            "A380X EFB: EMERGENCY OPS on/off (armed doors then open and deploy their slides)", COMMAND_EMER_OPS, 0)
             || !add_command("a380x/xp12/efb/captain/popup", "A380X EFB: captain tablet pop-up", COMMAND_POPUP, 0)
             || !add_command("a380x/xp12/efb/first_officer/popup", "A380X EFB: first officer tablet pop-up", COMMAND_POPUP, 1)) {
         return 0;

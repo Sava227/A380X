@@ -162,6 +162,15 @@ static void efb_slide_set(int door, int arm)
     efb_changed();
 }
 
+/* EMERGENCY OPS on / off (flyPad button, a380x/xp12/efb/emergency_ops_toggle). */
+static void efb_emergency_ops_set(int on)
+{
+    emergency_ops = on != 0;
+    set_status(emergency_ops ? "EMERGENCY OPS on: armed doors open and deploy their slides"
+                             : "EMERGENCY OPS off: doors with armed slides stay closed");
+    efb_changed();
+}
+
 /* After an aircraft-state preset: parked states disarm, departure states arm every closed door. */
 static void efb_preset_slides(int preset)
 {
@@ -175,18 +184,25 @@ static void efb_preset_slides(int preset)
     efb_changed();
 }
 
-/* An armed passenger door opens from its handles / door_toggle like any other: its escape slide then
- * deploys (A380XDoors, 2026-11-15). Only the flyPad's own door buttons keep refusing armed doors. */
+/* A closed passenger door with its slide armed: door_toggle (cabin handles, keys, X-Plane menus, the flyPad)
+ * is refused unless EMERGENCY OPS is on; then the door opens and its slide deploys (A380XDoors). */
 static int efb_door_intercept(XPLMCommandRef command, XPLMCommandPhase phase, void *refcon)
 {
     int door = (int)(intptr_t)refcon;
     (void)command;
-    if (phase == xplm_CommandBegin &&
-        a380x_efb_door_toggle_rule(door, efb_door_ratio(door), slide_armed[door]) == A380X_EFB_DOOR_ARMED) {
-        set_status("%s opened with its slide armed: slide deploying", a380x_efb_door_name(door));
+    if (a380x_efb_door_toggle_rule(door, efb_door_ratio(door), slide_armed[door]) != A380X_EFB_DOOR_ARMED) return 1;
+    if (emergency_ops) {
+        if (phase == xplm_CommandBegin) {
+            set_status("EMERGENCY OPS: %s opened with its slide armed, slide deploying", a380x_efb_door_name(door));
+            efb_changed();
+        }
+        return 1;
+    }
+    if (phase == xplm_CommandBegin) {
+        set_status("%s slide armed: door stays closed (disarm it, or select EMERGENCY OPS)", a380x_efb_door_name(door));
         efb_changed();
     }
-    return 1;
+    return 0;
 }
 
 static void efb_door_toggle(int door)
@@ -195,8 +211,8 @@ static void efb_door_toggle(int door)
     const char *label = a380x_efb_door_name(door);
     if (label == NULL) return;
     if (!on_ground()) { set_status("Door controls are ground-only"); efb_changed(); return; }
-    if (a380x_efb_door_toggle_rule(door, efb_door_ratio(door), slide_armed[door]) == A380X_EFB_DOOR_ARMED) {
-        set_status("Disarm the %s slide before opening the door", label);
+    if (a380x_efb_door_toggle_rule(door, efb_door_ratio(door), slide_armed[door]) == A380X_EFB_DOOR_ARMED && !emergency_ops) {
+        set_status("Disarm the %s slide before opening the door, or select EMERGENCY OPS", label);
         efb_changed();
         return;
     }
@@ -216,7 +232,7 @@ static void efb_doors_all(int open)
     for (i = 0; i < A380X_EFB_DOORS; ++i) {
         int is_open = doors[i] > A380X_EFB_DOOR_CLOSED_RATIO;
         if (open == is_open) continue;
-        if (open && a380x_efb_door_has_slide(i) && slide_armed[i]) { ++kept; continue; }
+        if (open && a380x_efb_door_has_slide(i) && slide_armed[i] && !emergency_ops) { ++kept; continue; }
         snprintf(name, sizeof(name), "sim/flight_controls/door_toggle_%d", i + 1);
         run_command(name);
         ++moved;
@@ -349,6 +365,10 @@ static int efb_execute(EfbTablet *t, const A380XEfbAction *a)
         int door = a->argc > 0 ? a380x_efb_door_find(a->arg[0]) : -1;
         if (door < 0) return 0;
         efb_door_toggle(door);
+    } else if (!strcmp(v, "emerops")) {
+        if (a->argc > 0) { if (!efb_arg_int(a, 0, 0, 1, &n)) return 0; }
+        else n = !emergency_ops;
+        efb_emergency_ops_set(n);
     } else if (!strcmp(v, "doors")) {
         if (a->argc < 1 || (strcmp(a->arg[0], "open") && strcmp(a->arg[0], "close"))) return 0;
         efb_doors_all(!strcmp(a->arg[0], "open"));
@@ -713,6 +733,7 @@ static void efb_json_frame(A380XEfbJson *j, int index)
     a380x_efbj_array(j, "slides"); for (i = 0; i < A380X_EFB_SLIDES; ++i) a380x_efbj_int(j, NULL, slide_armed[i]); a380x_efbj_end(j, ']');
     a380x_efbj_int(j, "open", a380x_efb_doors_open(doors));
     a380x_efbj_int(j, "armed", a380x_efb_slides_armed(slide_armed));
+    a380x_efbj_bool(j, "emerOps", emergency_ops);
     a380x_efbj_end(j, '}');
 
     a380x_efbj_object(j, "ground");
@@ -861,6 +882,7 @@ static void efb_web_init(void)
     memset(tablets, 0, sizeof(tablets));
     for (i = 0; i < 2; ++i) tablets[i].last_x = tablets[i].last_y = -1;
     memset(slide_armed, 0, sizeof(slide_armed));
+    emergency_ops = 0;
     memset(efb_sound_refs, 0, sizeof(efb_sound_refs));
     efb_sound_load_valid = 0;
     for (i = 0; i < EX_COUNT; ++i) efb_extra_refs[i] = optional_ref(efb_extra_names[i]);
