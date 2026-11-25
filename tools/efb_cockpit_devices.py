@@ -27,12 +27,12 @@ from obj8_numbers import fmt as obj8_fmt  # X-Plane cannot read exponent notatio
 EFB_DEVICES = ('a380x.xp12.efb.captain', 'a380x.xp12.efb.first_officer')
 EFB_CHANNELS = (24, 25)          # instrument_brightness_ratio slots (14..23 are taken)
 EFB_DEVICE_SIZE = (1440, 1000)
-EFB_COMMANDS = ('a380x/xp12/efb/slides_arm_all', 'a380x/xp12/efb/slides_disarm_all',
+EFB_COMMANDS = ('a380x/xp12/efb/slides_arm_all', 'a380x/xp12/efb/slides_disarm_all', 'a380x/xp12/efb/emergency_ops_toggle',
                 'a380x/xp12/efb/captain/popup', 'a380x/xp12/efb/first_officer/popup')
 EFB_DATAREFS = tuple('a380x/xp12/efb/' + name for name in (
     'slide_armed', 'slides_armed_count', 'doors_open_count', 'devices_active',
     'captain/device_bound', 'first_officer/device_bound', 'captain/web_live', 'first_officer/web_live',
-    'actions_processed', 'actions_rejected', 'touch_events'))
+    'actions_processed', 'actions_rejected', 'touch_events', 'emergency_ops'))
 MARKER = '# A380X NATIVE EFB DEVICE QUADS V1'
 RETIRED = '# A380X EFB DEVICE V1 RETIRED '
 VISIBLE_LIFT = .003              # the retired atlas face's offset from the authored glass

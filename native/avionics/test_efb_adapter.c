@@ -395,12 +395,26 @@ static void test_slides_and_doors(void)
     CHECK(slide_armed[0] == 1 && frame_has("\"slides\":[1,0,0"));
     web(0, "door M1L");
     CHECK(doors->floats[0] == 0 && strstr(status_message, "Disarm the M1L slide"));
-    /* Other paths (door handles, door_toggle) open an armed door: its slide deploys (A380XDoors). */
+    /* EMERGENCY OPS off: the door handles / door_toggle keep an armed door closed too. */
+    CHECK(!emergency_ops && frame_has("\"emerOps\":false"));
     XPLMCommandOnce(command("sim/flight_controls/door_toggle_1"));
-    CHECK(doors->floats[0] == 1 && command("sim/flight_controls/door_toggle_1")->blocked == 0 &&
-          strstr(status_message, "M1L opened with its slide armed"));
+    CHECK(doors->floats[0] == 0 && command("sim/flight_controls/door_toggle_1")->blocked == 1 &&
+          strstr(status_message, "M1L slide armed: door stays closed"));
+    /* EMERGENCY OPS on (flyPad button or command): the armed door opens and its slide deploys (A380XDoors). */
+    web(0, "emerops 1");
+    CHECK(emergency_ops && XPLMGetDatai(XPLMFindDataRef("a380x/xp12/efb/emergency_ops")) == 1 && frame_has("\"emerOps\":true"));
+    XPLMCommandOnce(command("sim/flight_controls/door_toggle_1"));
+    CHECK(doors->floats[0] == 1 && command("sim/flight_controls/door_toggle_1")->blocked == 1 &&
+          strstr(status_message, "EMERGENCY OPS: M1L opened with its slide armed"));
     XPLMCommandOnce(command("sim/flight_controls/door_toggle_1"));   /* close it again */
     CHECK(doors->floats[0] == 0);
+    web(0, "door M1L");                                                /* the flyPad's own door button too */
+    CHECK(doors->floats[0] == 1);
+    web(0, "door M1L");
+    CHECK(doors->floats[0] == 0);
+    press("a380x/xp12/efb/emergency_ops_toggle");
+    CHECK(!emergency_ops && XPLMGetDatai(XPLMFindDataRef("a380x/xp12/efb/emergency_ops")) == 0 &&
+          strstr(status_message, "EMERGENCY OPS off"));
     web(0, "slide M1L 0");
     web(0, "door M1L");
     CHECK(doors->floats[0] == 1 && !slide_armed[0]);
