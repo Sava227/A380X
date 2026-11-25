@@ -2169,24 +2169,60 @@
       "note": "Closed window; interaction not yet implemented."
     },
     {
-      "pattern": "(?i)(left|right)_inboard_flex",
-      "static_fraction": 0.5535,
-      "note": "Zero-flex offset in FBW A380_WINGS.xml."
+      "pattern": "(?i)left_inboard_flex",
+      "dataref": "a380x/xp12/wing/flex_left_inboard",
+      "value_min": -2.380645,
+      "value_max": 1.92043,
+      "note": "FBW A380_WINGS.xml: clip = WING_FLEX angle (deg) x 23.25 + 55.35; angle from the avionics plugin (a380x_wing_flex.h)."
     },
     {
-      "pattern": "(?i)(left|right)_inner_midboard_flex",
-      "static_fraction": 0.67,
-      "note": "Zero-flex offset in FBW A380_WINGS.xml."
+      "pattern": "(?i)right_inboard_flex",
+      "dataref": "a380x/xp12/wing/flex_right_inboard",
+      "value_min": -2.380645,
+      "value_max": 1.92043,
+      "note": "FBW A380_WINGS.xml: clip = WING_FLEX angle (deg) x 23.25 + 55.35; angle from the avionics plugin (a380x_wing_flex.h)."
     },
     {
-      "pattern": "(?i)(left|right)_outer_midboard_flex",
-      "static_fraction": 0.319,
-      "note": "Zero-flex offset in FBW A380_WINGS.xml."
+      "pattern": "(?i)left_inner_midboard_flex",
+      "dataref": "a380x/xp12/wing/flex_left_inboard_mid",
+      "value_min": -4.155039,
+      "value_max": 2.046512,
+      "note": "FBW A380_WINGS.xml: clip = WING_FLEX angle (deg) x 16.125 + 67.0; angle from the avionics plugin (a380x_wing_flex.h)."
     },
     {
-      "pattern": "(?i)(left|right)_outboard_flex",
-      "static_fraction": 0.5,
-      "note": "Zero-flex offset in FBW A380_WINGS.xml."
+      "pattern": "(?i)right_inner_midboard_flex",
+      "dataref": "a380x/xp12/wing/flex_right_inboard_mid",
+      "value_min": -4.155039,
+      "value_max": 2.046512,
+      "note": "FBW A380_WINGS.xml: clip = WING_FLEX angle (deg) x 16.125 + 67.0; angle from the avionics plugin (a380x_wing_flex.h)."
+    },
+    {
+      "pattern": "(?i)left_outer_midboard_flex",
+      "dataref": "a380x/xp12/wing/flex_left_outboard_mid",
+      "value_min": -1.084665,
+      "value_max": 2.315539,
+      "note": "FBW A380_WINGS.xml: clip = WING_FLEX angle (deg) x 29.41 + 31.9; angle from the avionics plugin (a380x_wing_flex.h)."
+    },
+    {
+      "pattern": "(?i)right_outer_midboard_flex",
+      "dataref": "a380x/xp12/wing/flex_right_outboard_mid",
+      "value_min": -1.084665,
+      "value_max": 2.315539,
+      "note": "FBW A380_WINGS.xml: clip = WING_FLEX angle (deg) x 29.41 + 31.9; angle from the avionics plugin (a380x_wing_flex.h)."
+    },
+    {
+      "pattern": "(?i)left_outboard_flex",
+      "dataref": "a380x/xp12/wing/flex_left_outboard",
+      "value_min": -1.700102,
+      "value_max": 1.700102,
+      "note": "FBW A380_WINGS.xml: clip = WING_FLEX angle (deg) x 29.41 + 50.0; angle from the avionics plugin (a380x_wing_flex.h)."
+    },
+    {
+      "pattern": "(?i)right_outboard_flex",
+      "dataref": "a380x/xp12/wing/flex_right_outboard",
+      "value_min": -1.700102,
+      "value_max": 1.700102,
+      "note": "FBW A380_WINGS.xml: clip = WING_FLEX angle (deg) x 29.41 + 50.0; angle from the avionics plugin (a380x_wing_flex.h)."
     },
     {
       "pattern": "(?i)PUSH_EFIS_CS_LS",
