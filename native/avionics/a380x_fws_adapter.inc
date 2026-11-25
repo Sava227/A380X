@@ -307,8 +307,9 @@ static void fwsa_read_inputs(FwsInputs *in)
     in->brakes_valid = 1;
     in->antiskid_on = (unsigned char)(center_right.antiskid_on != 0);
     in->autobrake_active = (unsigned char)(center_right.autobrake_active != 0);
-    in->autobrake_mode = (unsigned char)(center_right.rto_arm ? 6 :
-        center_right.autobrake_selected < 0 ? 0 : center_right.autobrake_selected > 5 ? 5 : center_right.autobrake_selected);
+    /* BCU armed mode (FBW AUTOBRAKES_ARMED_MODE), not the selector: an unarmable selection springs back. */
+    in->autobrake_mode = (unsigned char)(center_right.autobrake_armed < 0 ? 0 :
+        center_right.autobrake_armed > 6 ? 6 : center_right.autobrake_armed);
     in->autobrake_fault = (unsigned char)!center_right.autobrake_available;
     in->norm_brake_fault = (unsigned char)!center_right.normal_brakes_available;
     in->antiskid_fault = (unsigned char)!center_right.antiskid_available;

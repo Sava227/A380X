@@ -24,6 +24,29 @@
  * panels 2-8, the roll spoiler deflection of its wing, whichever is larger; the ailerons rise with the ground spoiler
  * command (lift dumping). Surfaces move only with hydraulic pressure (otherwise they hold), rate limited.
  * See Output/A380X-XP12 backups/spoilers-ailerons-v2.
+ *
+ * Escape slides (2026-11-15): the slides object (objects/exterior/a380x_slides.obj) unfolds and inflates each
+ * passenger door's slide with a380x/xp12/doors/slide_ratio[16] (0 stowed .. 1 deployed; same order as
+ * door_open_ratio 0-15). A slide deploys when its door opens while the slide was armed: the arming state is the
+ * avionics/EFB one (a380x/xp12/efb/slide_armed[16], flyPad, a380x/xp12/efb/slides_arm_all), latched while the door is
+ * shut, because the avionics disarms a slide once its door opens. Deployment takes SLIDE_INFLATE_S; closing the door
+ * again (or a380x/xp12/doors/slides_stow_all) stows it. See Output/A380X-XP12 backups/slides-20261115.
+ *
+ * Landing gear steering visuals (2026-11-24): the gear objects turn the nose gear's lower strut and wheels and the
+ * body gears' aft axles with a380x/xp12/gear/steer_vis_deg[5] (0 nose, 1/2 wing gears (always 0), 3/4 body gears;
+ * degrees, + right). It is X-Plane's enacted steering (sim/flightmodel2/gear/tire_steer_actual_deg) while that gear is
+ * on the ground; a gear that leaves the ground centres its wheels over STEER_CENTRE_S, as the A380's nose and body
+ * wheel steering centre in flight, so wheels never turn in the air or in the gear bay. The wheels spin with
+ * sim/flightmodel2/gear/tire_rotation_angle_deg directly. See Output/A380X-XP12 backups/wheels-20261124.
+ *
+ * Main gear bogie tilt (2026-11-24): the wing and body gear bogies pitch about their pivot pins with
+ * a380x/xp12/gear/bogie_tilt_deg[5] (degrees relative to the airframe, + = rear wheels down; nose gear 0). In flight
+ * with the gear down a bogie hangs at BOGIE_TILT_MAX_DEG (reached at BOGIE_TILT_RATE_DPS after lift-off); near the
+ * ground it is limited so its rear wheels never go below the runway, from that gear's height (y_agl, attitude and
+ * X-Plane's wheel position, calibrated on the ground against the strut deflection): on approach the rear wheels
+ * touch first and the bogie levels as the aircraft settles, and on the ground it follows the runway (the bogie
+ * stays flat when the aircraft rotates). It is faded out over the last 15 % of gear travel, so the gear stows as
+ * modelled. a380x/xp12/gear/height_m[5] shows the computed wheel heights (diagnostics).
  */
 #include <ctype.h>
 #include <math.h>
@@ -53,6 +76,35 @@ static XPLMDataRef in_order[8], in_gs_cmd, in_xp_spoiler2, in_xp_sb_ratio, in_xp
 static int hyd_ok = 1;
 static double inputs_search_t = -10.0;
 static XPLMCommandRef cabin_cmds[4];
+/* ---- escape slides ---- */
+#define SLIDES 16
+#define SLIDE_INFLATE_S 6.0f
+#define SLIDE_STOW_S 3.0f
+#define SLIDE_DOOR_SHUT 0.005f     /* below this a door counts as shut: the arming state is latched */
+#define SLIDE_START_MAIN 0.25f     /* door ratio at which the slide pack leaves (after the handle phase) */
+#define SLIDE_START_UPPER 0.35f
+static float slide_ratio[SLIDES];
+static int slide_latched[SLIDES], slide_out[SLIDES];
+static XPLMDataRef slide_ref, slide_armed_in, door_ratio_in;
+static XPLMCommandRef slide_stow_cmd;
+static double slide_search_t = -10.0;
+/* ---- landing gear steering visuals ---- */
+#define GEAR_N 5
+#define STEER_CENTRE_S 1.0f        /* a gear that leaves the ground centres its wheels over this time */
+#define STEER_LIMIT_DEG 90.0f
+static float steer_vis[GEAR_N], steer_gate[GEAR_N];
+static XPLMDataRef steer_ref, steer_act_in, gear_ground_in;
+static double gear_search_t = -10.0;
+/* ---- main gear bogie tilt ---- */
+#define BOGIE_TILT_MAX_DEG 10.0f   /* in flight, gear down: rear wheels down */
+#define BOGIE_TILT_MIN_DEG -15.0f  /* on the ground with the nose up the bogie follows the runway */
+#define BOGIE_TILT_RATE_DPS 8.0f   /* pitch trimmer after lift-off */
+#define BOGIE_GATE_FROM 0.85f      /* deploy ratio below which the bogie is in its modelled stowing pose */
+#define GEAR_BIAS_TAU_S 1.0f
+static const float bogie_arm_m[GEAR_N] = {0.0f, 0.867f, 0.867f, 1.66f, 1.66f};   /* pivot -> rear axle */
+static float bogie_tilt[GEAR_N], bogie_vis[GEAR_N], gear_height[GEAR_N], gear_bias[GEAR_N];
+static int gear_bias_ok[GEAR_N];
+static XPLMDataRef tilt_ref, height_ref, tire_in[3], agl_in, theta_in, phi_in, deploy_in, defl_in;
 static float door_timer;
 static float wanted[DOORS];
 static int configured[DOORS];
@@ -239,6 +291,148 @@ static void surfaces_step(float dt)
     ail_up = rate(ail_up, ail_target, AIL_UP_RATE * dt);
 }
 
+static int get_slide_ratio(void *refcon, float *out, int offset, int count)
+{
+    (void)refcon;
+    if (!out) return SLIDES;
+    if (offset < 0 || offset >= SLIDES || count <= 0) return 0;
+    if (count > SLIDES - offset) count = SLIDES - offset;
+    memcpy(out, slide_ratio + offset, (size_t)count * sizeof(float));
+    return count;
+}
+static int slide_stow_command(XPLMCommandRef cmd, XPLMCommandPhase phase, void *refcon)
+{
+    int k;
+    (void)cmd; (void)refcon;
+    if (phase == xplm_CommandBegin) for (k = 0; k < SLIDES; ++k) slide_out[k] = 0;
+    return 0;
+}
+static void slides_reset(void)
+{
+    memset(slide_ratio, 0, sizeof(slide_ratio)); memset(slide_latched, 0, sizeof(slide_latched));
+    memset(slide_out, 0, sizeof(slide_out));
+}
+static void slides_step(float dt)
+{
+    float door[SLIDES];
+    int armed[SLIDES], k, have_armed = 0;
+    if (XPLMGetElapsedTime() - slide_search_t > 2.0) {
+        if (!slide_armed_in) slide_armed_in = XPLMFindDataRef("a380x/xp12/efb/slide_armed");
+        if (!door_ratio_in) door_ratio_in = XPLMFindDataRef("sim/flightmodel2/misc/door_open_ratio");
+        slide_search_t = XPLMGetElapsedTime();
+    }
+    if (!door_ratio_in || XPLMGetDatavf(door_ratio_in, door, 0, SLIDES) < SLIDES) return;
+    memset(armed, 0, sizeof(armed));
+    if (slide_armed_in && XPLMGetDatavi(slide_armed_in, armed, 0, SLIDES) >= SLIDES) have_armed = 1;
+    for (k = 0; k < SLIDES; ++k) {
+        float start = k >= 10 ? SLIDE_START_UPPER : SLIDE_START_MAIN, target;
+        if (!(door[k] > SLIDE_DOOR_SHUT)) {
+            if (have_armed) slide_latched[k] = armed[k] != 0;
+            slide_out[k] = 0;                         /* door shut: the slide is (re)packed */
+        } else if (slide_latched[k] && door[k] >= start) {
+            char line[96];
+            slide_latched[k] = 0;
+            slide_out[k] = 1;
+            snprintf(line, sizeof(line), "A380X slides: door %d opened with its slide armed - slide deploying\n", k);
+            XPLMDebugString(line);
+        }
+        target = slide_out[k] ? 1.0f : 0.0f;
+        slide_ratio[k] = rate(slide_ratio[k], target, dt / (slide_out[k] ? SLIDE_INFLATE_S : SLIDE_STOW_S));
+    }
+}
+
+static int get_steer_vis(void *refcon, float *out, int offset, int count)
+{
+    (void)refcon;
+    if (!out) return GEAR_N;
+    if (offset < 0 || offset >= GEAR_N || count <= 0) return 0;
+    if (count > GEAR_N - offset) count = GEAR_N - offset;
+    memcpy(out, steer_vis + offset, (size_t)count * sizeof(float));
+    return count;
+}
+static int get_bogie_tilt(void *refcon, float *out, int offset, int count)
+{
+    const float *src = refcon ? gear_height : bogie_vis;
+    if (!out) return GEAR_N;
+    if (offset < 0 || offset >= GEAR_N || count <= 0) return 0;
+    if (count > GEAR_N - offset) count = GEAR_N - offset;
+    memcpy(out, src + offset, (size_t)count * sizeof(float));
+    return count;
+}
+static void gear_reset(void)
+{
+    memset(steer_vis, 0, sizeof(steer_vis)); memset(steer_gate, 0, sizeof(steer_gate));
+    memset(bogie_tilt, 0, sizeof(bogie_tilt)); memset(bogie_vis, 0, sizeof(bogie_vis));
+    memset(gear_height, 0, sizeof(gear_height)); memset(gear_bias, 0, sizeof(gear_bias));
+    memset(gear_bias_ok, 0, sizeof(gear_bias_ok));
+}
+static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
+/* Bogie tilt of the main gears from each wheel's height above the ground (see the header). */
+static void bogie_step(float dt, const int *ground)
+{
+    float tx[GEAR_N], ty[GEAR_N], tz[GEAR_N], dep[GEAR_N], defl[GEAR_N], agl, th, ph;
+    int k;
+    if (!tire_in[0] || !tire_in[1] || !tire_in[2] || !agl_in || !theta_in || !phi_in || !deploy_in) return;
+    memset(defl, 0, sizeof(defl));
+    if (XPLMGetDatavf(tire_in[0], tx, 0, GEAR_N) < GEAR_N || XPLMGetDatavf(tire_in[1], ty, 0, GEAR_N) < GEAR_N ||
+        XPLMGetDatavf(tire_in[2], tz, 0, GEAR_N) < GEAR_N || XPLMGetDatavf(deploy_in, dep, 0, GEAR_N) < GEAR_N) return;
+    if (defl_in) XPLMGetDatavf(defl_in, defl, 0, GEAR_N);
+    agl = XPLMGetDataf(agl_in); th = XPLMGetDataf(theta_in); ph = XPLMGetDataf(phi_in);
+    if (!isfinite(agl) || !isfinite(th) || !isfinite(ph)) return;
+    for (k = 1; k < GEAR_N; ++k) {
+        float tr = th * 0.0174533f, pr = ph * 0.0174533f, h_raw, h, allowed, cmd, gate;
+        /* airplane coordinates (x right, y up, z aft) -> height: roll about z, then pitch about x */
+        h_raw = agl + (-tx[k] * sinf(pr) + ty[k] * cosf(pr)) * cosf(tr) - tz[k] * sinf(tr);
+        if (!isfinite(h_raw)) continue;
+        if (ground[k]) {
+            float b = h_raw + (isfinite(defl[k]) ? defl[k] : 0.0f);
+            if (!gear_bias_ok[k]) { gear_bias[k] = b; gear_bias_ok[k] = 1; }
+            else gear_bias[k] += (b - gear_bias[k]) * clampf(dt / GEAR_BIAS_TAU_S, 0.0f, 1.0f);
+            h = 0.0f;
+        } else {
+            h = h_raw - gear_bias[k];
+        }
+        gear_height[k] = h;
+        /* bogie angle to the ground that keeps the rear wheels at or above it */
+        allowed = h <= 0.0f ? 0.0f : asinf(clampf(h / bogie_arm_m[k], 0.0f, 1.0f)) * 57.29578f;
+        cmd = clampf(allowed - th, BOGIE_TILT_MIN_DEG, BOGIE_TILT_MAX_DEG);
+        if (cmd > bogie_tilt[k]) bogie_tilt[k] = fminf(cmd, bogie_tilt[k] + BOGIE_TILT_RATE_DPS * dt);
+        else bogie_tilt[k] = cmd;                                   /* the ground pushes it level at once */
+        gate = isfinite(dep[k]) ? clampf((dep[k] - BOGIE_GATE_FROM) / (1.0f - BOGIE_GATE_FROM), 0.0f, 1.0f) : 0.0f;
+        bogie_vis[k] = bogie_tilt[k] * gate;
+    }
+}
+/* Visual steering: X-Plane's enacted steering on the ground, centred once a gear is airborne. */
+static void gear_step(float dt)
+{
+    float act[GEAR_N];
+    int ground[GEAR_N], k;
+    if (XPLMGetElapsedTime() - gear_search_t > 2.0) {
+        if (!steer_act_in) steer_act_in = XPLMFindDataRef("sim/flightmodel2/gear/tire_steer_actual_deg");
+        if (!gear_ground_in) gear_ground_in = XPLMFindDataRef("sim/flightmodel2/gear/on_ground");
+        if (!tire_in[0]) tire_in[0] = XPLMFindDataRef("sim/flightmodel/parts/tire_x_no_deflection");
+        if (!tire_in[1]) tire_in[1] = XPLMFindDataRef("sim/flightmodel/parts/tire_y_no_deflection");
+        if (!tire_in[2]) tire_in[2] = XPLMFindDataRef("sim/flightmodel/parts/tire_z_no_deflection");
+        if (!agl_in) agl_in = XPLMFindDataRef("sim/flightmodel/position/y_agl");
+        if (!theta_in) theta_in = XPLMFindDataRef("sim/flightmodel/position/theta");
+        if (!phi_in) phi_in = XPLMFindDataRef("sim/flightmodel/position/phi");
+        if (!deploy_in) deploy_in = XPLMFindDataRef("sim/flightmodel2/gear/deploy_ratio");
+        if (!defl_in) defl_in = XPLMFindDataRef("sim/flightmodel2/gear/tire_vertical_deflection_mtr");
+        gear_search_t = XPLMGetElapsedTime();
+    }
+    if (!steer_act_in || !gear_ground_in) return;
+    memset(act, 0, sizeof(act)); memset(ground, 0, sizeof(ground));
+    if (XPLMGetDatavf(steer_act_in, act, 0, GEAR_N) < GEAR_N) return;
+    if (XPLMGetDatavi(gear_ground_in, ground, 0, GEAR_N) < GEAR_N) return;
+    for (k = 0; k < GEAR_N; ++k) {
+        float a = isfinite(act[k]) ? act[k] : 0.0f;
+        if (a > STEER_LIMIT_DEG) a = STEER_LIMIT_DEG; else if (a < -STEER_LIMIT_DEG) a = -STEER_LIMIT_DEG;
+        steer_gate[k] = rate(steer_gate[k], ground[k] ? 1.0f : 0.0f, dt / STEER_CENTRE_S);
+        steer_vis[k] = a * steer_gate[k];
+    }
+    bogie_step(dt, ground);
+}
+
 static void cabin_reset(void)
 {
     memset(shade_target, 0, sizeof(shade_target)); memset(shade_ratio, 0, sizeof(shade_ratio));
@@ -280,6 +474,8 @@ static float flight_loop(float since_call, float since_loop, int counter, void *
     step(shade_ratio, shade_target, SHADES, dt / SHADE_TRAVEL_S);
     step(bin_ratio, bin_target, BINS, dt / BIN_TRAVEL_S);
     if (dt > 0.0f) surfaces_step(dt);
+    if (dt > 0.0f) slides_step(dt);
+    if (dt > 0.0f) gear_step(dt);
     door_timer -= since_call;
     if (door_timer <= 0.0f) { apply(); door_timer = 2.0f; }
     return -1.0f;   /* every frame: smooth shade / bin motion */
@@ -290,7 +486,7 @@ PLUGIN_API int XPluginStart(char *name, char *signature, char *description)
     char line[160];
     strcpy(name, "A380X Door Timing");
     strcpy(signature, "org.a380x.xp12.door-timing");
-    strcpy(description, "Door cycle times (door_timing.ini), cabin window shades and overhead bins.");
+    strcpy(description, "Door cycle times (door_timing.ini), cabin shades and bins, surface visuals, escape slides.");
     XPLMEnableFeature("XPLM_USE_NATIVE_PATHS", 1);
     cycle_ref = XPLMFindDataRef("sim/flightmodel2/misc/door_cycle_time");
     if (!cycle_ref) { XPLMDebugString("A380X doors: sim/flightmodel2/misc/door_cycle_time not found\n"); return 0; }
@@ -306,6 +502,19 @@ PLUGIN_API int XPluginStart(char *name, char *signature, char *description)
                                             NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
     XPLMDebugString("A380X surfaces: spoiler panels (a380x/xp12/surfaces/spoiler_deg[16]) and ground aileron up ready\n");
     XPLMDebugString("A380X cabin: window shades (a380x/xp12/cabin/shade[]) and overhead bins (bin[]) ready\n");
+    slide_ref = XPLMRegisterDataAccessor("a380x/xp12/doors/slide_ratio", xplmType_FloatArray, 0, NULL, NULL, NULL, NULL,
+                                         NULL, NULL, NULL, NULL, get_slide_ratio, NULL, NULL, NULL, NULL, NULL);
+    slide_stow_cmd = XPLMCreateCommand("a380x/xp12/doors/slides_stow_all", "Escape slides: stow all deployed slides");
+    XPLMRegisterCommandHandler(slide_stow_cmd, slide_stow_command, 1, NULL);
+    XPLMDebugString("A380X slides: escape slides (a380x/xp12/doors/slide_ratio[16]) deploy when an armed door opens\n");
+    steer_ref = XPLMRegisterDataAccessor("a380x/xp12/gear/steer_vis_deg", xplmType_FloatArray, 0, NULL, NULL, NULL, NULL,
+                                         NULL, NULL, NULL, NULL, get_steer_vis, NULL, NULL, NULL, NULL, NULL);
+    XPLMDebugString("A380X gear: wheel steering visuals (a380x/xp12/gear/steer_vis_deg[5]) ready\n");
+    tilt_ref = XPLMRegisterDataAccessor("a380x/xp12/gear/bogie_tilt_deg", xplmType_FloatArray, 0, NULL, NULL, NULL, NULL,
+                                        NULL, NULL, NULL, NULL, get_bogie_tilt, NULL, NULL, NULL, NULL, NULL);
+    height_ref = XPLMRegisterDataAccessor("a380x/xp12/gear/height_m", xplmType_FloatArray, 0, NULL, NULL, NULL, NULL,
+                                          NULL, NULL, NULL, NULL, get_bogie_tilt, NULL, NULL, NULL, (void *)1, NULL);
+    XPLMDebugString("A380X gear: main gear bogie tilt (a380x/xp12/gear/bogie_tilt_deg[5], height_m[5]) ready\n");
     XPLMRegisterFlightLoopCallback(flight_loop, -1.0f, NULL);
     return 1;
 }
@@ -316,11 +525,16 @@ PLUGIN_API void XPluginStop(void)
     XPLMUnregisterFlightLoopCallback(flight_loop, NULL);
     cabin_stop();
     for (k = 0; k < 2; ++k) if (surf_refs[k]) { XPLMUnregisterDataAccessor(surf_refs[k]); surf_refs[k] = NULL; }
+    if (slide_ref) { XPLMUnregisterDataAccessor(slide_ref); slide_ref = NULL; }
+    if (steer_ref) { XPLMUnregisterDataAccessor(steer_ref); steer_ref = NULL; }
+    if (tilt_ref) { XPLMUnregisterDataAccessor(tilt_ref); tilt_ref = NULL; }
+    if (height_ref) { XPLMUnregisterDataAccessor(height_ref); height_ref = NULL; }
+    if (slide_stow_cmd) { XPLMUnregisterCommandHandler(slide_stow_cmd, slide_stow_command, 1, NULL); slide_stow_cmd = NULL; }
 }
 PLUGIN_API int XPluginEnable(void) { apply(); return 1; }
 PLUGIN_API void XPluginDisable(void) {}
 PLUGIN_API void XPluginReceiveMessage(XPLMPluginID from, int message, void *param)
 {
     (void)from; (void)param;
-    if (message == XPLM_MSG_PLANE_LOADED) { apply(); cabin_reset(); }
+    if (message == XPLM_MSG_PLANE_LOADED) { apply(); cabin_reset(); slides_reset(); gear_reset(); }
 }

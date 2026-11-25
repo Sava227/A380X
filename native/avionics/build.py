@@ -63,6 +63,7 @@ FLAPS_ADAPTER_TEST = HERE / "test_flaps_adapter.c"
 # a380x_speedbrake.h, adapter a380x_speedbrake.inc (tested against a mock XPLM; the stock speed brake commands it
 # intercepts are checked below). It reuses the thrust detent click.
 SPEEDBRAKE_TEST = HERE / "test_speedbrake.c"
+AUTOBRAKE_TEST = HERE / "test_autobrake.c"      # A380 BCU autobrake core a380x_autobrake.h (FBW A380AutobrakeController)
 SPEEDBRAKE_ADAPTER_TEST = HERE / "test_speedbrake_adapter.c"
 SPEEDBRAKE_SOURCES = [HERE / "a380x_speedbrake.h", HERE / "a380x_speedbrake.inc"]
 FCTL_TEST = HERE / "test_fctl.c"
@@ -384,6 +385,12 @@ def main() -> None:
     flaps_adapter_result = run([str(flaps_adapter_binary)]).strip()
     flaps_contracts = run([str(flaps_adapter_binary), "--contracts"]).splitlines()
     flaps_stock_commands = [line[2:] for line in flaps_contracts if line.startswith("X ")]
+    autobrake_binary = output / "test_autobrake"
+    run([clang, *warnings, str(AUTOBRAKE_TEST), "-lm", "-o", str(autobrake_binary)])
+    autobrake_result = run([str(autobrake_binary)]).strip().splitlines()[-1]
+    if autobrake_result != "autobrake core tests passed":
+        raise RuntimeError("A380 autobrake core test failed: " + autobrake_result)
+    run([mingw, *warnings, "-c", str(AUTOBRAKE_TEST), "-o", str(output / "test_autobrake_win_check.o")])
     speedbrake_binary = output / "test_speedbrake"
     run([clang, *warnings, str(SPEEDBRAKE_TEST), "-lm", "-o", str(speedbrake_binary)])
     speedbrake_result = run([str(speedbrake_binary)]).strip().splitlines()[-1]
@@ -884,6 +891,7 @@ def main() -> None:
 
     common = [*warnings, "-Wno-deprecated-declarations", "-fvisibility=hidden",
               "-DXPLM200=1", "-DXPLM210=1", "-DXPLM300=1", "-DXPLM400=1", "-DXPLM410=1",
+              "-DA380X_XPAP_DEFAULT=1",   # AP/A/THR through X-Plane's autopilot (a380x_xpap_bridge.inc)
               *mfd_page_flags, "-I", str(headers)]
     mac = output / "mac.xpl"
     run([clang, *common, *(["-DA380X_XPKIT=1"] if args.xpkit else []), "-DAPL=1", "-arch", "arm64", "-arch", "x86_64",
@@ -1131,6 +1139,7 @@ def main() -> None:
                             "law_source": "original port law from the published Airbus normal-law description "
                                           "(docs/FLIGHT_CONTROLS.md); not FBW PRIM code",
                             "behaviour": "docs/FLIGHT_CONTROLS.md", "simulator_tested": False},
+        "autobrake_test_result": autobrake_result,
         "speedbrake_test_result": speedbrake_result,
         "speedbrake_adapter_test_result": speedbrake_adapter_result,
         "speed_brake": {"commands": list(SPEEDBRAKE_COMMANDS), "datarefs": list(SPEEDBRAKE_DATAREFS),

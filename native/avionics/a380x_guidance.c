@@ -131,6 +131,20 @@ static void revert_vertical(A380XGuidanceState *s,const A380XGuidanceInputs *i) 
     s->vertical_mode=s->trk_fpa_mode?A380X_B1_FPA:A380X_B1_VS;
     s->capture_seconds=0; s->reversion_seconds=5; s->mode_reversion=1;
 }
+#define GUIDANCE_FAULT_HOLD_S 3.0
+const char *a380x_guidance_drop_text(int reason) {
+    switch(reason) {
+    case A380X_DROP_TIME_STEP: return "invalid simulator time step";
+    case A380X_DROP_FLIGHT_DATA: return "flight data lost";
+    case A380X_DROP_GS_BELOW_100: return "G/S below 100 ft without LAND";
+    case A380X_DROP_LAW_OUTPUT: return "FBW guidance law output not valid for 3 s";
+    case A380X_DROP_NO_VERTICAL_MODE: return "no vertical mode";
+    case A380X_DROP_NO_FD_AP: return "no FD/AP";
+    case A380X_DROP_LAND_NO_RA: return "LAND without radio altimeter";
+    case A380X_DROP_GROUND_GA: return "go-around/TOGA on the ground";
+    default: return "unknown";
+    }
+}
 static void disconnect(A380XGuidanceState *s,int warning) {
     if ((s->ap1 || s->ap2) && warning) s->disconnect_seconds=5;
     s->ap1=0; s->ap2=0; s->pitch_servo=0; s->roll_servo=0; s->pitch_integral=0;
@@ -299,6 +313,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
     const A380XIlsInputs *ils;
     if(!s || !i || !s->initialized) return;
     if(!isfinite(dt) || dt>1) {
+        if(s->ap1 || s->ap2) s->drop_reason=A380X_DROP_TIME_STEP;
         disconnect(s,1); s->athr_active=0; s->guidance_valid=0; return;
     }
     /* Freeze display/mode state on pause; simulator adapter releases controls. */
@@ -332,7 +347,7 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
     s->vs_dashes=!vs_mode(s) && s->vs_preselect_seconds<=0;
     /* Only lost flight data disconnects; no attitude or speed envelope disconnect (user decision
      * 2026-11-09): an AP engaged outside the normal attitudes flies back to its commands. */
-    if(!valid) disconnect(s,1);
+    if(!valid) { if(s->ap1 || s->ap2) s->drop_reason=A380X_DROP_FLIGHT_DATA; disconnect(s,1); }
     if(!i->powered) { s->athr_armed=0; s->loc_armed=s->gs_armed=s->approach_selected=0; }
     if(valid && nav_mode(s) && !i->managed_route_valid) managed_nav_lost(s,i);
     managed_update(s,i,valid);
@@ -386,7 +401,9 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
     }
     landing_modes(s,i,dt,ils,valid);
     /* Without LAND engaged (e.g. no APPR, no RA, LOC/GS not in track) the AP still disconnects below 100 ft. */
-    if(gs_mode(s) && !s->land.land_active && i->radio_height_ft<100 && (s->ap1 || s->ap2)) disconnect(s,1);
+    if(gs_mode(s) && !s->land.land_active && i->radio_height_ft<100 && (s->ap1 || s->ap2)) {
+        s->drop_reason=A380X_DROP_GS_BELOW_100; disconnect(s,1);
+    }
     s->previous_loc_dots=ils->loc_deviation_dots; s->previous_gs_dots=ils->gs_deviation_dots;
     s->have_previous_ils=ils->valid;
     target_vs=s->trk_fpa_mode?tan(s->selected_fpa_deg*RAD)*fmax(i->ground_speed_knots,30)*101.2686:s->selected_vs_fpm;
@@ -413,12 +430,30 @@ void a380x_guidance_update(A380XGuidanceState *s,const A380XGuidanceInputs *i,do
     managed_after_capture(s,i,before_capture,was_managed);
     if(gs_mode(s)) target_vs=-tan((ils->gs_angle_deg>0?ils->gs_angle_deg:3)*RAD)*fmax(i->ground_speed_knots,30)*101.2686;
     s->vs_target_fpm=clamp(target_vs,-6000,6000);
-    s->guidance_valid=valid && s->vertical_guidance_selected && (s->fd1 || s->fd2 || s->ap1 || s->ap2) &&
-        a380x_fbw_laws_step(s->fbw_laws,i,s,dt);
+    /* An engaged AP always has a vertical mode: with none (e.g. after a takeoff without SRS) it holds the
+     * current altitude, as at engagement. */
+    if((s->ap1 || s->ap2) && valid && !s->vertical_guidance_selected) {
+        s->vertical_guidance_selected=1; s->held_altitude_ft=i->altitude_ft; s->vertical_mode=A380X_B1_ALT;
+        s->altitude_target_ft=s->held_altitude_ft; s->vs_target_fpm=0;
+    }
+    {
+        int law_ok=0;
+        s->guidance_valid=valid && s->vertical_guidance_selected && (s->fd1 || s->fd2 || s->ap1 || s->ap2) &&
+            (law_ok=a380x_fbw_laws_step(s->fbw_laws,i,s,dt));
+        if(!s->guidance_valid && (s->ap1 || s->ap2)) {
+            int reason=!valid?A380X_DROP_FLIGHT_DATA:!s->vertical_guidance_selected?A380X_DROP_NO_VERTICAL_MODE:
+                !law_ok?A380X_DROP_LAW_OUTPUT:A380X_DROP_NO_FD_AP;
+            /* With valid flight data a guidance fault no longer drops the AP at once: it keeps the
+             * aircraft (neutral orders; the FBW normal law holds the flight path) and the law restarts;
+             * only a fault lasting GUIDANCE_FAULT_HOLD_S disconnects (AP OFF), with its reason. */
+            s->guidance_fault_seconds+=dt;
+            if(!valid || s->guidance_fault_seconds>=GUIDANCE_FAULT_HOLD_S) { s->drop_reason=reason; disconnect(s,1); }
+            else s->drop_reason=reason;
+        } else if(s->guidance_valid) s->guidance_fault_seconds=0;
+    }
     if(!s->guidance_valid) {
         s->fd_pitch_error_deg=s->fd_roll_error_deg=0; s->pitch_servo=s->roll_servo=0;
         s->pitch_integral=0; a380x_fbw_laws_reset(s->fbw_laws);
-        if(s->ap1 || s->ap2) disconnect(s,1);
     } else if(s->ap1 || s->ap2) {
         /* X-Plane actuator adapter, downstream of FBW attitude commands.
          * Anti-windup, bounded gains; these require in-simulator tuning. */

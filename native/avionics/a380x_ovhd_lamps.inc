@@ -20,6 +20,7 @@ enum {
     OVR_WING_AI, OVR_WINDOW_HEAT, OVR_FUEL_PUMP, OVR_O2, OVR_BUS_VOLTS,
     OVR_FAIL_APU, OVR_FAIL_APU_FIRE, OVR_FAIL_BLEED_L, OVR_FAIL_BLEED_R,
     OVR_FAIL_INLET1, OVR_FAIL_INLET2, OVR_FAIL_INLET3, OVR_FAIL_INLET4, OVR_FAIL_SURF_HEAT,
+    OVR_FAIL_APU_PRESS, OVR_FAIL_HVAC,
     OVR_COUNT
 };
 static const char *const ovhd_raw_names[OVR_COUNT] = {
@@ -44,6 +45,8 @@ static const char *const ovhd_raw_names[OVR_COUNT] = {
     "sim/operation/failures/rel_ice_inlet_heat3",
     "sim/operation/failures/rel_ice_inlet_heat4",
     "sim/operation/failures/rel_ice_surf_heat",
+    "sim/operation/failures/rel_APU_press",
+    "sim/operation/failures/rel_HVAC",
 };
 #define OVHD_ANN_SWITCH_SECONDS 0.12f   /* full lever travel TEST -> DIM */
 
@@ -108,6 +111,8 @@ static void ovhd_read_inputs(void)
     }
     ovhd_in.pack[0] = ovhd_rawi(OVR_PACK_L) != 0;
     ovhd_in.pack[1] = ovhd_rawi(OVR_PACK_R) != 0;
+    ovhd_in.apu_bleed_failed = ovhd_failed(OVR_FAIL_APU_PRESS);
+    ovhd_in.pack_failed[0] = ovhd_in.pack_failed[1] = ovhd_failed(OVR_FAIL_HVAC);
     ovhd_in.wing_ai = ovhd_rawi(OVR_WING_AI) != 0;
     ovhd_in.wing_ai_failed = ovhd_failed(OVR_FAIL_SURF_HEAT);
     ovhd_in.window_heat = ovhd_rawi(OVR_WINDOW_HEAT) != 0;

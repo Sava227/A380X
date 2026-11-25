@@ -163,7 +163,7 @@ Every variable read by the pages, with the class (see `tools/sd_pages_census.py`
 | Page | live | derived | ncd | missing | bundle | n/a | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | ENGINE | 21 | 33 | 0 | 0 | 1 | 0 | 55 |
-| APU | 19 | 5 | 1 | 0 | 1 | 0 | 26 |
+| APU | 20 | 4 | 1 | 0 | 1 | 0 | 26 |
 | BLEED | 5 | 45 | 0 | 0 | 0 | 0 | 50 |
 | COND | 0 | 40 | 0 | 0 | 1 | 0 | 41 |
 | CAB PRESS | 45 | 31 | 0 | 0 | 0 | 0 | 76 |
@@ -177,7 +177,7 @@ Every variable read by the pages, with the class (see `tools/sd_pages_census.py`
 | CRUISE | 21 | 31 | 0 | 0 | 2 | 0 | 54 |
 | STATUS | 30 | 0 | 0 | 0 | 0 | 0 | 30 |
 | PERMANENT DATA | 9 | 0 | 1 | 0 | 0 | 0 | 10 |
-| **all** | 349 | 367 | 3 | 21 | 7 | 2 | 749 |
+| **all** | 350 | 366 | 3 | 21 | 7 | 2 | 749 |
 
 ### ENGINE
 

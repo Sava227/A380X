@@ -219,7 +219,9 @@ static void landing_modes(A380XGuidanceState *s, const A380XGuidanceInputs *i, d
     landing_go_around(s, i, valid);
     /* APEngagedLogic groundGa: on the ground a go-around or any lever at TLA >= 36.7 deg disengages
      * the AP (FD guidance continues). */
-    if (i->on_ground && ap && (l->go_around_active || l->previous_toga_count > 0)) { disconnect(s, 1); ap = 0; }
+    if (i->on_ground && ap && (l->go_around_active || l->previous_toga_count > 0)) {
+        s->drop_reason = A380X_DROP_GROUND_GA; disconnect(s, 1); ap = 0;
+    }
     if (!l->land_active) {
         int engage = valid && !i->on_ground && s->approach_selected && (ap || fd) && ra_ok &&
             ra < LAND_ENGAGE_RA_FT && s->lateral_mode == A380X_C1_LOC && s->vertical_mode == A380X_B1_GS &&
@@ -245,7 +247,7 @@ static void landing_modes(A380XGuidanceState *s, const A380XGuidanceInputs *i, d
         l->rollout_active = l->rollout_confirm_s >= ROLLOUT_CONFIRM_S - 1e-9;
         if (l->rollout_active) l->flare_active = 1;   /* the FLARE law derotates on the ground */
         /* Without a radio altimeter there is no flare: an engaged AP disconnects (AUTOLAND light). */
-        if (!ra_ok && !i->on_ground && !l->flare_active && ap) disconnect(s, 1);
+        if (!ra_ok && !i->on_ground && !l->flare_active && ap) { s->drop_reason = A380X_DROP_LAND_NO_RA; disconnect(s, 1); }
         l->ground_s = i->on_ground ? l->ground_s + dt : 0;
         if (i->on_ground && l->ground_s >= LAND_RESET_GROUND_S && !(s->ap1 || s->ap2) &&
             (l->cancel_request || (!s->fd1 && !s->fd2))) landing_exit_on_ground(s, i);

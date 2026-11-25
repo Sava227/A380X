@@ -43,7 +43,7 @@ static int fcu_authority_handler(XPLMCommandRef command,XPLMCommandPhase phase,v
     FcuAuthorityCommand *item=(FcuAuthorityCommand *)refcon;
     int pass=item->action==FCUA_AP_OFF || item->action==FCUA_ATHR_OFF;
     (void)command;
-    if (!plugin_enabled || fcu_authority.internal) return 1;
+    if (!plugin_enabled || fcu_authority.internal || xpap_on()) return 1;   /* X-Plane AP mode: stock commands pass */
     if (phase==xplm_CommandBegin) {
         switch(item->action) {
         case FCUA_AP1_ON: if (!guidance.ap1) XPLMCommandOnce(fcu_authority.ap1); break;
@@ -123,7 +123,7 @@ static void fcu_authority_prepare_athr(void)
 static void fcu_authority_guard(void)
 {
     int i,native_ap=0,native_athr;
-    if(!plugin_enabled) return;
+    if(!plugin_enabled || xpap_on()) return;   /* X-Plane AP mode: X-Plane's servos/A/THR are the AFS */
     for(i=0;i<3;++i) if(fcu_authority.stock_servos[i]
         && XPLMGetDatai(fcu_authority.stock_servos[i])) native_ap=1;
     native_athr=fcu_authority.stock_athr && XPLMGetDatai(fcu_authority.stock_athr)>0;
