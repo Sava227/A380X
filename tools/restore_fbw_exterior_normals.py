@@ -7,6 +7,8 @@ bent: the nose shows a bulge and stair-stepped bands. FBW's own DDS has the same
 0.82-0.91, same green sign) on a flat base. Each map is decoded, resized to the size installed now (the
 normal-map halving budget stays), written as RGB with blue 128 (X-Plane rebuilds Z), and its
 normal-map-manifest.json entry is updated so halve_normal_maps.py does not halve it again.
+--min-size raises a map to that size (never above FBW's own), e.g. 2048 for sharper fuselage and wing
+panel lines (+~0.2 GB texture memory over the halved 1024 px maps).
 Engine materials (prepare_engine_materials.py) and the 256 px stubs (gear, bays, windows) are left alone.
 
     python3 tools/restore_fbw_exterior_normals.py --aircraft "<X-Plane>/Aircraft/A380X-XP12" \
@@ -55,6 +57,7 @@ def main():
     parser.add_argument("--aircraft", type=Path, required=True)
     parser.add_argument("--fbw-textures", type=Path, required=True, help="FBW MSFS texture folder (DDS)")
     parser.add_argument("--backup", type=Path, required=True, help="folder for the replaced PNGs")
+    parser.add_argument("--min-size", type=int, default=0, help="raise each map to at least this size")
     args = parser.parse_args()
     aircraft = args.aircraft.resolve()
     manifest_path = aircraft / MANIFEST
@@ -63,17 +66,20 @@ def main():
         path, source = aircraft / rel, args.fbw_textures / fbw_name
         if not path.is_file() or not source.is_file():
             raise SystemExit(f"missing {path if not path.is_file() else source}")
+        fbw = Image.open(source)
         size = Image.open(path).size
+        if args.min_size > size[0]:
+            side = min(args.min_size, fbw.size[0])
+            size = (side, side)
         target = args.backup / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         if not target.exists():
             shutil.copy2(path, target)          # keep the first original across re-runs
         tmp = path.with_name(path.name + ".tmp-fbw.png")
-        x_plane_normal(Image.open(source), size).save(tmp, optimize=True)
+        x_plane_normal(fbw, size).save(tmp, optimize=True)
         tmp.replace(path)
-        if manifest is not None and rel in manifest:
-            manifest[rel]["halved_sha256"] = sha256(path)   # already at the halved size: never halve again
-            manifest[rel]["fbw_source"] = fbw_name
+        if manifest is not None:   # final size: halve_normal_maps.py must never halve it again
+            manifest.setdefault(rel, {}).update(halved_sha256=sha256(path), fbw_source=fbw_name)
         print(f"{rel} <- {fbw_name} at {size[0]} px")
     if manifest is not None:
         manifest_path.write_text(json.dumps(manifest, indent=1, sort_keys=True) + "\n")
