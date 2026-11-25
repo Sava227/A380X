@@ -41,12 +41,13 @@
  *
  * Main gear bogie tilt (2026-11-24): the wing and body gear bogies pitch about their pivot pins with
  * a380x/xp12/gear/bogie_tilt_deg[5] (degrees relative to the airframe, + = rear wheels down; nose gear 0). In flight
- * with the gear down a bogie hangs at BOGIE_TILT_MAX_DEG (reached at BOGIE_TILT_RATE_DPS after lift-off); near the
- * ground it is limited so its rear wheels never go below the runway, from that gear's height (y_agl, attitude and
- * X-Plane's wheel position, calibrated on the ground against the strut deflection): on approach the rear wheels
- * touch first and the bogie levels as the aircraft settles, and on the ground it follows the runway (the bogie
- * stays flat when the aircraft rotates). It is faded out over the last 15 % of gear travel, so the gear stows as
- * modelled. a380x/xp12/gear/height_m[5] shows the computed wheel heights (diagnostics).
+ * with the gear down a bogie hangs front wheels down, as on the real A380, at BOGIE_TILT_FLIGHT_DEG (moving at
+ * BOGIE_TILT_RATE_DPS when free); near the ground it is limited so neither its front nor its rear wheels go below
+ * the runway, from that gear's height (y_agl, attitude and X-Plane's wheel position, calibrated on the ground against
+ * the strut deflection): on approach the front wheels touch first and the bogie levels as the aircraft settles, and
+ * on the ground it follows the runway (the bogie stays flat when the aircraft rotates). It is faded out over the last
+ * 15 % of gear travel, so the gear stows as modelled. a380x/xp12/gear/height_m[5] shows the computed wheel heights
+ * (diagnostics). (The first version, earlier on 2026-11-24, hung the bogies rear wheels down: the wrong way.)
  */
 #include <ctype.h>
 #include <math.h>
@@ -96,12 +97,12 @@ static float steer_vis[GEAR_N], steer_gate[GEAR_N];
 static XPLMDataRef steer_ref, steer_act_in, gear_ground_in;
 static double gear_search_t = -10.0;
 /* ---- main gear bogie tilt ---- */
-#define BOGIE_TILT_MAX_DEG 10.0f   /* in flight, gear down: rear wheels down */
-#define BOGIE_TILT_MIN_DEG -15.0f  /* on the ground with the nose up the bogie follows the runway */
-#define BOGIE_TILT_RATE_DPS 8.0f   /* pitch trimmer after lift-off */
+#define BOGIE_TILT_FLIGHT_DEG -10.0f /* in flight, gear down: front wheels down (A380) */
+#define BOGIE_TILT_LIMIT_DEG 15.0f   /* either way; on the ground with the nose up the bogie follows the runway */
+#define BOGIE_TILT_RATE_DPS 8.0f     /* pitch trimmer, when the bogie is free of the ground */
 #define BOGIE_GATE_FROM 0.85f      /* deploy ratio below which the bogie is in its modelled stowing pose */
 #define GEAR_BIAS_TAU_S 1.0f
-static const float bogie_arm_m[GEAR_N] = {0.0f, 0.867f, 0.867f, 1.66f, 1.66f};   /* pivot -> rear axle */
+static const float bogie_arm_m[GEAR_N] = {0.0f, 0.867f, 0.867f, 1.66f, 1.66f};   /* pivot -> front / rear axle */
 static float bogie_tilt[GEAR_N], bogie_vis[GEAR_N], gear_height[GEAR_N], gear_bias[GEAR_N];
 static int gear_bias_ok[GEAR_N];
 static XPLMDataRef tilt_ref, height_ref, tire_in[3], agl_in, theta_in, phi_in, deploy_in, defl_in;
@@ -380,7 +381,7 @@ static void bogie_step(float dt, const int *ground)
     agl = XPLMGetDataf(agl_in); th = XPLMGetDataf(theta_in); ph = XPLMGetDataf(phi_in);
     if (!isfinite(agl) || !isfinite(th) || !isfinite(ph)) return;
     for (k = 1; k < GEAR_N; ++k) {
-        float tr = th * 0.0174533f, pr = ph * 0.0174533f, h_raw, h, allowed, cmd, gate;
+        float tr = th * 0.0174533f, pr = ph * 0.0174533f, h_raw, h, reach, lo, hi, t, gate;
         /* airplane coordinates (x right, y up, z aft) -> height: roll about z, then pitch about x */
         h_raw = agl + (-tx[k] * sinf(pr) + ty[k] * cosf(pr)) * cosf(tr) - tz[k] * sinf(tr);
         if (!isfinite(h_raw)) continue;
@@ -393,11 +394,15 @@ static void bogie_step(float dt, const int *ground)
             h = h_raw - gear_bias[k];
         }
         gear_height[k] = h;
-        /* bogie angle to the ground that keeps the rear wheels at or above it */
-        allowed = h <= 0.0f ? 0.0f : asinf(clampf(h / bogie_arm_m[k], 0.0f, 1.0f)) * 57.29578f;
-        cmd = clampf(allowed - th, BOGIE_TILT_MIN_DEG, BOGIE_TILT_MAX_DEG);
-        if (cmd > bogie_tilt[k]) bogie_tilt[k] = fminf(cmd, bogie_tilt[k] + BOGIE_TILT_RATE_DPS * dt);
-        else bogie_tilt[k] = cmd;                                   /* the ground pushes it level at once */
+        /* the bogie's angle to the ground (tilt + pitch, + = rear down) must keep both axles at or above the ground:
+         * front wheels: >= -reach, rear wheels: <= +reach */
+        reach = h <= 0.0f ? 0.0f : asinf(clampf(h / bogie_arm_m[k], 0.0f, 1.0f)) * 57.29578f;
+        lo = clampf(-reach - th, -BOGIE_TILT_LIMIT_DEG, BOGIE_TILT_LIMIT_DEG);
+        hi = clampf(reach - th, -BOGIE_TILT_LIMIT_DEG, BOGIE_TILT_LIMIT_DEG);
+        t = bogie_tilt[k];                                          /* free: the trimmer drives it at its rate */
+        if (BOGIE_TILT_FLIGHT_DEG < t) t = fmaxf(BOGIE_TILT_FLIGHT_DEG, t - BOGIE_TILT_RATE_DPS * dt);
+        else t = fminf(BOGIE_TILT_FLIGHT_DEG, t + BOGIE_TILT_RATE_DPS * dt);
+        bogie_tilt[k] = clampf(t, lo, hi);                          /* the ground moves it at once */
         gate = isfinite(dep[k]) ? clampf((dep[k] - BOGIE_GATE_FROM) / (1.0f - BOGIE_GATE_FROM), 0.0f, 1.0f) : 0.0f;
         bogie_vis[k] = bogie_tilt[k] * gate;
     }
