@@ -289,6 +289,7 @@ static int xpkit_draw_sd(void);
 #include "a380x_isis_adapter.inc"
 #include "a380x_rmp_adapter.inc"      /* RMP 1-3: FBW radio management panels, COM 1/2 and transponder */
 #include "a380x_cockpit_feedback.inc"
+#include "a380x_eng_fan.inc"          /* exterior fan rotation: N1 spin and windmilling */
 #include "a380x_eng_start.inc"        /* ENG START selector + FADEC automatic start (after the feedback selector) */ /* key travel, SWITCHING / SURV / ECAM CP lamps (after SD, ADIRS, FMS) */
 #include "a380x_fws_adapter.inc"
 #include "a380x_aurals.inc"            /* cockpit aurals: callouts, CRC, C-chord, stall, V1 (after FWS, FMS, guidance) */
@@ -401,6 +402,7 @@ static float flight_loop(float elapsed_since_last_call, float elapsed_since_last
     rmpa_update();
     cfb_update();
     engs_update();
+    fan_update(elapsed_since_last_call > 0.0f ? elapsed_since_last_call : dt);
     a380x_efb_update(dt);
     terrain_update();   /* TERRAIN on ND: before the xp-kit publication that carries its rasters */
     xpkit_update();
@@ -646,6 +648,7 @@ PLUGIN_API int XPluginStart(char *name, char *signature, char *description)
         XPLMDebugString(fws_line);
     }
     engi_init();
+    fan_init();
     aurals_start();   /* cockpit aural samples (sounds/cockpit); silent if they are absent */
     if (!sda_init()) XPLMDebugString("A380X ECAM SD: registration failed; existing avionics remain available\n");
     /* Key-travel, selector and lamp datarefs before the aircraft OBJs bind them. */
@@ -706,6 +709,7 @@ PLUGIN_API void XPluginStop(void)
     ovhd_shutdown();
     aurals_stop();
     fwsa_shutdown();
+    fan_release();
     eln_shutdown();
     elec_shutdown();
     XPLMUnregisterDrawCallback(draw_panel, xplm_Phase_Gauges, 0, NULL);
@@ -755,6 +759,7 @@ PLUGIN_API void XPluginDisable(void)
 {
     aural_stop_all();
     engs_release();   /* no starter left engaged */
+    fan_release();
     xpkit_stop();
     isis_adapter_disable();
     sda_disable();
