@@ -81,6 +81,7 @@ typedef struct {
     int on_ground;
     int engine_running[A380X_THRUST_ENGINES];
     double n1[A380X_THRUST_ENGINES];          /* X-Plane N1 %, for the closed-loop mode only */
+    double ground_plant_weight;             /* 0 outside the measured ground envelope, 1 inside */
     double ias_knots;                         /* FBW V_ias_kn (low-speed N1 rules) */
     int flex_temp_valid;                      /* FMGC FLEX temperature valid (raw FMS value != 0) */
     double flex_temp_raw;                     /* L:AIRLINER_TO_FLEX_TEMP encoding: 0.1 = FLEX 0 C */
@@ -467,9 +468,41 @@ static inline double a380x_thrust_schedule(const A380XThrust *t, int i, double n
     return a380x_detent_clamp((n1 - l->idle) / (l->toga - l->idle), 0.0, 1.0);
 }
 
+/* Invert settled actual XP N1 versus applied ENGN_thro_use. Measured at KPDX and KDEN,
+ * static, approximately 15 C and packs/anti-ice off. This calibrates the input, not the engine
+ * physics or EWD. It has no feedback, timing or independent throttle ownership. */
+#define A380X_GROUND_PLANT_MIN_N1 63.40
+static inline double a380x_thrust_ground_command(double n1, double base, double base_at_floor,
+                                                 double ias, double condition)
+{
+    static const double xp_n1[] = {A380X_GROUND_PLANT_MIN_N1, 75.43, 79.29, 83.45, 87.43};
+    static const double xp_use[] = {0, .756, .798, .840, .882};
+    const int count = (int)(sizeof(xp_n1) / sizeof(xp_n1[0]));
+    double weight, inverse;
+    int k = 1;
+    if (!isfinite(n1) || !isfinite(ias) || !isfinite(condition) || condition <= 0 ||
+        n1 <= xp_n1[0] || n1 >= xp_n1[count - 1] || ias >= 60.0 || base >= 1)
+        return base;
+    while (n1 > xp_n1[k]) ++k;
+    /* Anchor at the legacy mapping on entry, then transition monotonically to the measured
+     * curve. A smaller legacy command always wins; the correction never adds power. */
+    const double lower = k == 1 ? base_at_floor : fmax(base_at_floor, xp_use[k-1]);
+    inverse = a380x_thrust_lerp(n1, xp_n1[k-1], xp_n1[k], lower, fmax(base_at_floor, xp_use[k]));
+    /* Taper at the measured endpoints, speed boundary and full-power bypass. */
+    weight = a380x_detent_clamp(condition, 0, 1) *
+             a380x_detent_clamp((60.0 - ias) / 25.0, 0, 1) *
+             a380x_detent_clamp((xp_n1[count-1] - n1) / 4.0, 0, 1) *
+             a380x_detent_clamp((1.0 - base) / .06, 0, 1);
+    return base + weight * (fmin(base, inverse) - base);
+}
+
 static inline double a380x_thrust_engine_command(A380XThrust *t, int i, const A380XThrustInputs *in, double sim_dt)
 {
     double u = a380x_thrust_schedule(t, i, t->n1_command[i], &in->limits);
+    if (t->fadec_mode == A380X_FADEC_SCHEDULED && in->on_ground && in->engine_running[i] && t->tla[i] > 0)
+        u = a380x_thrust_ground_command(t->n1_command[i], u,
+            a380x_thrust_schedule(t, i, A380X_GROUND_PLANT_MIN_N1, &in->limits),
+            in->ias_knots, in->ground_plant_weight);
     if (t->fadec_mode == A380X_FADEC_N1_LOOP && in->engine_running[i] && isfinite(in->n1[i]) && in->limits.valid
         && t->tla[i] >= 0.0 && isfinite(sim_dt) && sim_dt > 0.0) {
         t->loop_trim[i] = a380x_detent_clamp(t->loop_trim[i] + 0.01 * (t->n1_command[i] - in->n1[i]) * sim_dt, -0.5, 0.5);
