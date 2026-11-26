@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 from PIL import Image
 
-from smooth_engine_nacelles import channel_gain, high_pass, smooth_gloss, smooth_normal
+from smooth_exterior_maps import channel_gain, high_pass, smooth_gloss, smooth_normal
 
 
 class Smooth(unittest.TestCase):
@@ -29,6 +29,9 @@ class Smooth(unittest.TestCase):
         out = np.asarray(smooth_normal(fbw, inst, 128, 24))
         self.assertEqual(out.shape, (128, 128, 3))
         self.assertTrue((out[..., 2] == 128).all())
+        strong = Image.fromarray(np.clip((np.asarray(inst, float) - 128) * 5 + 128, 0, 255).astype(np.uint8))
+        capped = np.asarray(smooth_normal(fbw, strong, 128, 24), float)[..., :2] - 127.5
+        self.assertLess(capped.std(), (np.asarray(fbw, float)[..., :2] - 127.5).std() * 1.05)   # never above FBW's strength
         g = np.zeros((32, 32, 4), np.uint8); g[:, 16:, 1] = 200; g[..., 3] = 255
         g[5, 5, 1] = 255                                                  # a speckle
         s = np.asarray(smooth_gloss(Image.fromarray(g, "RGBA")))
