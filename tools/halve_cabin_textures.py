@@ -5,7 +5,8 @@ X-Plane 12 downscales every texture, the flight deck's included, once total text
 memory it thinks it has (Log.txt "Target scale moved to 2/4/8"), which made the panel captions illegible.
 The cabin and cargo hold are rarely seen up close, so their textures give memory back first: every texture
 used only by objects under objects/interior/cabin*, objects/interior/cargo (not named *cockpit*) is resized
-to half (Lanczos), never below --floor px; anything a cockpit or exterior object also uses is left alone.
+to half (Lanczos), never below --floor px, and so is each livery's copy of it; anything a cockpit or
+exterior object also uses is left alone.
 halved-cabin.json records each result, so a re-run changes nothing; normal-map-manifest.json entries are
 updated so halve_normal_maps.py does not halve those normal maps again. Afterwards re-run
 tools/convert_textures_to_dds.py so the DDS copies follow.
@@ -72,7 +73,8 @@ def main():
     manifest_path = root / "normal-map-manifest.json"
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else None
     done = before = after = 0
-    for rel in cabin_only(texture_users(root, objects)):
+    liveries = [f"{p.relative_to(root).as_posix()}/" for p in sorted((root / "liveries").glob("*")) if p.is_dir()] if (root / "liveries").is_dir() else []
+    for rel in (prefix + base for base in cabin_only(texture_users(root, objects)) for prefix in [""] + liveries):
         path = root / rel
         if not path.is_file() or state.get(rel) == sha256(path):
             continue

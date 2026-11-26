@@ -32,9 +32,12 @@ class HalveCabin(unittest.TestCase):
                 "TEXTURE_MAP normal ../../../textures/interior/cabin/small.png\nPOINT_COUNTS 0 0 0 0\n")
             Image.new("RGBA", (2048, 2048), (10, 20, 30, 255)).save(root / "textures/interior/cabin/big.png")
             Image.new("RGB", (512, 512), (128, 128, 128)).save(root / "textures/interior/cabin/small.png")
+            livery = root / "liveries/L/textures/interior/cabin"; livery.mkdir(parents=True)
+            Image.new("RGBA", (2048, 2048), (1, 2, 3, 255)).save(livery / "big.png")
             for _ in range(2):
                 subprocess.run([sys.executable, str(TOOL), "--aircraft", str(root)], check=True, capture_output=True)
             self.assertEqual(Image.open(root / "textures/interior/cabin/big.png").size, (1024, 1024))   # once only
+            self.assertEqual(Image.open(livery / "big.png").size, (1024, 1024))                          # livery copy too
             self.assertEqual(Image.open(root / "textures/interior/cabin/small.png").size, (512, 512))   # floor
 
 
