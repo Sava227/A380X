@@ -157,7 +157,9 @@ def patch_obj(text: str, textures: dict[str, str], kind: str, light_dataref: str
         # This exported legend mesh already has physical surface separation.
         # Polygon-offset mode suppresses depth writes: a later panel can erase
         # the lettering. Keep ordinary depth writes for the lifted mesh.
-        state += ["ATTR_no_blend 0.15", "ATTR_poly_os 0"]
+        # Blended, not alpha-tested: at the default view a caption is a few pixels
+        # tall, and an alpha cut-off turns its minified letters into blobs and dots.
+        state += ["ATTR_blend", "ATTR_poly_os 0"]
         if light_dataref:
             state.append(f"ATTR_light_level 0 1 {light_dataref}")
     lines[first_draw:first_draw] = state
