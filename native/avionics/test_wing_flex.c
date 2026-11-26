@@ -56,6 +56,16 @@ int main(void)
     in.accel_no_grav = 0.; in.roll = 1.;           /* right roll: right aileron up, right wing unloaded */
     run(&f, &in, 10.);
     assert(tip(&f, 1) < tip(&f, 0));
+    /* held full roll in a 30 deg, 1.15 g turn, and full speed brakes: each wing stays one smooth upward curve
+     * (no link bending back down, outer link not collapsing), the "~" a held roll used to cause */
+    in.roll_deg = -30.; in.accel_no_grav = 0.155 * 9.8; in.roll = -1.;
+    run(&f, &in, 20.);
+    for (int w = 0; w < 2; ++w)
+        for (int i = 0; i < 4; ++i) assert(f.angle_deg[w][i] > 0. && (i < 3 || f.angle_deg[w][3] > 0.5 * f.angle_deg[w][2]));
+    in.roll = 0.; in.roll_deg = 0.; in.accel_no_grav = 0.; in.spoilers = 1.;
+    run(&f, &in, 20.);
+    for (int w = 0; w < 2; ++w) for (int i = 0; i < 4; ++i) assert(f.angle_deg[w][i] > 0.);
+    in.spoilers = 0.;
     A380XWingFlex before = f;
     in.accel_no_grav = NAN;                        /* bad input: state untouched, outputs stay finite */
     a380x_wing_flex_update(&f, &in, 1. / 60.);
