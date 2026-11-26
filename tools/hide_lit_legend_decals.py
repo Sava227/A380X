@@ -33,6 +33,28 @@ CONTROLS_OBJ = "objects/interior/cockpit-controls/a380x_cockpit_controls.obj"
 DECAL_DIR = "objects/interior/cockpit-panels"
 MARKER = "# A380X LIT DECAL HIDE"
 GLOW = "# A380X LIT DECAL GLOW"     # lit in place by light_legends_in_place.py: leave alone
+# The EFIS control panel keys light a green bar above a printed word that stays (LS, TAXI, WX, ...):
+# their lamp quad is only the bar, so hiding the word left a bare bar. Never hidden; wrappers removed.
+BAR_LAMP_PREFIX = "PUSH_EFIS_"
+
+
+def unwrap_bar_lamps(text: str) -> tuple[str, int]:
+    """Remove earlier hide wrappers of bar-lamp faces: MARKER face / ANIM_begin / ANIM_hide / TRIS / ANIM_end
+    becomes the bare TRIS line (any enclosing motion block stays)."""
+    lines = text.split("\n")
+    out, i, n = [], 0, 0
+    while i < len(lines):
+        s = lines[i].strip()
+        if (s.startswith(f"{MARKER} {BAR_LAMP_PREFIX}") and i + 4 < len(lines) and lines[i + 1].strip() == "ANIM_begin"
+                and lines[i + 2].strip().startswith("ANIM_hide") and lines[i + 3].strip().startswith("TRIS")
+                and lines[i + 4].strip() == "ANIM_end"):
+            out.append(lines[i + 3])
+            i += 5
+            n += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    return "\n".join(out), n
 
 
 def lamp_faces(controls_text: str) -> dict[str, tuple[str, float]]:
@@ -245,7 +267,7 @@ def _plan(aircraft: Path, source: Source, conditions: dict):
 def run(aircraft: Path, source_path: Path, dry_run: bool):
     source = Source(source_path)
     controls = (aircraft / CONTROLS_OBJ).read_bytes().decode("latin-1")
-    faces = {f: v for f, v in lamp_faces(controls).items() if f in source.names}
+    faces = {f: v for f, v in lamp_faces(controls).items() if f in source.names and not f.startswith(BAR_LAMP_PREFIX)}
     # pass 1: which lamp faces exist in the decal objects
     first = _plan(aircraft, source, {face: [cond] for face, cond in faces.items()})
     present = {face for _t, _p, counts in first.values() for face in counts}
@@ -259,6 +281,14 @@ def run(aircraft: Path, source_path: Path, dry_run: bool):
                 conditions[sibling].append(faces[face])
     plan = _plan(aircraft, source, conditions) if conditions != {f: [faces[f]] for f in present} else first
     report = {}
+    for path in sorted((aircraft / DECAL_DIR).glob("decal_*.obj")):     # earlier wrappers of bar-lamp faces
+        text, unwrapped = unwrap_bar_lamps(path.read_bytes().decode("latin-1"))
+        if unwrapped:
+            report[path.name + " (bar lamps unhidden)"] = {BAR_LAMP_PREFIX: unwrapped}
+            if not dry_run:
+                tmp = path.with_name(path.name + ".tmp-litdecal")
+                tmp.write_bytes(text.encode("latin-1"))
+                tmp.replace(path)
     for path, (text, patched, counts) in plan.items():
         new = {f: n for f, n in counts.items() if n}
         if new:

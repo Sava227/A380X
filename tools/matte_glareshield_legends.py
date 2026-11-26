@@ -70,12 +70,43 @@ def paint(path: Path, rects, channel: int, value: int) -> int:
     return changed
 
 
+OPAQUE = "ATTR_no_blend\t0.5"
+
+
+def draw_opaque(text: str) -> tuple[str, int]:
+    """Draw the glareshield legend faces solid, not blended (user sim check 2026-11-26: still a mirror-white
+    sheen after the matte maps). The faces are opaque; X-Plane draws blended geometry in a later pass that
+    did not take their matte material. ATTR_no_blend before each face's TRIS, ATTR_blend after. Idempotent."""
+    lines = text.split("\n")
+    out, n, face = [], 0, False
+    for i, l in enumerate(lines):
+        if re.search(r"LIT DECAL (GLOW|HIDE) PUSH_GLARESHIELD_\S+", l):
+            face = True
+        elif face and l.strip().startswith("TRIS"):
+            indent = l[:len(l) - len(l.lstrip())]
+            if not (out and out[-1].strip() == OPAQUE.strip()):
+                out.append(indent + OPAQUE)
+                n += 1
+            out.append(l)
+            if not (i + 1 < len(lines) and lines[i + 1].strip() == "ATTR_blend"):
+                out.append(indent + "ATTR_blend")
+            face = False
+            continue
+        out.append(l)
+    return "\n".join(out), n
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--aircraft", type=Path, required=True)
     args = parser.parse_args()
     obj = args.aircraft / DECAL
-    text = obj.read_text()
+    text, n = draw_opaque(obj.read_text())
+    if n:
+        tmp = obj.with_name(obj.name + ".tmp-matte")
+        tmp.write_text(text)
+        tmp.replace(obj)
+    print(f"{obj.name}: {n} glareshield legend faces drawn solid")
     for kind, channel, value in (("material_gloss", 1, GLOSS), ("normal", 3, 0)):
         path = (obj.parent / texture(text, kind)).resolve()
         w, h = Image.open(path).size
