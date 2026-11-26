@@ -379,6 +379,48 @@ static void test_schedule_and_loop(void)
           "invalid limits: no rating");
 }
 
+static void test_measured_ground_plant(void)
+{
+    A380XThrust t;
+    A380XThrustInputs in = ground_inputs();
+    a380x_thrust_init(&t, NULL);
+    t.fadec_mode = A380X_FADEC_SCHEDULED;
+    t.tla[0] = 25;
+    t.n1_command[0] = 76.5;
+    in.ias_knots = 0;
+    in.ground_plant_weight = 1;
+    in.limits.idle = 18.606556;
+    in.limits.toga = 83.854;
+    const double base = a380x_thrust_schedule(&t, 0, t.n1_command[0], &in.limits);
+    const double fit = a380x_thrust_engine_command(&t, 0, &in, .05);
+    CHECK(NEAR(fit, .76764, .00002), "observed KPDX/KDEN plant inverse at the static cap: %g", fit);
+    in.ias_knots = 59.99;
+    CHECK(NEAR(a380x_thrust_engine_command(&t,0,&in,.05), base, .001), "continuous 60 kt taper");
+    in.ias_knots = 40;
+    const double roll = a380x_thrust_engine_command(&t,0,&in,.05);
+    CHECK(roll > fit && roll < base, "rolling calibration fades toward scheduled fallback");
+    in.ias_knots = 0; in.on_ground = 0;
+    CHECK(a380x_thrust_engine_command(&t,0,&in,.05)==base, "flight schedule unchanged");
+    in.on_ground = 1; in.ground_plant_weight = 0;
+    CHECK(a380x_thrust_engine_command(&t,0,&in,.05)==base, "unmeasured conditions use legacy schedule");
+    in.ground_plant_weight = 1;
+    CHECK(a380x_thrust_ground_command(76.5,1,.68,0,1)==1, "uncapped full power unchanged");
+    CHECK(a380x_thrust_ground_command(76.5,base,.68,NAN,1)==base, "bad data falls back");
+    CHECK(a380x_thrust_ground_command(20,0,.68,0,1)==0, "idle unchanged");
+    double prev = 0; int monotone = 1;
+    for (int k = 500; k <= 900; ++k) {
+        double n1 = k / 10.0;
+        double legacy = a380x_thrust_schedule(&t, 0, n1, &in.limits);
+        double floor = a380x_thrust_schedule(&t, 0, A380X_GROUND_PLANT_MIN_N1, &in.limits);
+        double next = a380x_thrust_ground_command(n1, legacy, floor, 0, 1);
+        if (next < prev - 1e-9 || next > legacy || next < 0) monotone = 0;
+        prev = next;
+    }
+    CHECK(monotone, "ground inverse is monotonic through both blend boundaries and never adds power");
+    t.fadec_mode = A380X_FADEC_N1_LOOP; in.n1[0] = t.n1_command[0];
+    CHECK(a380x_thrust_engine_command(&t,0,&in,.05)==base, "diagnostic N1-loop unchanged");
+}
+
 static void test_flex_temperature_latch_and_transition(void)
 {
     A380XThrust t;
@@ -483,6 +525,7 @@ int main(void)
     test_flex_latch_and_rating();
     test_low_speed_and_reverse_n1();
     test_schedule_and_loop();
+    test_measured_ground_plant();
     test_flex_temperature_latch_and_transition();
     test_instinctive_disconnect_inhibit();
     test_disconnect_buttons();

@@ -364,6 +364,10 @@ def main() -> None:
     lg_grvty_adapter_result = run([str(lg_grvty_adapter_binary)]).strip()
     lg_grvty_contracts = run([str(lg_grvty_adapter_binary), "--contracts"]).splitlines()
     lg_grvty_stock_commands = [line[2:] for line in lg_grvty_contracts if line.startswith("X ")]
+    engine_start_binary = output / "test_eng_start_adapter"
+    run([clang, *warnings, str(HERE / "test_eng_start_adapter.c"), "-lm", "-o", str(engine_start_binary)])
+    engine_start_result = run([str(engine_start_binary)]).strip()
+    run([mingw, *warnings, "-c", str(HERE / "test_eng_start_adapter.c"), "-o", str(output / "test_eng_start_win_check.o")])
     thrust_binary = output / "test_thrust"
     run([clang, *warnings, str(THRUST_TEST), "-lm", "-o", str(thrust_binary)])
     thrust_result = run([str(thrust_binary)]).strip().splitlines()[-1]
@@ -1093,6 +1097,7 @@ def main() -> None:
                                             "and sim/flight_controls/landing_gear_emer_on; below 1 turn: "
                                             "gear_handle_down = crew lever, then landing_gear_emer_off",
                      "behaviour": "docs/LG_GRVTY.md", "simulator_tested": False},
+        "engine_start_test_result": engine_start_result,
         "thrust_test_result": thrust_result,
         "thrust_adapter_test_result": thrust_adapter_result,
         "thrust_levers": {"commands": list(THRUST_COMMANDS), "datarefs": list(THRUST_DATAREFS),

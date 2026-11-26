@@ -245,12 +245,28 @@ static void thr_read_inputs(void)
     A380XThrustInputs *in = &thr.in;
     float n1[4] = {0};
     int running[4] = {0}, i, healthy = 0, value;
-    double flex = 0.0, tat = 0.0, ias = 0.0;
+    double flex = 0.0, tat = 0.0, ias = 0.0, oat, altitude;
     in->on_ground = thr_raw_int(THR_RAW_ON_GROUND) != 0;
     if (thr.raw[THR_RAW_RUNNING]) XPLMGetDatavi(thr.raw[THR_RAW_RUNNING], running, 0, 4);
     if (thr.raw[THR_RAW_N1]) XPLMGetDatavf(thr.raw[THR_RAW_N1], n1, 0, 4);
     for (i = 0; i < 4; ++i) { in->engine_running[i] = running[i] != 0; in->n1[i] = n1[i]; }
-    in->ias_knots = thr_raw_float(THR_RAW_IAS, -50, 1000, &ias) ? ias : 0.0;
+    int ias_valid = thr_raw_float(THR_RAW_IAS, -50, 1000, &ias);
+    in->ias_knots = ias_valid ? ias : 0.0;
+    in->ground_plant_weight = 0.0;
+    int anti_ice[A380X_THRUST_ENGINES], pack_l, pack_r, wing_ai;
+    if (in->on_ground && ias_valid && ias < 60.0 &&
+        thr_raw_float(THR_RAW_OAT, -100, 100, &oat) &&
+        thr_raw_float(THR_RAW_PRESSURE_ALT, -2000, 60000, &altitude) &&
+        thr_ref_int(thr.raw[THR_RAW_PACK_L], &pack_l) && !pack_l &&
+        thr_ref_int(thr.raw[THR_RAW_PACK_R], &pack_r) && !pack_r &&
+        thr_ref_int(thr.raw[THR_RAW_WING_AI], &wing_ai) && !wing_ai &&
+        thr.raw[THR_RAW_ENGINE_AI] && XPLMGetDatavi(thr.raw[THR_RAW_ENGINE_AI], anti_ice, 0, A380X_THRUST_ENGINES) == A380X_THRUST_ENGINES &&
+        !anti_ice[0] && !anti_ice[1] && !anti_ice[2] && !anti_ice[3]) {
+        /* Blend out toward conditions not yet measured. Do not derate the XP plant for weather. */
+        in->ground_plant_weight =
+            a380x_detent_clamp(fmin((oat - 5.0)/7.0, (25.0 - oat)/7.0), 0, 1) *
+            a380x_detent_clamp(fmin((altitude + 500.0)/500.0, (6400.0 - altitude)/1000.0), 0, 1);
+    }
     in->tat_valid = thr_raw_float(THR_RAW_TAT, -100, 100, &tat);
     in->tat_c = tat;
     for (i = 1; i < 4; ++i) if (thr_ref_int(thr.fms[i], &value) && value == 1) healthy = 1;
