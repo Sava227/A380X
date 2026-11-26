@@ -1664,7 +1664,6 @@ static void draw_nd(const Side *side, float x, float y, const char *side_name)
         text_at(x+5,y+4,"PREV",CYAN);text_at(x+149,y+4,"NEXT",CYAN);
     } else if(!efis[index].vor1&&!efis[index].vor2) text_at(x+7,y+2,side_name,GREY);
 }
-/* FlyByWire-layout native ND for the native cockpit devices (a380x_native_displays.inc). */
-#if !defined(A380X_XPKIT)
+/* FlyByWire-layout native ND for the native cockpit devices (a380x_native_displays.inc), and for the
+ * xp-kit ND devices while the native PFD/ND are selected. */
 #include "a380x_nd_fbw.inc"
-#endif

@@ -3,7 +3,7 @@
  * 768x1024 logical units the JS client uses (top-left).
  * Every ordered button event is retained across host frames; hover is sampled (every frame).
  * A late web frame or a helper restart keeps the last ND frame (black before the first); the native
- * ND renderer draws only when no web renderer can run (xpkit_web_possible, from the adapter).
+ * ND renderer draws when the native PFD/ND are selected or no web renderer can run (xpkit_pfd_nd_web).
  */
 #include "a380x_du_scale.h"
 #include "a380x_elec_power.h"
@@ -135,15 +135,13 @@ static void xpkit_nd_draw_device(void *refcon) {
     glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_FALSE);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
     glPushMatrix();glScalef(A380X_ND_SCALE,A380X_ND_SCALE,1);  /* 768x1024 logical units */
     if(XPKIT_ND_OVERLAY(d->side)) { d->presented_frame=0; glPopMatrix(); glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE); if(cull)glEnable(GL_CULL_FACE); return; }
-    int web=xpkit_web_possible();
+    int web=xpkit_pfd_nd_web();
     /* Web renderer possible: its last frame (black before the first, and while the DU is off with no
      * live helper to capture the page's own unpowered state). */
     int rendered=plugin_enabled && web && (xpkit_nd_on(d) || xpkit_health[d->side+6]) &&
                  xpkit_draw_view(d->side+2,0,0,768,1024);
-    if(plugin_enabled && !web) {
-        glPushMatrix();glScalef(768.0f/180.0f,1024.0f/234.0f,1);
-        draw_nd(&refs.side[d->side],0,0,d->side?"F/O":"CAPT");glPopMatrix();
-    }
+    /* Native ND selected, or no web renderer can run: the FlyByWire-layout native ND (a380x_native_displays.inc). */
+    if(plugin_enabled && !web) native_nd_content(d->side);
     d->presented_frame=rendered?xpkit_uploaded[d->side+2]:0;
     xpkit_nd_draw_cursor(d);
     if(plugin_enabled)XPKIT_ND_TERRAIN_OVERLAY(d->side);

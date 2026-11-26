@@ -104,7 +104,7 @@ static void terrain_outline(float x, float y, float w, float h, float r, float g
     terrain_fill(x + w - .5f, bottom, x + w + .5f, top, r, g, b, 1);
 }
 
-#if !defined(A380X_XPKIT)   /* the FBW-layout native ND (a380x_nd_fbw.inc); xp-kit builds show the FBW bundle's own box */
+/* the FBW-layout native ND (a380x_nd_fbw.inc); the xp-kit web ND shows the FBW bundle's own box */
 static Color terrain_level_color(int mode)
 {
     Color c = {0.0f, 1.0f, 0.0f};                        /* FBW TerrainMapThresholds rgb(0,255,0) */
@@ -131,7 +131,6 @@ static void terrain_draw_box_fbw(int side)
     if (lower[0]) ewd_font_draw(709.0f, 1024.0f - 663.0f, lower, 22.0f, terrain_level_color(d->shown.min_mode), 0, 0);
     XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
 }
-#endif
 
 /* The simulator-aid readout: a dark grey box with a light outline beside the ND pointer, white
  * "SIM ELEV <ft> FT" (terrain_pointer_update). Drawn in the device's 768 x 1024 logical space (y up),

@@ -41,6 +41,7 @@
 #include "XPLMUtilities.h"
 #include "XPLMNavigation.h"
 #include "XPLMScenery.h"
+#include "a380x_gl_batch.h"   /* batches the native screens' immediate-mode drawing; routes gl* calls below */
 
 #include "a380x_avionics_core.h"
 #include "a380x_du_scale.h"
@@ -258,6 +259,14 @@ static void read_side(Side *side, int powered)
 #include "a380x_fcu_adapter.inc"
 #include "a380x_autoland_adapter.inc"   /* localizer antenna distance for LAND / ROLL OUT */
 #include "a380x_efis.inc"
+/* 1 while the PFDs/NDs are drawn natively: always without xp-kit; with xp-kit, while the
+ * a380x/xp12/displays/native_pfd_nd switch is on (a380x_xpkit_adapter.inc) or no web renderer can run. */
+#if defined(A380X_XPKIT)
+static int display_native_pfd_nd;
+#define DISPLAY_NATIVE_ND display_native_pfd_nd
+#else
+#define DISPLAY_NATIVE_ND 1
+#endif
 #include "a380x_efis_nd.inc"
 #include "a380x_efis_airport.inc"
 #include "a380x_glareshield.inc"

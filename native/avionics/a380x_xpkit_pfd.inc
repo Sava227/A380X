@@ -58,11 +58,12 @@ static void xpkit_pfd_draw_device(void *refcon) {
         if (cull) glEnable(GL_CULL_FACE);
         return;
     }
-    int on = xpkit_pfd_on(d), web = xpkit_web_possible();
+    int on = xpkit_pfd_on(d), web = xpkit_pfd_nd_web();
     /* Web renderer possible: its last frame, whatever its age (black before the first). */
     int rendered = on && web && xpkit_draw_view(d->side, 0, 0, 768, 1024);
     if (on && !web) {
-        /* No web renderer can run: the translated PFD renders its 320x416 layout. */
+        /* Native PFD selected, or no web renderer can run: the translated PFD renders its 320x416 layout. */
+        gb_scope_begin();
         glPushMatrix();
         glScalef(768.0f / 320.0f, 1024.0f / 416.0f, 1);
         glLineWidth(A380X_PFD_SCALE);
@@ -71,6 +72,7 @@ static void xpkit_pfd_draw_device(void *refcon) {
         pfd_line_scale = 1.0f;
         glPopMatrix();
         glLineWidth(1.0f);
+        gb_scope_end();
     }
     glPopMatrix();
     d->presented_frame = rendered ? xpkit_uploaded[d->side] : 0;
@@ -121,7 +123,7 @@ static int xpkit_pfd_command(XPLMCommandRef cmd, XPLMCommandPhase phase, void *r
 
 /* Called every frame from xpkit_update(): request a device draw only when it can change. */
 static void xpkit_pfd_poll(void) {
-    int web = xpkit_web_possible();
+    int web = xpkit_pfd_nd_web();
     for (int s = 0; s < 2; ++s) {
         XpKitPfd *d = &xpkit_pfd[s];
         /* The CDS state (boot / self-test / on) also triggers a redraw of the device. */

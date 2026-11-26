@@ -21,13 +21,41 @@
 
 #include "a380x_avionics_popup.h"
 
+/* The native ND on a device whose current matrix is in 768x1024 logical units, batched (a380x_gl_batch.h):
+ * the FlyByWire layout for ARC, ROSE and PLAN (a380x_nd_fbw.inc, with the VD and its terrain profile);
+ * the airport zoom keeps the native 180x234 layout, scaled up. The TERRAIN pointer readout is drawn by the
+ * callers. Shared by the native devices below and by the xp-kit ND devices while the native PFD/ND are
+ * selected (a380x_xpkit_nd_input.inc). */
+static void native_nd_content(int side)
+{
+    gb_scope_begin();
+    if (!efis[side].zoom) {
+        text_use_atlas = 1;
+        ndf_line_scale = A380X_ND_SCALE;
+        draw_nd_fbw(&refs.side[side], side);   /* ARC, ROSE LS/VOR/NAV, PLAN */
+        ndf_line_scale = 1.0f;
+        text_use_atlas = 0;
+    } else {                                  /* airport zoom: native layout, scaled */
+        const float scale = 768.0f / 180.0f;
+        text_use_atlas = 1;
+        text_atlas_size = 9.0f;
+        glPushMatrix();
+        glTranslatef(0, (1024.0f - 234.0f * scale) * 0.5f, 0);
+        glScalef(scale, scale, 1);
+        glLineWidth(A380X_ND_SCALE * scale * 0.75f);
+        draw_nd(&refs.side[side], 0, 0, side ? "F/O" : "CAPT");
+        glPopMatrix();
+        text_use_atlas = 0;
+    }
+    text_atlas_size = 9.0f;
+    gb_scope_end();
+}
+
 #if !defined(A380X_XPKIT)
 
 /* 768x1024 logical layout; the devices are A380X_PFD_SCALE / A380X_ND_SCALE times denser (a380x_du_scale.h). */
 #define NATIVE_DU_W 768
 #define NATIVE_DU_H 1024
-#define NATIVE_ND_LAYOUT_W 180.0f
-#define NATIVE_ND_LAYOUT_H 234.0f
 
 typedef struct {
     int side, is_nd;
@@ -88,6 +116,7 @@ static void native_display_draw(void *refcon)
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE); /* keep alpha = 1: the screen never blends */
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         if (!d->is_nd) {
+            gb_scope_begin();
             glPushMatrix();
             glScalef(NATIVE_DU_W / PFD_PIXEL_WIDTH, NATIVE_DU_H / PFD_PIXEL_HEIGHT, 1);
             pfd_line_scale = A380X_PFD_SCALE * NATIVE_DU_H / PFD_PIXEL_HEIGHT;
@@ -95,26 +124,11 @@ static void native_display_draw(void *refcon)
             draw_pfd(&refs.side[d->side], 0, 0, name);
             pfd_line_scale = 1.0f;
             glPopMatrix();
-        } else if (!efis[d->side].zoom) {
-            text_use_atlas = 1;
-            ndf_line_scale = A380X_ND_SCALE;
-            draw_nd_fbw(&refs.side[d->side], d->side);   /* ARC, ROSE LS/VOR/NAV, PLAN */
-            ndf_line_scale = 1.0f;
-            text_use_atlas = 0;
-            terrain_draw_overlay(d->side);               /* TERRAIN on ND pointer elevation */
-        } else {                                         /* airport zoom: native layout, scaled */
-            const float scale = NATIVE_DU_W / NATIVE_ND_LAYOUT_W;
-            text_use_atlas = 1;
-            text_atlas_size = 9.0f;
-            glPushMatrix();
-            glTranslatef(0, (NATIVE_DU_H - NATIVE_ND_LAYOUT_H * scale) * 0.5f, 0);
-            glScalef(scale, scale, 1);
-            glLineWidth(A380X_ND_SCALE * scale * 0.75f);
-            draw_nd(&refs.side[d->side], 0, 0, name);
-            glPopMatrix();
-            text_use_atlas = 0;
+            gb_scope_end();
+        } else {
+            native_nd_content(d->side);
+            if (!efis[d->side].zoom) terrain_draw_overlay(d->side);   /* TERRAIN on ND pointer elevation */
         }
-        text_atlas_size = 9.0f;
         glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     }
     glPopMatrix();
