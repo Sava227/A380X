@@ -12,7 +12,8 @@ moves get that motion keyed on sim/flightmodel2/gear/tire_vertical_deflection_mt
 its max compression). Each motion is inserted just before the part's wheel spin, or around the part's draw,
 in the part's own frame, so the bogie tilt and steering keep working. With the ACF contact points at FBW's
 (flight_model.cfg [CONTACT_POINTS]), each tyre sits on the ground at any weight, flattened by FBW's 6-10 cm
-contact offset. Idempotent (MARKER).
+contact offset. A part whose mesh sits off its axle (AXLE_DROP) is moved there inside the leg's chain, not by
+the ACF placement, so it also retracts with the leg. Idempotent (MARKER).
 
     python3 tools/gear_compression.py --aircraft <aircraft> --fbw <a380_exterior.gltf>
 """
@@ -46,6 +47,9 @@ SKIP = ("_accessories", "_lg_bay")     # nose lights and bay: nothing in them co
 SAMPLES = 16
 BULGES = ((0.03, 0.15, 0.012), (0.15, 0.30, 0.022), (0.30, 9.0, 0.030))   # strut deflection range, m -> bulge, m
 FT = 0.3048
+# the nose tyre mesh sits 0.47 m above the strut's axle in its own frame (2a7a44f measured it); as an ACF
+# placement offset it did not rotate with the leg, so the tyres hung out of the closed bay (user, 2026-11-26)
+AXLE_DROP = {"gear-nose/gear_nose_a380_exterior_tyres.obj": -1.555118110 * FT}
 
 
 def world_multi(g: Gltf, node: int, clips: list[tuple[dict, float]]) -> np.ndarray:
@@ -232,6 +236,7 @@ def patch_object(text: str, index: int, offset_m: float, fbw: dict, keys: list[f
             parts.append((d.source_line - 1, node, ids, m))
     if not parts:
         return text, 0
+    assert not offset_m or len(parts) == len(obj.draws), "an axle drop must reach every draw"
     anchors = {line: anchor(lines, line) for line, *_ in parts}
     prefix = prefix_matrices(lines, sorted({a for a, _ in anchors.values()}), values)
     dataref = DEFLECTION.format(index)
@@ -244,13 +249,16 @@ def patch_object(text: str, index: int, offset_m: float, fbw: dict, keys: list[f
         p = prefix[at]
         local = [np.linalg.inv(p) @ np.linalg.inv(lift) @ x @ lift @ p for x in fbw[node][1]]
         tab = lines[at][:len(lines[at]) - len(lines[at].lstrip())]
+        drop = " ".join(fmt(c) for c in (np.linalg.inv(p) @ lift @ p)[:3, 3])
+        drop = [f"{tab}ANIM_trans\t{drop}\t{drop}".replace(" ", "\t")] if offset_m else []
         if spin:
-            inserts.setdefault(at, []).extend(keyed(local, keys, dataref, tab))
+            inserts.setdefault(at, []).extend(drop + keyed(local, keys, dataref, tab))
             world = pos[ids] @ m[:3, :3].T + m[:3, 3]
             if np.hypot(*(world[:, 1:] - (world[:, 1:].min(0) + world[:, 1:].max(0)) / 2).T).max() > 0.5:
                 tyres[at] = (ids, m, p)                         # a tyre (not a hub or brake): it gets bulges
         else:
-            inserts.setdefault(at, []).extend([f"{tab}ANIM_begin", *keyed(local, keys, dataref, tab + "\t")])
+            inserts.setdefault(at, []).extend([f"{tab}ANIM_begin", *[d.replace(tab, tab + "\t", 1) for d in drop],
+                                               *keyed(local, keys, dataref, tab + "\t")])
             inserts.setdefault(at + 1, []).append(f"{tab}ANIM_end")
     new_vt, new_idx = [], []
     for at, (ids, m, p) in tyres.items():                       # bulges, after the slide, before the spin
@@ -287,26 +295,11 @@ def patch_object(text: str, index: int, offset_m: float, fbw: dict, keys: list[f
     return "\n".join(out).replace("POINT_COUNTS", MARKER + "\nPOINT_COUNTS", 1), len(parts)
 
 
-def object_offsets(acf: Path) -> dict[str, float]:
-    """{object path (as in the ACF): vertical placement offset, m}."""
-    files, ys = {}, {}
-    for line in acf.read_text(errors="replace").splitlines():
-        f = line.split()
-        if len(f) >= 3 and f[1].startswith("_obja/") and f[1].count("/") == 2:
-            n, key = f[1].split("/")[1], f[1].split("/")[2]
-            if key == "_v10_att_file_stl":
-                files[n] = f[2]
-            elif key == "_v10_att_y_acf_prt_ref":
-                ys[n] = float(f[2]) * FT
-    return {files[n]: ys.get(n, 0.0) for n in files}
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--aircraft", type=Path, required=True)
     ap.add_argument("--fbw", type=Path, required=True, help="FBW a380_exterior.gltf")
     args = ap.parse_args()
-    offsets = object_offsets(next(args.aircraft.glob("*.acf")))
     gltf = Gltf(args.fbw)
     from PIL import Image
     for index, folder, comp, span, base in GEARS:
@@ -321,7 +314,7 @@ def main():
             tex = next((l.split()[-1] for l in text.splitlines() if l.startswith("TEXTURE ")), None)
             albedo = np.asarray(Image.open((path.parent / tex).resolve()).convert("RGB"), np.float32) \
                 if tex and "tyre" in path.name else None
-            new, n = patch_object(text, index, offsets.get(f"exterior/{folder}/{path.name}", 0.0), fbw, keys, albedo)
+            new, n = patch_object(text, index, AXLE_DROP.get(f"{folder}/{path.name}", 0.0), fbw, keys, albedo)
             if new != text:
                 tmp = path.with_name(path.name + ".tmp-compression")
                 tmp.write_text(new, encoding="latin-1")
