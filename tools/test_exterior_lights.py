@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from exterior_lights import ACF_FILE, LIGHTS, LOGOS, add_to_acf, build, flex_chain, flipped, light_lines
+from exterior_lights import ACF_FILE, DECLARED, LIGHTS, LOGOS, add_to_acf, build, declare_lights, flex_chain, flipped, light_lines
 
 
 def wing(side, bones=13):
@@ -53,6 +53,18 @@ class ExteriorLights(unittest.TestCase):
         self.assertEqual(add_to_acf(once), once)
         old = once.replace("P _obja/1/_v10_att_psi_ref 0.000000000", "P _obja/1/_v10_att_psi_ref 180.000000000")
         self.assertEqual(add_to_acf(old), once)                    # an object attached at psi 180 is turned
+
+    def test_declared_lights_replace_the_old_list(self):
+        acf = "\n".join(["P _gear/0/x 1", "P _lite/0/_dist 200.0", "P _lite/0/_lite_type landing", "P _lite/0/_index 3",
+                         "P _lite/count 1", "P _lite_equip/_x 0", "P _z 1"])
+        out = declare_lights(acf).split("\n")
+        self.assertEqual(out[0], "P _gear/0/x 1")
+        self.assertIn(f"P _lite/count {len(DECLARED)}", out)
+        self.assertIn("P _lite/1/_lite_type landing", out)
+        self.assertIn("P _lite/3/_lite_type taxi", out)
+        self.assertNotIn("P _lite/0/_dist 200.0", out)
+        self.assertIn("P _lite_equip/_x 0", out)
+        self.assertEqual(declare_lights("\n".join(out)), "\n".join(out))
 
 
 if __name__ == "__main__":

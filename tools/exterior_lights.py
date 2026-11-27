@@ -74,10 +74,15 @@ LIGHTS = [
     ("LIGHT_ASOBO_TAKEOFF_2", "nose", ("taxi",), LAMP, 0, 500000, unit(0, -0.05, 1), 12.5),
     ("LIGHT_ASOBO_TAKEOFF_3", "nose", ("taxi",), LAMP, 0, 500000, unit(0, -0.05, 1), 12.5),
 ]
-# logo: spill only, onto the fin from the tailplane, on the nav system (one NAV & LOGO switch). FIN = the fin's side
-# at logo height, from the installed a380x_fuse4.obj (y 13 m: chord z -31.5..-26.0, half-thickness 0.4 m)
+# logo: spill only, onto the fin from the tailplane, on the nav system (one NAV & LOGO switch). The real lights wash
+# the lower two thirds of the fin, not its tip (user, 2026-11-27): aimed at the fin's side at y 11 m (chord mid z -27.6,
+# installed a380x_fuse4.obj; fin y 8.5..20.2 m) with a 25 deg cone, the lit area ends at y ~17 m.
 LOGOS = ["LIGHT_ASOBO_LOGO_FWD_LH", "LIGHT_ASOBO_LOGO_FWD_RH"]
-FIN = np.array([0.4, 13.0, -28.8])
+FIN = np.array([0.4, 11.0, -27.6])
+LOGO_HALF_ANGLE = 25
+# X-Plane switches on only the landing and taxi lights the ACF declares (user sim check: landing index 0 and the taxi
+# lights stayed dark with landing 1-3 declared). Declarations only, like Laminar's A330: no position, no legacy spill.
+DECLARED = [("beacon_strobe", 0), ("landing", 0), ("landing", 1), ("taxi", 0)]
 
 
 def light_lines(kind, pos, rgb, index, cd, d, half, tab, spill=True):
@@ -128,7 +133,7 @@ def build(positions: dict, chains: dict) -> str:
             groups[where] += light_lines(kind, pos, rgb, index, cd, d, half, "\t" if where != "body" else "")
     for node in LOGOS:
         p = positions[node]
-        groups["body"] += light_lines("nav", p, WHITE, 0, 20000, unit(*(FIN * [np.sign(p[0]), 1, 1] - p)), 30, "",
+        groups["body"] += light_lines("nav", p, WHITE, 0, 20000, unit(*(FIN * [np.sign(p[0]), 1, 1] - p)), LOGO_HALF_ANGLE, "",
                                       spill=False)
     out = ["I", "800", "OBJ", "", "POINT_COUNTS\t0\t0\t0\t0", "", "# exterior lights: tools/exterior_lights.py"]
     out += groups["body"]
@@ -148,6 +153,23 @@ def fbw_positions(gltf: Gltf) -> dict:
         clips.append((c, frac * max(v[0][-1] for v in c.values())))
     return {node: world_multi(gltf, names[node], clips)[:3, 3]
             for node in [l[0] for l in LIGHTS] + LOGOS}
+
+
+def declare_lights(acf: str) -> str:
+    """Replace the ACF's light list (_lite/N) with DECLARED: hidden, at the origin, no spill distance or width."""
+    lines = acf.split("\n")
+    at = [i for i, l in enumerate(lines) if l.startswith("P _lite/")]
+    block = []
+    for n, (kind, index) in enumerate(DECLARED):
+        vals = {"_dist": "0.000000000", "_hide": "1", "_index": str(index), "_lite_type": kind, "_rgb/0": "1.000000000",
+                "_rgb/1": "1.000000000", "_rgb/2": "1.000000000", "_rgb/count": "3", "_v10_att_body": "-1",
+                "_v10_att_gear": "-1", "_v10_att_phi_ref": "0.000000000", "_v10_att_psi_ref": "0.000000000",
+                "_v10_att_the_ref": "0.000000000", "_v10_att_wing": "-1", "_v10_att_x_acf_prt_ref": "0.000000000",
+                "_v10_att_y_acf_prt_ref": "0.000000000", "_v10_att_z_acf_prt_ref": "0.000000000",
+                "_v10_is_internal": "0", "_v10_steers_with_gear": "0", "_width": "0.000000000"}
+        block += [f"P _lite/{n}/{k} {v}" for k, v in vals.items()]
+    block.append(f"P _lite/count {len(DECLARED)}")
+    return "\n".join(lines[:at[0]] + block + [l for i, l in enumerate(lines) if i > at[0] and not l.startswith("P _lite/")])
 
 
 def add_to_acf(acf: str) -> str:
@@ -180,13 +202,13 @@ def main():
     out.write_text(build(fbw_positions(Gltf(args.fbw)), chains), encoding="latin-1")
     acf = next(args.aircraft.glob("*.acf"))
     text = acf.read_text(encoding="latin-1")
-    new = add_to_acf(text)
+    new = declare_lights(add_to_acf(text))
     if new != text:
         tmp = acf.with_name(acf.name + ".tmp-lights")
         tmp.write_text(new, encoding="latin-1")
         tmp.replace(acf)
     print(f"{out.name}: {sum(l.lstrip().startswith('LIGHT_PARAM') for l in out.read_text().splitlines())} lights; "
-          f"{acf.name}: {'object added' if new != text else 'already attached'}")
+          f"{acf.name}: {'updated' if new != text else 'unchanged'}")
 
 
 if __name__ == "__main__":
