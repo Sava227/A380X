@@ -40,7 +40,7 @@ typedef struct {
 static const double a380x_wf_x[A380X_WF_NODES] = {0., 11.5, 22.05, 29., 36.85};
 static const double a380x_wf_empty[A380X_WF_NODES] = {0., 25000., 20000., 5000., 400.};
 static const double a380x_wf_spring[A380X_WF_LINKS] = {16000000., 6000000., 3500000., 200000.};
-static const double a380x_wf_damping[A380X_WF_LINKS] = {800000., 500000., 150000., 5000.};
+static const double a380x_wf_damping[A380X_WF_LINKS] = {1600000., 1000000., 300000., 10000.};   /* 2x FBW: user saw the wing ripple (2026-11-26) */
 static const double a380x_wf_spread[A380X_WF_NODES] = {0., 0.42, 0.40, 0.15, 0.03};
 
 static inline double a380x_wf_lp(double out, double in, double dt, double tau)   /* FBW LowPassFilter */
