@@ -63,9 +63,13 @@ def splay(deg, down=0.05):
 
 # generic light indices, shared with the plugin (a380x_elec_adapter.inc A380X_ELN_*_LIGHT)
 GENERIC = {"to": 0, "rwy": 1, "wing": 2, "logo": 3}
-# scan light targets (installed objects): wing leading edge at x 14 m, inboard engine intake
-WING_LE, ENG2_INTAKE = (14.0, 1.6, 7.6), (14.9, -0.96, 12.7)
+# WING scan lights (user reference, 2026-11-27: both nacelles and the wing up to the outer pylon lit evenly). The
+# upper light washes the whole area: its cone encloses the wing leading edge from x 6 m to the outer pylon (x 26.4 m)
+# and every vertex of both nacelles in the installed objects (half-angle 20 deg + 2 margin). The outer engine is
+# 36 m away against 15 m for the inner one, so the lower light adds a tight beam on the outer nacelle.
 SCAN_WING, SCAN_ENG = np.array([3.35, 2.95, 24.72]), np.array([3.13, 1.36, 27.27])   # FBW nodes (left side)
+WASH_AXIS = np.array([0.5007, -0.1452, -0.8533])
+OUTER_NACELLE = (25.8, -0.38, 0.63)
 MIRROR = np.array([-1.0, 1.0, 1.0])
 
 
@@ -97,13 +101,12 @@ LIGHTS = [
     ("LIGHT_ASOBO_TURNOFF_RH", "nose", ("generic",), LAMP, GENERIC["rwy"], 200000, splay(-40), 20),
     ("LIGHT_ASOBO_TAXI_CAM_FWD_LH", "body", ("generic",), LAMP, GENERIC["rwy"], 100000, splay(50, 0.27), 20),
     ("LIGHT_ASOBO_TAXI_CAM_FWD_RH", "body", ("generic",), LAMP, GENERIC["rwy"], 100000, splay(-50, 0.27), 20),
-    # WING: the wing leading edge and the inboard engine intake, from the fuselage above the wing root
-    ("LIGHT_ASOBO_SCAN_WING_LH", "body", ("generic",), WHITE, GENERIC["wing"], 50000, aim(SCAN_WING, WING_LE), 10),
-    ("LIGHT_ASOBO_SCAN_WING_RH", "body", ("generic",), WHITE, GENERIC["wing"], 50000,
-     aim(SCAN_WING * MIRROR, np.asarray(WING_LE) * MIRROR), 10),
-    ("LIGHT_ASOBO_SCAN_ENG_LH", "body", ("generic",), WHITE, GENERIC["wing"], 50000, aim(SCAN_ENG, ENG2_INTAKE), 6),
-    ("LIGHT_ASOBO_SCAN_ENG_RH", "body", ("generic",), WHITE, GENERIC["wing"], 50000,
-     aim(SCAN_ENG * MIRROR, np.asarray(ENG2_INTAKE) * MIRROR), 6),
+    # WING: a wash over the inner wing and both engines, and a beam on the outer engine, from above the wing root
+    ("LIGHT_ASOBO_SCAN_WING_LH", "body", ("generic",), WHITE, GENERIC["wing"], 30000, WASH_AXIS, 22),
+    ("LIGHT_ASOBO_SCAN_WING_RH", "body", ("generic",), WHITE, GENERIC["wing"], 30000, WASH_AXIS * MIRROR, 22),
+    ("LIGHT_ASOBO_SCAN_ENG_LH", "body", ("generic",), WHITE, GENERIC["wing"], 60000, aim(SCAN_ENG, OUTER_NACELLE), 9),
+    ("LIGHT_ASOBO_SCAN_ENG_RH", "body", ("generic",), WHITE, GENERIC["wing"], 60000,
+     aim(SCAN_ENG * MIRROR, np.asarray(OUTER_NACELLE) * MIRROR), 9),
 ]
 # logo: spill only, onto the fin from the tailplane, on generic light GENERIC["logo"] (the LOGO switch). The real lights wash
 # the lower two thirds of the fin, not its tip (user, 2026-11-27): aimed at the fin's side at y 11 m (chord mid z -27.6,
