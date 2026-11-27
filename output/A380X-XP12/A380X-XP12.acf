@@ -19534,7 +19534,7 @@ P _obja/130/_v10_att_body -1
 P _obja/130/_v10_att_file_stl exterior/lights/a380x_ext_lights.obj
 P _obja/130/_v10_att_gear -1
 P _obja/130/_v10_att_phi_ref 0.000000000
-P _obja/130/_v10_att_psi_ref 180.000000000
+P _obja/130/_v10_att_psi_ref 0.000000000
 P _obja/130/_v10_att_the_ref 0.000000000
 P _obja/130/_v10_att_wing -1
 P _obja/130/_v10_att_x_acf_prt_ref 0.000000000

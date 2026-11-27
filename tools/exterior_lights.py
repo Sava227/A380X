@@ -8,7 +8,9 @@ The aircraft had none (user, 2026-11-26). FBW places each light on a named node 
 _bb is the billboard you see, _pm the light it throws. X-Plane's own light systems drive them, and the cockpit
 EXT LT switches already set those (config/animation_datarefs.json): NAV & LOGO -> navigation_lights_on (the logo
 lights ride the nav system), BEACON, STROBE, LAND -> landing_lights_on, NOSE -> taxi_light_on (taxi and T.O. lights).
-The object uses the frame of the other exterior objects (FBW glTF: x left, y up, z forward; ACF psi 180, z 115.108 ft).
+Positions come in FBW's glTF frame (x left, y up, z forward), which the other exterior objects use with ACF psi 180;
+this object is written in X-Plane's own frame (x right, z aft) and attached with psi 0, as Laminar's A330 Lights.obj
+is, so the lights' directions need no attachment rotation (user saw the taxi beams off centre, 2026-11-27).
 Wingtip lights ride the wing flex chain of WING_FLEX_15, copied from the installed wing objects; the nose gear
 lights show only with the nose gear down and locked.
 
@@ -37,6 +39,7 @@ NOSE_DOWN = "sim/flightmodel2/gear/deploy_ratio[0]"
 # FBW's wingtip light nodes ride the bare WING_FLEX_15 bone, 0.51 m below the installed wingtip skin (baked from the
 # skinned mesh): measured 2026-11-27 at the nav and strobe lights (skin mid-thickness 2.78-2.79 m vs nodes 2.27 m).
 TIP_LIFT = np.array([0.0, 0.51, 0.0])
+FLIP = np.array([-1.0, 1.0, -1.0])     # glTF frame -> X-Plane frame: a 180 deg turn about the vertical
 
 
 def cone(deg):
@@ -67,21 +70,30 @@ LIGHTS = [
     ("LIGHT_ASOBO_LAND_2_LH", "body", ("landing",), LAMP, 0, 765000, unit(0, -0.05, 1), 12.5),
     ("LIGHT_ASOBO_LAND_1_RH", "body", ("landing",), LAMP, 1, 765000, unit(0, -0.05, 1), 12.5),
     ("LIGHT_ASOBO_LAND_2_RH", "body", ("landing",), LAMP, 1, 765000, unit(0, -0.05, 1), 12.5),
-    ("LIGHT_ASOBO_TAXI_WING_LH", "body", ("taxi",), LAMP, 0, 200000, unit(0, -0.1, 1), 25),
-    ("LIGHT_ASOBO_TAXI_WING_RH", "body", ("taxi",), LAMP, 0, 200000, unit(0, -0.1, 1), 25),
     ("LIGHT_ASOBO_TAKEOFF_1", "nose", ("taxi",), LAMP, 0, 300000, unit(0, -0.1, 1), 25),
     ("LIGHT_ASOBO_TAKEOFF_2", "nose", ("taxi",), LAMP, 0, 500000, unit(0, -0.05, 1), 12.5),
     ("LIGHT_ASOBO_TAKEOFF_3", "nose", ("taxi",), LAMP, 0, 500000, unit(0, -0.05, 1), 12.5),
 ]
-# logo: spill only, onto the fin from the tailplane, on the nav system (one NAV & LOGO switch)
+# logo: spill only, onto the fin from the tailplane, on the nav system (one NAV & LOGO switch). FIN = the fin's side
+# at logo height, from the installed a380x_fuse4.obj (y 13 m: chord z -31.5..-26.0, half-thickness 0.4 m)
 LOGOS = ["LIGHT_ASOBO_LOGO_FWD_LH", "LIGHT_ASOBO_LOGO_FWD_RH"]
-FIN = np.array([0.0, 13.0, -40.0])
+FIN = np.array([0.4, 13.0, -28.8])
 
 
 def light_lines(kind, pos, rgb, index, cd, d, half, tab, spill=True):
-    tail = [*map(fmt, rgb), str(index), f"{cd}cd", *map(fmt, d), fmt(cone(half))]
-    head = [fmt(c) for c in pos]
+    tail = [*map(fmt, rgb), str(index), f"{cd}cd", *map(fmt, np.asarray(d) * FLIP), fmt(cone(half))]
+    head = [fmt(c) for c in np.asarray(pos) * FLIP]
     return [f"{tab}LIGHT_PARAM\tairplane_{kind}_{s} " + " ".join(head + tail) for s in (("bb", "pm") if spill else ("pm",))]
+
+
+def flipped(line: str) -> str:
+    """An ANIM_trans or ANIM_rotate_begin line turned into the X-Plane frame (negate x and z); keys are unchanged."""
+    f = line.split("\t")
+    if f[0] == "ANIM_trans":
+        f[1:7] = [fmt(float(v) * m) for v, m in zip(f[1:7], [*FLIP, *FLIP])]
+    elif f[0] == "ANIM_rotate_begin":
+        f[1:4] = [fmt(float(v) * m) for v, m in zip(f[1:4], FLIP)]
+    return "\t".join(f)
 
 
 def flex_chain(wing_obj: str, side: str) -> list[str]:
@@ -100,7 +112,7 @@ def flex_chain(wing_obj: str, side: str) -> list[str]:
     out, seen = [], 0
     for l in lines[best[1] + 1:]:
         w = l.strip()
-        out.append("\t" + w)
+        out.append("\t" + flipped(w))
         if w.startswith("ANIM_rotate_begin"):
             seen += 1
         elif w.startswith("ANIM_trans") and seen == 13:
@@ -116,7 +128,8 @@ def build(positions: dict, chains: dict) -> str:
             groups[where] += light_lines(kind, pos, rgb, index, cd, d, half, "\t" if where != "body" else "")
     for node in LOGOS:
         p = positions[node]
-        groups["body"] += light_lines("nav", p, WHITE, 0, 20000, unit(*(FIN - p)), 30, "", spill=False)
+        groups["body"] += light_lines("nav", p, WHITE, 0, 20000, unit(*(FIN * [np.sign(p[0]), 1, 1] - p)), 30, "",
+                                      spill=False)
     out = ["I", "800", "OBJ", "", "POINT_COUNTS\t0\t0\t0\t0", "", "# exterior lights: tools/exterior_lights.py"]
     out += groups["body"]
     for side in ("L", "R"):
@@ -138,13 +151,15 @@ def fbw_positions(gltf: Gltf) -> dict:
 
 
 def add_to_acf(acf: str) -> str:
-    if ACF_FILE in acf:
-        return acf
     lines = acf.split("\n")
+    if ACF_FILE in acf:
+        n = next(l.split("/")[1] for l in lines if l.startswith("P _obja/") and l.endswith(f"_v10_att_file_stl {ACF_FILE}"))
+        return "\n".join(f"P _obja/{n}/_v10_att_psi_ref 0.000000000" if l.startswith(f"P _obja/{n}/_v10_att_psi_ref ")
+                         else l for l in lines)
     at = next(i for i, l in enumerate(lines) if l.startswith("P _obja/count "))
     n = int(lines[at].split()[2])
     keys = [("_obj_flags", "24"), ("_v10_att_body", "-1"), ("_v10_att_file_stl", ACF_FILE), ("_v10_att_gear", "-1"),
-            ("_v10_att_phi_ref", "0.000000000"), ("_v10_att_psi_ref", "180.000000000"),
+            ("_v10_att_phi_ref", "0.000000000"), ("_v10_att_psi_ref", "0.000000000"),
             ("_v10_att_the_ref", "0.000000000"), ("_v10_att_wing", "-1"), ("_v10_att_x_acf_prt_ref", "0.000000000"),
             ("_v10_att_y_acf_prt_ref", "0.000000000"), ("_v10_att_z_acf_prt_ref", "115.108001709"),
             ("_v10_is_internal", "0"), ("_v10_steers_with_gear", "0")]
