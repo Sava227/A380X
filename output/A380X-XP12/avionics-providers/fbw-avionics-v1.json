@@ -474,6 +474,8 @@
     "a380x/xp12/elec/preset/expedite_toggle",
     "a380x/xp12/elec/bat_selector_left",
     "a380x/xp12/elec/bat_selector_right",
+    "a380x/xp12/elec/lights/nose_up",
+    "a380x/xp12/elec/lights/nose_down",
     "a380x/xp12/apu/start",
     "a380x/xp12/ovhd/ann_lt_up",
     "a380x/xp12/ovhd/ann_lt_down",
@@ -1356,6 +1358,7 @@
     "a380x/xp12/elec/bat/current",
     "a380x/xp12/elec/bat/charge_ah",
     "a380x/xp12/elec/bat/selector",
+    "a380x/xp12/elec/lights/nose_switch",
     "a380x/xp12/elec/bat/display_volts",
     "a380x/xp12/elec/tr/potential",
     "a380x/xp12/elec/tr/current",
@@ -2017,11 +2020,11 @@
   "files": [
     {
       "path": "plugins/A380XAvionics/mac_x64/A380XAvionics.xpl",
-      "sha256": "30d99cdeaa3ec983db7d091f10fd1e6bda4de2decae9a56a06be95291ca78747"
+      "sha256": "9218acadbf688b3c021cb356409d15d1d92f40e3b51b9553c3c527c3d9d2058b"
     },
     {
       "path": "plugins/A380XAvionics/win_x64/A380XAvionics.xpl",
-      "sha256": "e93abad054030ddca4ef2483aa2ead08e8c26ce578f1f168cb9805a949e51156"
+      "sha256": "2397ccba6479f25db741a529195f5318accf19031507683e32a6053b86a3e146"
     },
     {
       "path": "plugins/A380XAvionics/sounds/priority_left.pcm",
@@ -2193,7 +2196,7 @@
     },
     {
       "path": "plugins/A380XAvionics/build-report.json",
-      "sha256": "c20d25052636dccb2baf500bdbb763018c20c83337928e58dc22b54c22414e02"
+      "sha256": "57f33e49294fd029e6d2447446d995677d78b63a0f025576fa232eacf2441928"
     }
   ],
   "runtime_tested": false,

@@ -698,11 +698,11 @@
   {
     "node": "SWITCH_OVHD_EXTLT_NOSE",
     "command": null,
-    "command_up": "sim/lights/taxi_lights_on",
-    "command_down": "sim/lights/taxi_lights_off",
+    "command_up": "a380x/xp12/elec/lights/nose_up",
+    "command_down": "a380x/xp12/elec/lights/nose_down",
     "switch_axis": "up_down",
     "cursor": "up_down",
-    "label": "NOSE - TAXI ON / OFF"
+    "label": "NOSE - OFF / TAXI / T.O."
   },
   {
     "node": "SWITCH_OVHD_EXTLT_LANDL",

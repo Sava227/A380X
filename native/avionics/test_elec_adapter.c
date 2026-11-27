@@ -352,6 +352,20 @@ static void test_hardware_failures_pause(void)
     /* BAT selector / voltmeter */
     XPLMSetDatai(pub("bat/selector"), 3); assert(getf("bat/display_volts") > 20.0f);
     XPLMSetDatai(pub("bat/selector"), 2); assert(getf("bat/display_volts") < 0.0f);
+    /* NOSE switch OFF / TAXI / T.O.: TAXI lights the taxi light, T.O. also the T.O. lights (generic light 0);
+     * a taxi light switched elsewhere moves the switch */
+    {
+        MockRef *taxi = raw("sim/cockpit2/switches/taxi_light_on"), *gen = raw("sim/cockpit2/switches/generic_lights_switch");
+        click("lights/nose_up"); frames(0.1f);
+        assert(geti("lights/nose_switch") == 1 && (int)taxi->value == 1 && gen->vf[A380X_ELN_TO_LIGHT] == 0.0f);
+        click("lights/nose_up"); frames(0.1f);
+        assert(geti("lights/nose_switch") == 2 && (int)taxi->value == 1 && gen->vf[A380X_ELN_TO_LIGHT] == 1.0f);
+        click("lights/nose_up"); frames(0.1f); assert(geti("lights/nose_switch") == 2);
+        click("lights/nose_down"); click("lights/nose_down"); frames(0.1f);
+        assert(geti("lights/nose_switch") == 0 && (int)taxi->value == 0 && gen->vf[A380X_ELN_TO_LIGHT] == 0.0f);
+        taxi->value = 1; frames(0.1f); assert(geti("lights/nose_switch") == 1);
+        taxi->value = 0; frames(0.1f); assert(geti("lights/nose_switch") == 0);
+    }
     (void)battery;
 }
 

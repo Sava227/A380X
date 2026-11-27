@@ -6,8 +6,8 @@ The aircraft had none (user, 2026-11-26). FBW places each light on a named node 
 (Laminar's own A330 uses the same kinds, Resources/bitmaps/world/lites/lights.txt):
     LIGHT_PARAM airplane_<kind>_bb|pm  x y z  R G B  INDEX  INTENSITY(cd)  DX DY DZ  WIDTH (cos half-angle)
 _bb is the billboard you see, _pm the light it throws. X-Plane's own light systems drive them, and the cockpit
-EXT LT switches already set those (config/animation_datarefs.json): NAV & LOGO -> navigation_lights_on (the logo
-lights ride the nav system), BEACON, STROBE, LAND -> landing_lights_on, NOSE -> taxi_light_on (taxi and T.O. lights).
+EXT LT switches set those: NAV & LOGO -> nav (the logo lights ride the nav system), BEACON, STROBE, LAND -> all
+landing lights, NOSE (plugin, OFF / TAXI / T.O.) -> the taxi light at TAXI and T.O., generic light 0 (T.O. lights) at T.O.
 Positions come in FBW's glTF frame (x left, y up, z forward), which the other exterior objects use with ACF psi 180;
 this object is written in X-Plane's own frame (x right, z aft) and attached with psi 0, as Laminar's A330 Lights.obj
 is, so the lights' directions need no attachment rotation (user saw the taxi beams off centre, 2026-11-27).
@@ -71,8 +71,9 @@ LIGHTS = [
     ("LIGHT_ASOBO_LAND_1_RH", "body", ("landing",), LAMP, 1, 765000, unit(0, -0.05, 1), 12.5),
     ("LIGHT_ASOBO_LAND_2_RH", "body", ("landing",), LAMP, 1, 765000, unit(0, -0.05, 1), 12.5),
     ("LIGHT_ASOBO_TAKEOFF_1", "nose", ("taxi",), LAMP, 0, 300000, unit(0, -0.1, 1), 25),
-    ("LIGHT_ASOBO_TAKEOFF_2", "nose", ("taxi",), LAMP, 0, 500000, unit(0, -0.05, 1), 12.5),
-    ("LIGHT_ASOBO_TAKEOFF_3", "nose", ("taxi",), LAMP, 0, 500000, unit(0, -0.05, 1), 12.5),
+    # T.O. lights: generic light 0, which the plugin turns on with the NOSE switch at T.O. (A380X_ELN_TO_LIGHT)
+    ("LIGHT_ASOBO_TAKEOFF_2", "nose", ("generic",), LAMP, 0, 500000, unit(0, -0.05, 1), 12.5),
+    ("LIGHT_ASOBO_TAKEOFF_3", "nose", ("generic",), LAMP, 0, 500000, unit(0, -0.05, 1), 12.5),
 ]
 # logo: spill only, onto the fin from the tailplane, on the nav system (one NAV & LOGO switch). The real lights wash
 # the lower two thirds of the fin, not its tip (user, 2026-11-27): aimed at the fin's side at y 11 m (chord mid z -27.6,

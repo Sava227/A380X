@@ -39,6 +39,7 @@ enum {
     ENR_SPEEDBRAKE, ENR_RUDDER_TRIM, ENR_TERR, ENR_XPDR,
     ENR_COUNT, ENR_REQUIRED = ENR_GPU_CALLABLE
 };
+#define A380X_ELN_TO_LIGHT 0   /* generic light index of the nose T.O. lights (tools/exterior_lights.py) */
 static const char *const eln_raw_names[ENR_COUNT] = {
     "sim/cockpit2/engine/indicators/N1_percent",
     "sim/flightmodel/engine/ENGN_N2_",
@@ -116,6 +117,8 @@ static struct {
     /* preset runner + native item states without an X-Plane equivalent */
     A380XPresetRunner preset;
     int preset_expedited, preset_last, nose, strobe_auto, no_smoking_auto, rwy_turnoff;
+    int nose_taxi;                    /* taxi_light_on as last written from nose (0 OFF, 1 TAXI, 2 T.O.) */
+    XPLMDataRef generic_lights;       /* the T.O. lights are generic light A380X_ELN_TO_LIGHT */
     char preset_text[64];
     XPLMCommandRef flaps_down, to_config;
     int to_config_held;
@@ -566,6 +569,18 @@ static int eln_preset_request(int preset)
 }
 
 /* ---------------------------------------------------------------- per frame */
+/* NOSE switch -> X-Plane lights: TAXI lights the taxi light, T.O. also the take-off lights (generic light
+ * A380X_ELN_TO_LIGHT). A taxi light switched elsewhere (key binding) moves the switch to OFF or TAXI. */
+static void eln_nose_lights(void)
+{
+    float to;
+    int taxi = eln_rawi(ENR_TAXI) != 0;
+    if (taxi != eln.nose_taxi) eln.nose = taxi ? (eln.nose ? eln.nose : 1) : 0;
+    eln.nose_taxi = eln.nose != 0;
+    eln_seti(ENR_TAXI, eln.nose_taxi);
+    to = eln.nose == 2 ? 1.0f : 0.0f;
+    if (eln.generic_lights) XPLMSetDatavf(eln.generic_lights, &to, A380X_ELN_TO_LIGHT, 1);
+}
 static void eln_update(float dt_real, const float *brightness)
 {
     double speed, sim_dt;
@@ -594,6 +609,7 @@ static void eln_update(float dt_real, const float *brightness)
         }
     }
     if (eln.to_config_held && !eln.preset.running) eln_preset_set(NULL, A380X_PI_TO_CONFIG, 0, 0);  /* cancelled */
+    eln_nose_lights();
     /* Ground power cannot stay plugged in once the aircraft rolls or flies (GPUM). */
     if (elec_io.ext_connected && (!eln_rawi(ENR_ON_GROUND) || eln_rawf(ENR_GROUNDSPEED) > 1.0f)) elec_io.ext_connected = 0;
     eln_read_inputs(sim_dt);
@@ -691,7 +707,7 @@ enum {
     EK_GALLEY_SHED, EK_DU_STATE, EK_ISIS_POWERED, EK_SPAWN, EK_DEFAULT_SPAWN, EK_SELFTEST, EK_ACTIVE,
     EK_AC_MAIN, EK_FAIL, EK_PRESET_ACTIVE, EK_PRESET_STEP, EK_PRESET_TOTAL, EK_PRESET_TEXT,
     EK_PRESET_EXPEDITED, EK_PRESET_DONE, EK_APU_MASTER, EK_APU_START, EK_APU_AVAIL, EK_APU_FLAP,
-    EK_APU_ECB, EK_APU_ALIAS_VOLTS, EK_APU_ALIAS_HZ, EK_APU_ALIAS_LOAD, EK_APU_N, EK_APU_N2
+    EK_APU_ECB, EK_APU_ALIAS_VOLTS, EK_APU_ALIAS_HZ, EK_APU_ALIAS_LOAD, EK_APU_N, EK_APU_N2, EK_NOSE_SWITCH
 };
 enum { ET_INT, ET_FLOAT, ET_INTV, ET_FLOATV, ET_BYTES };
 typedef struct { char name[96]; int kind, index, count, type, writable; XPLMDataRef handle; } ElnRef;
@@ -724,6 +740,7 @@ static double eln_scalar(const ElnRef *r, int i)
     case EK_BAT_CUR: return s->bat_a[i];
     case EK_BAT_AH: return s->bat_ah[i];
     case EK_BAT_SELECTOR: return eln.bat_selector;
+    case EK_NOSE_SWITCH: return eln.nose;
     case EK_BAT_DISPLAY: {
         static const int battery[5] = {A380X_ELN_BAT_ESS, A380X_ELN_BAT_APU, -1, A380X_ELN_BAT1, A380X_ELN_BAT2};
         if (elec_inputs.annunciator_test && a380x_eln_powered(s, A380X_ELN_DC2)) return 88.8;
@@ -799,6 +816,7 @@ static void eln_set_scalar(ElnRef *r, int i, double value)
     switch (r->kind) {
     case EK_BAT_AH: if (i >= 0 && i < 4) eln.st.bat_ah[i] = fmin(A380X_ELN_BAT_CAPACITY_AH, fmax(0.0, value)); break;
     case EK_BAT_SELECTOR: eln.bat_selector = (int)lround(fmin(4.0, fmax(0.0, value))); break;
+    case EK_NOSE_SWITCH: eln.nose = (int)lround(fmin(2.0, fmax(0.0, value))); break;
     case EK_DEFAULT_SPAWN: eln.default_spawn = on ? A380X_ELN_SPAWN_TURNAROUND : A380X_ELN_SPAWN_COLD_DARK; break;
     case EK_SELFTEST: eln.selftest_s = (float)fmin(30.0, fmax(0.0, value)); break;
     case EK_FAIL: eln.fail[r->index] = (unsigned char)on; break;
@@ -854,6 +872,7 @@ static void eln_build_refs(void)
     eln_add("bat/current", EK_BAT_CUR, 0, 4, ET_FLOATV, 0);
     eln_add("bat/charge_ah", EK_BAT_AH, 0, 4, ET_FLOATV, 1);
     eln_add("bat/selector", EK_BAT_SELECTOR, 0, 1, ET_INT, 1);
+    eln_add("lights/nose_switch", EK_NOSE_SWITCH, 0, 1, ET_INT, 1);   /* 0 OFF, 1 TAXI, 2 T.O. */
     eln_add("bat/display_volts", EK_BAT_DISPLAY, 0, 1, ET_FLOAT, 0);
     eln_add("tr/potential", EK_TR_POT, 0, 4, ET_FLOATV, 0);
     eln_add("tr/current", EK_TR_CUR, 0, 4, ET_FLOATV, 0);
@@ -892,9 +911,9 @@ static void eln_build_refs(void)
 }
 
 /* ---------------------------------------------------------------- own commands */
-enum { EC_PRESET, EC_PRESET_CANCEL, EC_EXPEDITE, EC_APU_START, EC_BAT_SEL_LEFT, EC_BAT_SEL_RIGHT };
+enum { EC_PRESET, EC_PRESET_CANCEL, EC_EXPEDITE, EC_APU_START, EC_BAT_SEL_LEFT, EC_BAT_SEL_RIGHT, EC_NOSE_UP, EC_NOSE_DOWN };
 typedef struct { char name[96]; int action, value; XPLMCommandRef handle; } ElnCommand;
-static ElnCommand eln_commands[12];
+static ElnCommand eln_commands[16];
 static int eln_command_count;
 static void eln_add_command(const char *name, int action, int value)
 {
@@ -917,6 +936,8 @@ static int eln_command_handler(XPLMCommandRef command, XPLMCommandPhase phase, v
     case EC_APU_START: a380x_eln_apu_start_press(&eln.st); break;
     case EC_BAT_SEL_LEFT: if (eln.bat_selector > 0) --eln.bat_selector; break;
     case EC_BAT_SEL_RIGHT: if (eln.bat_selector < 4) ++eln.bat_selector; break;
+    case EC_NOSE_UP: if (eln.nose < 2) ++eln.nose; break;
+    case EC_NOSE_DOWN: if (eln.nose > 0) --eln.nose; break;
     default: break;
     }
     return 1;
@@ -960,6 +981,7 @@ static int eln_init(void)
         }
     }
     eln.flaps_down = XPLMFindCommand("sim/flight_controls/flaps_down");
+    eln.generic_lights = XPLMFindDataRef("sim/cockpit2/switches/generic_lights_switch");
     eln_build_refs();
     for (i = 0; i < eln_ref_count; ++i) if (XPLMFindDataRef(eln_refs[i].name)) return 0;
     for (i = 0; i < eln_ref_count; ++i) {
@@ -996,6 +1018,8 @@ static int eln_init(void)
     eln_add_command("preset/expedite_toggle", EC_EXPEDITE, 0);
     eln_add_command("bat_selector_left", EC_BAT_SEL_LEFT, 0);
     eln_add_command("bat_selector_right", EC_BAT_SEL_RIGHT, 0);
+    eln_add_command("lights/nose_up", EC_NOSE_UP, 0);
+    eln_add_command("lights/nose_down", EC_NOSE_DOWN, 0);
     eln_add_command("apu/start", EC_APU_START, 0);
     for (i = 0; i < eln_command_count; ++i) {
         ElnCommand *c = &eln_commands[i];

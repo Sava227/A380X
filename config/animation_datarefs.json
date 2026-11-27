@@ -1972,13 +1972,14 @@
       "dataref": "sim/cockpit2/switches/taxi_light_on",
       "value_min": 0,
       "value_max": 1,
-      "note": "The native boolean uses the source three-position switch's two end poses."
+      "note": "The native boolean uses the source three-position switch's two end poses. Backwards (frame 0 is T.O.): the installed panels are re-keyed on a380x/xp12/elec/lights/nose_switch (0 OFF, 1 TAXI, 2 T.O.) by tools/light_switch_animations.py; run it after a re-export."
     },
     {
       "pattern": "(?i)SWITCH_OVHD_EXTLT_LANDL",
       "dataref": "sim/cockpit2/switches/landing_lights_on",
       "value_min": 0,
-      "value_max": 1
+      "value_max": 1,
+      "note": "Backwards (frame 0 is ON): tools/light_switch_animations.py swaps the keys in the installed panels; run it after a re-export."
     },
     {
       "pattern": "(?i)SWITCH_OVHD_INTLT_SEATBELT",
