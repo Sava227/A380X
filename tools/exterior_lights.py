@@ -14,8 +14,9 @@ is, so the lights' directions need no attachment rotation (user saw the taxi bea
 Wingtip lights ride the wing flex chain of WING_FLEX_15, copied from the installed wing objects; the nose gear
 lights show only with the nose gear down and locked.
 
-shortcut: no RWY TURN OFF or WING / ENG scan lights (their cockpit switches drive nothing yet); wire those switches
-first, then add airplane_spot_* / airplane_generic_* lights here.
+The plugin (a380x_elec_adapter.inc eln_ext_lights) turns the generic lights on from the switches it owns or reads:
+GENERIC T.O. (NOSE at T.O.), RWY TURN OFF, WING (wing and engine scan lights) and LOGO (ON, or AUTO on the ground or
+with flaps out, FBW A380_COCKPIT.xml).
 
     python3 tools/exterior_lights.py --aircraft <aircraft> --fbw <a380_exterior.gltf>
 """
@@ -51,6 +52,23 @@ def unit(*v):
     return v / np.linalg.norm(v)
 
 
+def aim(src, dst):
+    return unit(*(np.asarray(dst, float) - src))
+
+
+def splay(deg, down=0.05):
+    """Forward and `deg` toward the left (+x; negative: right), a little down."""
+    return unit(np.sin(np.radians(deg)), -down, np.cos(np.radians(deg)))
+
+
+# generic light indices, shared with the plugin (a380x_elec_adapter.inc A380X_ELN_*_LIGHT)
+GENERIC = {"to": 0, "rwy": 1, "wing": 2, "logo": 3}
+# scan light targets (installed objects): wing leading edge at x 14 m, inboard engine intake
+WING_LE, ENG2_INTAKE = (14.0, 1.6, 7.6), (14.9, -0.96, 12.7)
+SCAN_WING, SCAN_ENG = np.array([3.35, 2.95, 24.72]), np.array([3.13, 1.36, 27.27])   # FBW nodes (left side)
+MIRROR = np.array([-1.0, 1.0, 1.0])
+
+
 RED, GREEN, WHITE = (1, 0, 0), (0.02, 0.74, 0.36), (0.95, 0.82, 0.72)   # Laminar A330's nav colours
 LAMP, STROBE = (0.76, 0.66, 0.58), (1, 1, 1)                             # its landing lamp and strobe colours
 SIDE = unit(np.sin(np.radians(55)), 0, np.cos(np.radians(55)))           # nav: forward to 110 deg off the nose
@@ -71,11 +89,23 @@ LIGHTS = [
     ("LIGHT_ASOBO_LAND_1_RH", "body", ("landing",), LAMP, 1, 765000, unit(0, -0.05, 1), 12.5),
     ("LIGHT_ASOBO_LAND_2_RH", "body", ("landing",), LAMP, 1, 765000, unit(0, -0.05, 1), 12.5),
     ("LIGHT_ASOBO_TAKEOFF_1", "nose", ("taxi",), LAMP, 0, 300000, unit(0, -0.1, 1), 25),
-    # T.O. lights: generic light 0, which the plugin turns on with the NOSE switch at T.O. (A380X_ELN_TO_LIGHT)
-    ("LIGHT_ASOBO_TAKEOFF_2", "nose", ("generic",), LAMP, 0, 500000, unit(0, -0.05, 1), 12.5),
-    ("LIGHT_ASOBO_TAKEOFF_3", "nose", ("generic",), LAMP, 0, 500000, unit(0, -0.05, 1), 12.5),
+    ("LIGHT_ASOBO_TAKEOFF_2", "nose", ("generic",), LAMP, GENERIC["to"], 500000, unit(0, -0.05, 1), 12.5),
+    ("LIGHT_ASOBO_TAKEOFF_3", "nose", ("generic",), LAMP, GENERIC["to"], 500000, unit(0, -0.05, 1), 12.5),
+    # RWY TURN OFF: two on the nose gear 40 deg out, two on the forward fuselage 50 deg out and 15 deg down (FBW
+    # systems.cfg lightdef.100-115 LocalRotation)
+    ("LIGHT_ASOBO_TURNOFF_LH", "nose", ("generic",), LAMP, GENERIC["rwy"], 200000, splay(40), 20),
+    ("LIGHT_ASOBO_TURNOFF_RH", "nose", ("generic",), LAMP, GENERIC["rwy"], 200000, splay(-40), 20),
+    ("LIGHT_ASOBO_TAXI_CAM_FWD_LH", "body", ("generic",), LAMP, GENERIC["rwy"], 100000, splay(50, 0.27), 20),
+    ("LIGHT_ASOBO_TAXI_CAM_FWD_RH", "body", ("generic",), LAMP, GENERIC["rwy"], 100000, splay(-50, 0.27), 20),
+    # WING: the wing leading edge and the inboard engine intake, from the fuselage above the wing root
+    ("LIGHT_ASOBO_SCAN_WING_LH", "body", ("generic",), WHITE, GENERIC["wing"], 50000, aim(SCAN_WING, WING_LE), 10),
+    ("LIGHT_ASOBO_SCAN_WING_RH", "body", ("generic",), WHITE, GENERIC["wing"], 50000,
+     aim(SCAN_WING * MIRROR, np.asarray(WING_LE) * MIRROR), 10),
+    ("LIGHT_ASOBO_SCAN_ENG_LH", "body", ("generic",), WHITE, GENERIC["wing"], 50000, aim(SCAN_ENG, ENG2_INTAKE), 6),
+    ("LIGHT_ASOBO_SCAN_ENG_RH", "body", ("generic",), WHITE, GENERIC["wing"], 50000,
+     aim(SCAN_ENG * MIRROR, np.asarray(ENG2_INTAKE) * MIRROR), 6),
 ]
-# logo: spill only, onto the fin from the tailplane, on the nav system (one NAV & LOGO switch). The real lights wash
+# logo: spill only, onto the fin from the tailplane, on generic light GENERIC["logo"] (the LOGO switch). The real lights wash
 # the lower two thirds of the fin, not its tip (user, 2026-11-27): aimed at the fin's side at y 11 m (chord mid z -27.6,
 # installed a380x_fuse4.obj; fin y 8.5..20.2 m) with a 25 deg cone, the lit area ends at y ~17 m.
 LOGOS = ["LIGHT_ASOBO_LOGO_FWD_LH", "LIGHT_ASOBO_LOGO_FWD_RH"]
@@ -134,7 +164,8 @@ def build(positions: dict, chains: dict) -> str:
             groups[where] += light_lines(kind, pos, rgb, index, cd, d, half, "\t" if where != "body" else "")
     for node in LOGOS:
         p = positions[node]
-        groups["body"] += light_lines("nav", p, WHITE, 0, 20000, unit(*(FIN * [np.sign(p[0]), 1, 1] - p)), LOGO_HALF_ANGLE, "",
+        groups["body"] += light_lines("generic", p, WHITE, GENERIC["logo"], 20000, unit(*(FIN * [np.sign(p[0]), 1, 1] - p)),
+                                      LOGO_HALF_ANGLE, "",
                                       spill=False)
     out = ["I", "800", "OBJ", "", "POINT_COUNTS\t0\t0\t0\t0", "", "# exterior lights: tools/exterior_lights.py"]
     out += groups["body"]

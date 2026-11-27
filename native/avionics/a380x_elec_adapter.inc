@@ -39,7 +39,8 @@ enum {
     ENR_SPEEDBRAKE, ENR_RUDDER_TRIM, ENR_TERR, ENR_XPDR,
     ENR_COUNT, ENR_REQUIRED = ENR_GPU_CALLABLE
 };
-#define A380X_ELN_TO_LIGHT 0   /* generic light index of the nose T.O. lights (tools/exterior_lights.py) */
+/* generic light indices of the exterior lights the plugin switches (tools/exterior_lights.py GENERIC) */
+enum { A380X_ELN_TO_LIGHT, A380X_ELN_RWY_LIGHT, A380X_ELN_WING_LIGHT, A380X_ELN_LOGO_LIGHT, A380X_ELN_GENERIC_LIGHTS };
 static const char *const eln_raw_names[ENR_COUNT] = {
     "sim/cockpit2/engine/indicators/N1_percent",
     "sim/flightmodel/engine/ENGN_N2_",
@@ -116,9 +117,10 @@ static struct {
     int lamp_supply_simple;
     /* preset runner + native item states without an X-Plane equivalent */
     A380XPresetRunner preset;
-    int preset_expedited, preset_last, nose, strobe_auto, no_smoking_auto, rwy_turnoff;
+    int preset_expedited, preset_last, nose, strobe_auto, no_smoking_auto;
     int nose_taxi;                    /* taxi_light_on as last written from nose (0 OFF, 1 TAXI, 2 T.O.) */
-    XPLMDataRef generic_lights;       /* the T.O. lights are generic light A380X_ELN_TO_LIGHT */
+    XPLMDataRef generic_lights;       /* sim/cockpit2/switches/generic_lights_switch */
+    XPLMDataRef rwy_sw, wing_sw, logo_sw;   /* the cockpit feedback switches (0 = bottom), found on first use */
     char preset_text[64];
     XPLMCommandRef flaps_down, to_config;
     int to_config_held;
@@ -388,6 +390,11 @@ static void eln_run_command(const char *name)
     XPLMCommandRef command = XPLMFindCommand(name);
     if (command) XPLMCommandOnce(command);
 }
+static int eln_switch(XPLMDataRef *ref, const char *name)
+{
+    if (!*ref) *ref = XPLMFindDataRef(name);
+    return *ref ? XPLMGetDatai(*ref) : 0;
+}
 /* Cold & dark cockpit per spec 7.1 (stock items the plugin does not own are set once). */
 static void eln_secure_cockpit(void)
 {
@@ -398,7 +405,7 @@ static void eln_secure_cockpit(void)
     eln_run_command("sim/lights/landing_lights_off"); eln_seti(ENR_TAXI, 0);   /* landing_lights_on is light 0 only */
     eln_seti(ENR_SEATBELT, 0); eln_seti(ENR_NO_SMOKING, 0); eln_seti(ENR_O2, 0); eln_seti(ENR_APU_BLEED, 0);
     if (eln.raw[ENR_PARKBRAKE]) eln_setf(ENR_PARKBRAKE, 1.0f);
-    eln.nose = eln.strobe_auto = eln.no_smoking_auto = eln.rwy_turnoff = 0;
+    eln.nose = eln.strobe_auto = eln.no_smoking_auto = 0;
 }
 static void eln_apply_spawn(int mode, int secure)
 {
@@ -466,7 +473,7 @@ static int eln_preset_get(void *ctx, int item, int index)
     case A380X_PI_RUDDER_TRIM_ZERO: return fabsf(eln_rawf(ENR_RUDDER_TRIM)) < 0.001f;
     case A380X_PI_NOSE_LIGHT: return eln.nose != 0;
     case A380X_PI_NOSE_TO_LIGHT: return eln.nose == 2;
-    case A380X_PI_RWY_TURNOFF: return eln.rwy_turnoff;
+    case A380X_PI_RWY_TURNOFF: return eln_switch(&eln.rwy_sw, "a380x/xp12/cockpit/rwy_turn_off") >= 1;
     case A380X_PI_LANDING_LIGHTS: return eln_rawi(ENR_LANDING) != 0;
     case A380X_PI_AUTOBRAKE_RTO: return center_right.rto_arm != 0;
     case A380X_PI_TERR_ND: return eln_rawi(ENR_TERR) != 0;
@@ -527,7 +534,7 @@ static void eln_preset_set(void *ctx, int item, int index, int value)
     case A380X_PI_RUDDER_TRIM_ZERO: eln_setf(ENR_RUDDER_TRIM, 0.0f); break;
     case A380X_PI_NOSE_LIGHT: eln.nose = value ? (eln.nose ? eln.nose : 1) : 0; eln_seti(ENR_TAXI, eln.nose != 0); break;
     case A380X_PI_NOSE_TO_LIGHT: eln.nose = value ? 2 : (eln.nose == 2 ? 1 : eln.nose); eln_seti(ENR_TAXI, eln.nose != 0); break;
-    case A380X_PI_RWY_TURNOFF: eln.rwy_turnoff = value != 0; break;
+    case A380X_PI_RWY_TURNOFF: if (eln_switch(&eln.rwy_sw, "a380x/xp12/cockpit/rwy_turn_off") != (value != 0)) XPLMSetDatai(eln.rwy_sw, value != 0); break;
     case A380X_PI_LANDING_LIGHTS: eln_run_command(value ? "sim/lights/landing_lights_on" : "sim/lights/landing_lights_off"); break;
     case A380X_PI_AUTOBRAKE_RTO:
         if ((center_right.rto_arm != 0) != (value != 0)) eln_run_command("a380x/xp12/center_right/rto_toggle");
@@ -569,17 +576,23 @@ static int eln_preset_request(int preset)
 }
 
 /* ---------------------------------------------------------------- per frame */
-/* NOSE switch -> X-Plane lights: TAXI lights the taxi light, T.O. also the take-off lights (generic light
- * A380X_ELN_TO_LIGHT). A taxi light switched elsewhere (key binding) moves the switch to OFF or TAXI. */
-static void eln_nose_lights(void)
+/* Exterior light switches -> X-Plane lights. NOSE: TAXI lights the taxi light, T.O. also the take-off lights;
+ * a taxi light switched elsewhere (key binding) moves the switch to OFF or TAXI. RWY TURN OFF, WING (wing and
+ * engine scan lights) and LOGO (0 OFF, 1 AUTO, 2 ON; AUTO: on the ground or with flaps out, FBW
+ * A380_COCKPIT.xml) are the cockpit feedback switches. Each drives a generic light (tools/exterior_lights.py). */
+static void eln_ext_lights(void)
 {
-    float to;
-    int taxi = eln_rawi(ENR_TAXI) != 0;
+    float on[A380X_ELN_GENERIC_LIGHTS];
+    int logo, taxi = eln_rawi(ENR_TAXI) != 0;
     if (taxi != eln.nose_taxi) eln.nose = taxi ? (eln.nose ? eln.nose : 1) : 0;
     eln.nose_taxi = eln.nose != 0;
     eln_seti(ENR_TAXI, eln.nose_taxi);
-    to = eln.nose == 2 ? 1.0f : 0.0f;
-    if (eln.generic_lights) XPLMSetDatavf(eln.generic_lights, &to, A380X_ELN_TO_LIGHT, 1);
+    logo = eln_switch(&eln.logo_sw, "a380x/xp12/cockpit/logo_lt");
+    on[A380X_ELN_TO_LIGHT] = eln.nose == 2;
+    on[A380X_ELN_RWY_LIGHT] = eln_switch(&eln.rwy_sw, "a380x/xp12/cockpit/rwy_turn_off") >= 1;
+    on[A380X_ELN_WING_LIGHT] = eln_switch(&eln.wing_sw, "a380x/xp12/cockpit/wing_lt") >= 1;
+    on[A380X_ELN_LOGO_LIGHT] = logo == 2 || (logo == 1 && (eln_rawi(ENR_ON_GROUND) || eln_rawf(ENR_FLAP_RATIO) > 0.0f));
+    if (eln.generic_lights) XPLMSetDatavf(eln.generic_lights, on, 0, A380X_ELN_GENERIC_LIGHTS);
 }
 static void eln_update(float dt_real, const float *brightness)
 {
@@ -609,7 +622,7 @@ static void eln_update(float dt_real, const float *brightness)
         }
     }
     if (eln.to_config_held && !eln.preset.running) eln_preset_set(NULL, A380X_PI_TO_CONFIG, 0, 0);  /* cancelled */
-    eln_nose_lights();
+    eln_ext_lights();
     /* Ground power cannot stay plugged in once the aircraft rolls or flies (GPUM). */
     if (elec_io.ext_connected && (!eln_rawi(ENR_ON_GROUND) || eln_rawf(ENR_GROUNDSPEED) > 1.0f)) elec_io.ext_connected = 0;
     eln_read_inputs(sim_dt);

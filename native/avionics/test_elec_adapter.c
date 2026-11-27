@@ -366,6 +366,26 @@ static void test_hardware_failures_pause(void)
         taxi->value = 1; frames(0.1f); assert(geti("lights/nose_switch") == 1);
         taxi->value = 0; frames(0.1f); assert(geti("lights/nose_switch") == 0);
     }
+    /* RWY TURN OFF, WING and LOGO (feedback switches, 0 = bottom): generic lights 1-3; LOGO AUTO only on the
+     * ground or with flaps out */
+    {
+        MockRef *gen = raw("sim/cockpit2/switches/generic_lights_switch"), *ground = raw("sim/flightmodel/failures/onground_any");
+        MockRef *rwy = new_ref("a380x/xp12/cockpit/rwy_turn_off"), *wing = new_ref("a380x/xp12/cockpit/wing_lt"),
+                *logo = new_ref("a380x/xp12/cockpit/logo_lt"), *flaps = raw("sim/cockpit2/controls/flap_ratio");
+        double was_ground = ground->value, was_flaps = flaps->value;
+        int was_ext = elec_io.ext_connected;   /* airborne for a moment unplugs ground power */
+        frames(0.1f);
+        assert(gen->vf[A380X_ELN_RWY_LIGHT] == 0.0f && gen->vf[A380X_ELN_WING_LIGHT] == 0.0f && gen->vf[A380X_ELN_LOGO_LIGHT] == 0.0f);
+        rwy->value = 1; wing->value = 1; logo->value = 2; frames(0.1f);
+        assert(gen->vf[A380X_ELN_RWY_LIGHT] == 1.0f && gen->vf[A380X_ELN_WING_LIGHT] == 1.0f && gen->vf[A380X_ELN_LOGO_LIGHT] == 1.0f);
+        logo->value = 1; ground->value = 1; frames(0.1f); assert(gen->vf[A380X_ELN_LOGO_LIGHT] == 1.0f);
+        ground->value = 0; flaps->value = 0; frames(0.1f); assert(gen->vf[A380X_ELN_LOGO_LIGHT] == 0.0f);
+        flaps->value = 0.3; frames(0.1f); assert(gen->vf[A380X_ELN_LOGO_LIGHT] == 1.0f);
+        assert(eln_preset_get(NULL, A380X_PI_RWY_TURNOFF, 0) == 1);
+        eln_preset_set(NULL, A380X_PI_RWY_TURNOFF, 0, 0); assert((int)rwy->value == 0);
+        rwy->value = wing->value = logo->value = 0; ground->value = was_ground; flaps->value = was_flaps;
+        elec_io.ext_connected = was_ext; frames(0.1f);
+    }
     (void)battery;
 }
 
