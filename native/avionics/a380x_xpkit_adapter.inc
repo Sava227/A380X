@@ -61,6 +61,15 @@ enum { XPKIT_WEB_NONE, XPKIT_WEB_RUNNING, XPKIT_WEB_RESTARTING };
 #define XPKIT_UPLOAD_BYTES_PER_FRAME (16u << 20)   /* ...and bytes (one PFD or ND frame is 7.1 MB) */
 static int xpkit_web;
 static int xpkit_web_possible(void) { return xpkit_web != XPKIT_WEB_NONE; }
+/* Native PFD/ND switch: a380x/xp12/displays/native_pfd_nd (0 web, 1 native; toggled by the command
+ * a380x/xp12/displays/toggle_native_pfd_nd). While it is on, or no web renderer can run, the PFDs and NDs
+ * are drawn by the plugin every frame (batched, a380x_gl_batch.h) instead of from the web renderer's frames:
+ * no frame hand-off and no texture uploads. The helper still renders its PFD/ND pages in its own process. */
+static int xpkit_native_selected;
+static XPLMDataRef xpkit_native_ref;
+static XPLMCommandRef xpkit_native_cmd;
+static int xpkit_pfd_nd_web(void) { return !xpkit_native_selected && xpkit_web_possible(); }
+static void native_nd_content(int side);
 static int xpkit_draw_view(int view,float x,float y,float width,float height);
 static void xpkit_device_draw_begin(void);   /* top of the PFD/ND device draws: one-time zero-copy probe */
 static double xpkit_now(void);
@@ -196,6 +205,19 @@ static GLuint xpkit_surface_texture(int view,int index) {
     return xpkit_surface_tex[view][index];
 }
 #endif
+static int xpkit_native_get(void *refcon) { (void)refcon; return xpkit_native_selected; }
+static void xpkit_native_set(void *refcon,int value) {
+    (void)refcon;
+    if((value!=0)==xpkit_native_selected) return;
+    xpkit_native_selected=value!=0;
+    XPLMDebugString(xpkit_native_selected?"A380X displays: PFD/ND drawn natively by the plugin (batched)\n"
+                                         :"A380X displays: PFD/ND from the web renderer\n");
+}
+static int xpkit_native_command(XPLMCommandRef cmd,XPLMCommandPhase phase,void *refcon) {
+    (void)cmd;
+    if(phase==xplm_CommandBegin) xpkit_native_set(refcon,!xpkit_native_selected);
+    return 1;
+}
 static void xpkit_init(void) {
     int i; char name[128];
     xpkit_clock=XPLMFindDataRef("sim/time/total_flight_time_sec");
@@ -204,6 +226,10 @@ static void xpkit_init(void) {
         xpkit_health_refs[i]=XPLMRegisterDataAccessor(name,xplmType_Int,0,xpkit_get_health,NULL,
             NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,&xpkit_health[i],NULL);
     }
+    xpkit_native_ref=XPLMRegisterDataAccessor("a380x/xp12/displays/native_pfd_nd",xplmType_Int,1,xpkit_native_get,
+        xpkit_native_set,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+    xpkit_native_cmd=XPLMCreateCommand("a380x/xp12/displays/toggle_native_pfd_nd","Displays: toggle native PFD/ND (plugin-drawn) and web PFD/ND");
+    XPLMRegisterCommandHandler(xpkit_native_cmd,xpkit_native_command,1,NULL);
     xpkit_nd_init();
     xpkit_pfd_init();
     xpkit_efb_init();
@@ -292,6 +318,9 @@ static void xpkit_start(void) {
 }
 static void xpkit_shutdown(void) {
     int i; xpkit_stop();
+    if(xpkit_native_cmd) XPLMUnregisterCommandHandler(xpkit_native_cmd,xpkit_native_command,1,NULL);
+    if(xpkit_native_ref) XPLMUnregisterDataAccessor(xpkit_native_ref);
+    xpkit_native_cmd=NULL; xpkit_native_ref=NULL;
     xpkit_efb_shutdown();
     xpkit_nd_shutdown();
     xpkit_pfd_shutdown();
@@ -648,8 +677,8 @@ static void xpkit_device_draw_begin(void) {
     xpkit_zero_copy_probe();
 #endif
 }
-static int xpkit_draw(int side,float x,float y) { return xpkit_web_possible() && xpkit_draw_view_from(side,x,y,320,416,0); }
-static int xpkit_draw_nd(int side,float x,float y) { return xpkit_web_possible() && xpkit_draw_view_from(side+2,x,y,180,234,0); }
+static int xpkit_draw(int side,float x,float y) { return xpkit_pfd_nd_web() && xpkit_draw_view_from(side,x,y,320,416,0); }
+static int xpkit_draw_nd(int side,float x,float y) { return xpkit_pfd_nd_web() && xpkit_draw_view_from(side+2,x,y,180,234,0); }
 static int xpkit_draw_mfd(int side,float x,float y,float scale) { return xpkit_draw_view(side+4,x,y,768*scale,1024*scale); }
 static int xpkit_draw_sd(void) { return xpkit_draw_view(6,0,0,768,1024); }
 /* The panel-atlas PFD/ND regions are drawn only while their cockpit devices are not active: exactly
@@ -693,7 +722,8 @@ static int xpkit_view_live(int view,double now) {
     return s && atomic_load(&s->ready[view]) && atomic_load(&s->frame_seq[view])>0 && now-s->frame_time[view]<1.0;
 }
 static void xpkit_present_poll(double now) {
-    int web=xpkit_web_possible();
+    int web=xpkit_pfd_nd_web();
+    display_native_pfd_nd=!web;   /* the native ND's VD terrain profile (a380x_efis_nd.inc) */
     if(xpkit_shared) xpkit_health[3]=(int)atomic_load_explicit(&xpkit_shared->errors,memory_order_acquire);
     for(int i=0;i<2;++i) xpkit_health[i+1]=xpkit_health[0] && xpkit_view_live(i,now);
     for(int i=0;i<2;++i) xpkit_health[i+6]=xpkit_health[0] && xpkit_view_live(i+2,now);

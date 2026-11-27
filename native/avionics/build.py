@@ -144,6 +144,8 @@ ISIS_TEST = HERE / "test_isis.c"
 CONTROL_MOTION_TEST = HERE / "test_control_motion.c"
 ENG_FAN_TEST = HERE / "test_eng_fan.c"
 WING_FLEX_TEST = HERE / "test_wing_flex.c"
+ENG_WOBBLE_TEST = HERE / "test_eng_wobble.c"
+GL_BATCH_TEST = HERE / "test_gl_batch.c"
 HYD_TEST = HERE / "test_hyd.c"   # A380 hydraulics (a380x_hyd.h)
 ISIS_ADAPTER = HERE / "a380x_isis_adapter.inc"
 ISIS_FONT = HERE / "fonts/ISISFontTemporary.ttf"
@@ -178,7 +180,7 @@ MFD_OPTIONAL_TESTS = (("test_mfd_pages_a", "render"), ("test_mfd_page_perf", "re
                       ("test_mfd_page_fpln", "render"), ("test_mfd_pages_h", "render"))
 EXTRA_INPUTS = [TERRAIN_TEST, TERRAIN_ADAPTER_TEST, TAWS_TEST, PFD_ANIMATION_CLOCK, TERRAIN_LAYER, PWP_LAYER, HERE / "xp-kit/bridge.js", HERE / "xp-kit-nd/native-bridge.js",
     FMGC_FLIGHT_TEST, EFB_CORE, EFB_CORE_TEST, EFB_ADAPTER_TEST, *EFB_PAGE_SOURCES, *FWS_SOURCES, *(test for test, _ in FWS_TESTS.values()), HERE / "test_xpkit_nd_input.c", HERE / "a380x_xpkit_host.m", HERE / "test_xpkit_host.c", HERE / "test_xpkit_zero_copy.c", XPKIT_SURFACE, ADIRS, ADIRS_TEST, ADIRS_ADAPTER_TEST, ADIRS_WINDOW_TEST, ELEC_TEST, ELEC_ADAPTER_TEST, *ELEC_NETWORK_SOURCES, ELEC_NETWORK_TEST, ELEC_NETWORK_ADAPTER_TEST, OVHD_TEST, OVHD_ADAPTER_TEST, LG_GRVTY_TEST, LG_GRVTY_ADAPTER_TEST, THRUST_TEST, THRUST_ADAPTER_TEST, DETENT_CLICK, FLAPS_TEST, FLAPS_ADAPTER_TEST, SPEEDBRAKE_TEST, SPEEDBRAKE_ADAPTER_TEST, *SPEEDBRAKE_SOURCES, FCTL_TEST, FCTL_ADAPTER_TEST, *FCTL_SOURCES, GUIDANCE, GUIDANCE_TEST, *AUTOLAND_SOURCES, AUTOLAND_TEST, AUTOLAND_SIM_TEST, AURALS, AURALS_TEST, PFD_TEST, EFB_TEST, ADAPTER_TEST, CONTROL_LIFECYCLE_TEST, CLOCK_RENDER_TEST, EFIS_TEST, EFIS_ND_TEST, EFIS_AIRPORT_TEST,
-    EWD_DATA_TEST, EWD_RENDER_TEST, FCU_MOTION_TEST, FCU_LIGHT_TEST, ISIS_TEST, CONTROL_MOTION_TEST, ENG_FAN_TEST, WING_FLEX_TEST, HYD_TEST,
+    EWD_DATA_TEST, EWD_RENDER_TEST, FCU_MOTION_TEST, FCU_LIGHT_TEST, ISIS_TEST, CONTROL_MOTION_TEST, ENG_FAN_TEST, WING_FLEX_TEST, ENG_WOBBLE_TEST, GL_BATCH_TEST, HYD_TEST,
     *CXX_SOURCES, *[p for p in HERE.glob("*.h") if not p.name.startswith("._")],
     *[p for p in HERE.glob("*.inc") if not p.name.startswith("._")],
     *MFD_CORE_SOURCES, MFD_ADAPTER_TEST, SD_ADAPTER_TEST, SD_DATA_TEST,
@@ -528,7 +530,7 @@ def main() -> None:
          *mac_laws, "-lc++", "-lm", "-o", str(adapter_test_binary)])
     adapter_result = run([str(adapter_test_binary)]).strip()
     fcu_mechanical_results = {}
-    for source in (FCU_MOTION_TEST, FCU_LIGHT_TEST, CONTROL_MOTION_TEST, ENG_FAN_TEST, WING_FLEX_TEST, HYD_TEST):
+    for source in (FCU_MOTION_TEST, FCU_LIGHT_TEST, CONTROL_MOTION_TEST, ENG_FAN_TEST, WING_FLEX_TEST, ENG_WOBBLE_TEST, GL_BATCH_TEST, HYD_TEST):
         binary = output / source.stem
         run([clang, *warnings, str(source), "-lm", "-o", str(binary)])
         fcu_mechanical_results[source.stem] = run([str(binary)]).strip()

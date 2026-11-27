@@ -249,6 +249,18 @@ static void test_hardware_adoption(void)
     for (i = 0; i < 4; ++i) { read[i].reverse = 0; read[i].ratio = 0.0; }
     a380x_thrust_sync_external(&t, read);
     CHECK(t.reverse[1].value == 0.0 && t.lever[1].value == 0.0, "stowed");
+    /* The reverse toggle pressed twice: X-Plane decides from engine 1 (kept forward), so the second press
+     * asks for reverse on all engines again; the inner engines already reversing must stow. */
+    for (i = 0; i < 4; ++i) a380x_thrust_mark_written(&t, i, a380x_thrust_xp_lever(&t, i));
+    for (i = 0; i < 4; ++i) read[i].reverse = 1;
+    a380x_thrust_sync_external(&t, read);                                       /* first press */
+    CHECK(t.reverse[1].value > 0.0 && t.reverse[2].value > 0.0, "toggle: inner engines reverse");
+    for (i = 0; i < 4; ++i) a380x_thrust_mark_written(&t, i, a380x_thrust_xp_lever(&t, i));
+    for (i = 0; i < 4; ++i) { read[i] = a380x_thrust_xp_lever(&t, i); read[i].reverse = 1; }
+    a380x_thrust_sync_external(&t, read);                                       /* second press */
+    CHECK(t.reverse[1].value == 0.0 && t.reverse[2].value == 0.0 && t.dirty[1] && t.dirty[2]
+          && !a380x_thrust_xp_lever(&t, 1).reverse, "toggle again: inner engines stow (EWD REV clears)");
+    for (i = 0; i < 4; ++i) a380x_thrust_mark_written(&t, i, a380x_thrust_xp_lever(&t, i));
     /* In flight reverse is never accepted. */
     t.reverse_inhibited = 1;
     for (i = 1; i <= 2; ++i) read[i].reverse = 1;

@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from matte_glareshield_legends import face_rects, paint
+from matte_glareshield_legends import draw_opaque, face_rects, paint
 
 OBJ = """TEXTURE_MAP normal n.png
 POINT_COUNTS\t6\t0\t0\t6
@@ -35,6 +35,15 @@ class Matte(unittest.TestCase):
             self.assertTrue((x[2:4, 2:4, 1] == 20).all() and (x[2:4, 2:4, [0, 2, 3]] == 200).all())
             self.assertEqual(int((x[..., 1] == 20).sum()), 4)
             self.assertEqual(paint(p, rects.values(), 1, 20), 0)    # idempotent
+
+
+class Opaque(unittest.TestCase):
+    def test_glareshield_faces_solid_others_blended(self):
+        text, n = draw_opaque(OBJ)
+        self.assertEqual(n, 1)
+        self.assertIn("PUSH_GLARESHIELD_CS_MASTERCAUT_SEQ1\nATTR_no_blend\t0.5\nTRIS\t0\t3\nATTR_blend\n", text)
+        self.assertIn("PUSH_OVHD_ELEC_BAT1_SEQ1\nTRIS\t3\t3\n", text)                     # overhead untouched
+        self.assertEqual(draw_opaque(text), (text, 0))                                      # idempotent
 
 
 if __name__ == "__main__":

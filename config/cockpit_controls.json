@@ -697,13 +697,21 @@
   },
   {
     "node": "SWITCH_OVHD_EXTLT_NOSE",
-    "command": "sim/lights/taxi_lights_toggle",
-    "label": "NOSE - native taxi-lights toggle"
+    "command": null,
+    "command_up": "a380x/xp12/elec/lights/nose_up",
+    "command_down": "a380x/xp12/elec/lights/nose_down",
+    "switch_axis": "up_down",
+    "cursor": "up_down",
+    "label": "NOSE - OFF / TAXI / T.O."
   },
   {
     "node": "SWITCH_OVHD_EXTLT_LANDL",
-    "command": "sim/lights/landing_lights_toggle",
-    "label": "LANDING LIGHTS - native toggle"
+    "command": null,
+    "command_up": "sim/lights/landing_lights_on",
+    "command_down": "sim/lights/landing_lights_off",
+    "switch_axis": "up_down",
+    "cursor": "up_down",
+    "label": "LAND - ON / OFF (all landing lights; the toggle flips each light, so they drifted out of step)"
   },
   {
     "node": "SWITCH_OVHD_INTLT_SEATBELT",

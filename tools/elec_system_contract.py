@@ -31,7 +31,7 @@ DATAREFS = (
         "gen/potential", "gen/freq", "gen/load_pct", "gen/line_closed", "drive/connected",
         "apu_gen/potential", "apu_gen/freq", "apu_gen/load_pct", "ext/potential", "ext/freq",
         "emer_gen/potential", "emer_gen/load_pct", "rat/stow_ratio", "stat_inv/potential", "stat_inv/freq",
-        "bat/potential", "bat/current", "bat/charge_ah", "bat/selector", "bat/display_volts",
+        "bat/potential", "bat/current", "bat/charge_ah", "bat/selector", "lights/nose_switch", "bat/display_volts",
         "tr/potential", "tr/current", "emer/active", "emer/tefo", "emer/config", "galley_shed")),
     *(PREFIX + f"du/{unit}_state" for unit in DISPLAY_UNITS),
     *(PREFIX + name for name in (
@@ -47,6 +47,7 @@ COMMANDS = (
     *(PREFIX + f"preset/{n}" for n in range(1, 6)),
     PREFIX + "preset/cancel", PREFIX + "preset/expedite_toggle",
     PREFIX + "bat_selector_left", PREFIX + "bat_selector_right",
+    PREFIX + "lights/nose_up", PREFIX + "lights/nose_down",   # NOSE switch OFF / TAXI / T.O.
     APU_PREFIX + "start",
 )
 # Stock commands consumed while the network is active (hardware bindings act on native pbs).

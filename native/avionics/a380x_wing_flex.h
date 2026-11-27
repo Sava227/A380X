@@ -40,7 +40,7 @@ typedef struct {
 static const double a380x_wf_x[A380X_WF_NODES] = {0., 11.5, 22.05, 29., 36.85};
 static const double a380x_wf_empty[A380X_WF_NODES] = {0., 25000., 20000., 5000., 400.};
 static const double a380x_wf_spring[A380X_WF_LINKS] = {16000000., 6000000., 3500000., 200000.};
-static const double a380x_wf_damping[A380X_WF_LINKS] = {800000., 500000., 150000., 5000.};
+static const double a380x_wf_damping[A380X_WF_LINKS] = {1600000., 1000000., 300000., 10000.};   /* 2x FBW: user saw the wing ripple (2026-11-26) */
 static const double a380x_wf_spread[A380X_WF_NODES] = {0., 0.42, 0.40, 0.15, 0.03};
 
 static inline double a380x_wf_lp(double out, double in, double dt, double tau)   /* FBW LowPassFilter */
@@ -99,7 +99,11 @@ static inline void a380x_wing_flex_update(A380XWingFlex *f, const A380XWingFlexI
     flight = lift_1g + in->accel_no_grav * in->mass_kg;
     blend = fmax(0., fmin(1., in->wow_kg / (in->mass_kg * 0.7)));
     f->lift = in->wow_kg <= 1. ? flight : f->ground_time < 0.35 ? ground : ground * blend + (1. - blend) * flight;
-    /* A380WingLiftModifier: aileron up (+1) and spoilers spoil lift, flaps add it */
+    /* A380WingLiftModifier: aileron up (+1) and spoilers spoil lift, flaps add it.
+     * Deviation from FBW's code, following FBW's own comment ("0.3 means a fully deployed surface reduce lift by
+     * 30%"): node factor = base x (1 - gain x surface). FBW's code computes (1 - surface) x gain, which zeroes a
+     * node's lift at full deflection, so a held roll unloads the whole outer wing and bends it into a "~".
+     * The neutral spread (all surfaces at 0) is unchanged. */
     {
         double roll = fmax(-1., fmin(1., in->roll)), ail[2] = {-roll, roll}, sp = fmax(0., fmin(1., in->spoilers)), fl = fmax(0., fmin(1., in->flaps));
         lateral = 0.25 * (2. * (ail[1] - ail[0])) / 4.;
@@ -109,8 +113,8 @@ static inline void a380x_wing_flex_update(A380XWingFlex *f, const A380XWingFlexI
         steps = (int)ceil(dt / 0.005);
         for (int w = 0; w < 2; ++w) {
             A380XWfWing *wing = &f->wing[w];
-            double factor[A380X_WF_NODES] = {0., (1. - sp) * 0.4 + fl * 0.3, (1. - sp) * 0.4 + fl * 0.3,
-                                             (1. - ail[w]) * 0.2, (1. - ail[w]) * 0.2}, total = 0., node_lift[A380X_WF_NODES];
+            double factor[A380X_WF_NODES] = {0., 0.4 * (1. - 0.4 * sp) + fl * 0.3, 0.4 * (1. - 0.4 * sp) + fl * 0.3,
+                                             0.2 * (1. - 0.2 * ail[w]), 0.2 * (1. - 0.2 * ail[w])}, total = 0., node_lift[A380X_WF_NODES];
             for (int i = 0; i < A380X_WF_NODES; ++i) total += factor[i] * a380x_wf_spread[i];
             for (int i = 0; i < A380X_WF_NODES; ++i)
                 node_lift[i] = total > 0. ? factor[i] * a380x_wf_spread[i] / total * wing_lift[w] : 0.;

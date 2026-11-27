@@ -298,3 +298,26 @@ load factor blended out by weight on wheels, fuel on the inner nodes) and publis
 (0..100), so a wing re-export (`tools/export_exterior_mac.sh`) picks them up; `tools/test_wing_flex_mapping.py`
 pins the ranges. The installed wing objects were not re-exported (the converter can only move single-bone faces, so about 58 % of the skin would stay frozen and tear, and the slat skin repair would be lost): `tools/wing_flex/wing_flex_obj.py` adds the bend to them as 13 rigid segments per wing cut along FBW's bone axes; see [WING_FLEX_OBJ.md](WING_FLEX_OBJ.md). Typical output: about -1.4 deg total
 droop parked with full fuel, +1.6 deg in 1 g cruise, more under g.
+
+## Engine pylon wobble (plugin side ready; needs the engine OBJ rotation)
+
+`native/avionics/a380x_eng_wobble.h` and `.inc` publish:
+- `a380x/xp12/eng/wobble_pitch_deg[4]`: + intake up.
+- `a380x/xp12/eng/wobble_yaw_deg[4]`: + intake right.
+
+Both are in degrees, for engines 1..4 from left to right. They give each engine's nod and sway on its pylon, relative to the wing.
+
+**Model:** one lightly damped spring per axis and engine.
+- Pitch is about 2.5 Hz and yaw about 1.8 Hz, with damping ratio 0.06.
+- It is driven by the acceleration at the pylon attachment:
+  - body load factor;
+  - the wing flex node the pylon hangs from (inboard node 1, outboard node 2);
+  - roll acceleration × span;
+  - side load factor, for the sway.
+- The drive is high-passed (τ 1 s), so steady loads leave the engines centred. A 0.4 g, 0.15 s bump nods the intake about 0.2° down, and it rings out in about 3 s (`test_eng_wobble.c`).
+
+**Still to do, in the wing objects** (`tools/wing_flex/wing_flex_obj.py`):
+- Each engine, nacelle core, fan and pylon group needs two rotations about that pylon's wing attachment point, nested inside the wing flex bone rotation the engine already rides on (`WING_FLEX_6` inboard, `WING_FLEX_11` outboard):
+  - `ANIM_rotate_begin <lateral axis> a380x/xp12/eng/wobble_pitch_deg[i]`, keys -1.5 → -1.5 and 1.5 → 1.5;
+  - `ANIM_rotate_begin <vertical axis> a380x/xp12/eng/wobble_yaw_deg[i]`, with the same keys.
+- The signs must make + pitch raise the intake and + yaw point it right, in the OBJ frame (nose +z, left +x).

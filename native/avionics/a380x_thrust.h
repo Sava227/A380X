@@ -245,7 +245,8 @@ static inline int a380x_thrust_xp_differs(A380XXpLever a, A380XXpLever b)
  * reverse amount). Refusals mark the engine dirty so the adapter restores the lever in X-Plane. */
 static inline void a380x_thrust_sync_external(A380XThrust *t, const A380XXpLever read[A380X_THRUST_ENGINES])
 {
-    int i, inner_reverse = 0, first = !t->synced;
+    int i, inner_reverse = 0, first = !t->synced, toggled_off = 0;
+    int was_reversing = t->reverse[1].value > 0.0 || t->reverse[2].value > 0.0;
     for (i = 0; i < A380X_THRUST_ENGINES; ++i) {
         A380XXpLever r = read[i];
         if (!isfinite(r.ratio)) continue;
@@ -255,6 +256,9 @@ static inline void a380x_thrust_sync_external(A380XThrust *t, const A380XXpLever
             if (!a380x_thrust_has_reverser(i) || t->reverse_inhibited
                 || (t->lever[i].value > 0.0 && t->reverse[i].value <= 0.0)) {
                 t->dirty[i] = 1;          /* no reverser / in flight / thrust lever not at IDLE: refused */
+                /* X-Plane's reverse toggle decides from engine 1, which we keep forward: pressed again
+                 * while the inner engines reverse it asks for reverse once more instead of forward. */
+                if (!a380x_thrust_has_reverser(i) && was_reversing) toggled_off = 1;
                 continue;
             }
             a380x_detent_lever_set(&t->lever[i], 0.0);
@@ -267,6 +271,10 @@ static inline void a380x_thrust_sync_external(A380XThrust *t, const A380XXpLever
         t->dirty[i] = 0;
     }
     t->written_valid = 1;
+    if (toggled_off) for (i = 1; i <= 2; ++i) if (t->reverse[i].value > 0.0) {
+        a380x_detent_lever_set(&t->reverse[i], 0.0);   /* stowed: the adapter writes forward idle */
+        t->dirty[i] = 1;
+    }
     for (i = 1; i <= 2; ++i) inner_reverse = inner_reverse || t->reverse[i].value > 0.0;
     if (inner_reverse) for (i = 0; i < A380X_THRUST_ENGINES; i += 3) if (t->lever[i].value > 0.0) {
         a380x_detent_lever_set(&t->lever[i], 0.0);

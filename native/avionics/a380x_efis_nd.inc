@@ -107,9 +107,9 @@ static void efis_nd_read_radios(void)
     }
 }
 
-/* VD terrain profile: drawn only by the native FlyByWire-layout ND (a380x_nd_fbw.inc), which xp-kit
- * builds replace with the FlyByWire library ND. */
-#if !defined(A380X_XPKIT)
+/* VD terrain profile: drawn only by the native FlyByWire-layout ND (a380x_nd_fbw.inc); xp-kit builds
+ * show the FlyByWire library ND unless the native PFD/ND are selected (DISPLAY_NATIVE_ND). */
+/* (compiled in every build: xp-kit builds use it while the native ND is selected) */
 /* Great-circle destination from (lat, lon) along true bearing `bearing_deg` for `distance_nm`. */
 static void efis_nd_destination(double lat_deg, double lon_deg, double bearing_deg, double distance_nm,
                                 double *out_lat, double *out_lon)
@@ -176,7 +176,7 @@ static void efis_nd_update_vd_terrain(int side)
         vd->elevation_ft[column] = hits > 0 ? highest : 0.0f;
     }
 }
-#endif
+
 
 static void efis_nd_init(void)
 {
@@ -265,7 +265,5 @@ static void efis_nd_update(float dt)
             XPLMGetDatavf(nd_source.traffic_altitude,nd_data.traffic_altitude_m,0,64);
         }
     }
-#if !defined(A380X_XPKIT)
-    efis_nd_update_vd_terrain(0); efis_nd_update_vd_terrain(1);
-#endif
+    if (DISPLAY_NATIVE_ND) { efis_nd_update_vd_terrain(0); efis_nd_update_vd_terrain(1); }
 }

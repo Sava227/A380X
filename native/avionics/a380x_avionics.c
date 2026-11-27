@@ -41,6 +41,7 @@
 #include "XPLMUtilities.h"
 #include "XPLMNavigation.h"
 #include "XPLMScenery.h"
+#include "a380x_gl_batch.h"   /* batches the native screens' immediate-mode drawing; routes gl* calls below */
 
 #include "a380x_avionics_core.h"
 #include "a380x_du_scale.h"
@@ -258,6 +259,14 @@ static void read_side(Side *side, int powered)
 #include "a380x_fcu_adapter.inc"
 #include "a380x_autoland_adapter.inc"   /* localizer antenna distance for LAND / ROLL OUT */
 #include "a380x_efis.inc"
+/* 1 while the PFDs/NDs are drawn natively: always without xp-kit; with xp-kit, while the
+ * a380x/xp12/displays/native_pfd_nd switch is on (a380x_xpkit_adapter.inc) or no web renderer can run. */
+#if defined(A380X_XPKIT)
+static int display_native_pfd_nd;
+#define DISPLAY_NATIVE_ND display_native_pfd_nd
+#else
+#define DISPLAY_NATIVE_ND 1
+#endif
 #include "a380x_efis_nd.inc"
 #include "a380x_efis_airport.inc"
 #include "a380x_glareshield.inc"
@@ -292,6 +301,7 @@ static int xpkit_draw_sd(void);
 #include "a380x_cockpit_feedback.inc"
 #include "a380x_eng_fan.inc"          /* exterior fan rotation: N1 spin and windmilling */
 #include "a380x_wing_flex.inc"         /* FBW wing flex bend angles for the exterior wing OBJs */
+#include "a380x_eng_wobble.inc"        /* engine pylon wobble; reads the wing flex nodes */
 #include "a380x_eng_start.inc"        /* ENG START selector + FADEC automatic start (after the feedback selector) */ /* key travel, SWITCHING / SURV / ECAM CP lamps (after SD, ADIRS, FMS) */
 #include "a380x_fws_adapter.inc"
 #include "a380x_aurals.inc"            /* cockpit aurals: callouts, CRC, C-chord, stall, V1 (after FWS, FMS, guidance) */
@@ -408,6 +418,7 @@ static float flight_loop(float elapsed_since_last_call, float elapsed_since_last
     engs_update();
     fan_update(elapsed_since_last_call > 0.0f ? elapsed_since_last_call : dt);
     wf_update(elapsed_since_last_call > 0.0f ? elapsed_since_last_call : dt);
+    ew_update(elapsed_since_last_call > 0.0f ? elapsed_since_last_call : dt);   /* after wf_update: its node speeds */
     a380x_efb_update(dt);
     terrain_update();   /* TERRAIN on ND: before the xp-kit publication that carries its rasters */
     xpkit_update();
@@ -656,6 +667,7 @@ PLUGIN_API int XPluginStart(char *name, char *signature, char *description)
     engi_init();
     fan_init();
     wf_init();   /* before the aircraft OBJs bind a380x/xp12/wing/flex_* */
+    ew_init();   /* and a380x/xp12/eng/wobble_* */
     aurals_start();   /* cockpit aural samples (sounds/cockpit); silent if they are absent */
     if (!sda_init()) XPLMDebugString("A380X ECAM SD: registration failed; existing avionics remain available\n");
     /* Key-travel, selector and lamp datarefs before the aircraft OBJs bind them. */
@@ -679,6 +691,7 @@ PLUGIN_API int XPluginStart(char *name, char *signature, char *description)
         lgg_shutdown();
         isis_adapter_shutdown();
         engs_shutdown();
+        ew_shutdown();
         wf_shutdown();
         hyda_shutdown();
         cfb_shutdown();
@@ -720,6 +733,7 @@ PLUGIN_API void XPluginStop(void)
     aurals_stop();
     fwsa_shutdown();
     fan_release();
+    ew_shutdown();
     wf_shutdown();
     eln_shutdown();
     elec_shutdown();

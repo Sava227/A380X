@@ -58,6 +58,10 @@ static void draw_nd(const Side *s,float x,float y,const char *label){(void)s;(vo
 /* Adapter supervision state: 1 while a web renderer runs or a restart is pending. */
 static int web_possible=1;
 static int xpkit_web_possible(void){return web_possible;}
+static int xpkit_pfd_nd_web(void){return web_possible;}   /* native PFD/ND switch off */
+static void native_nd_content(int side){(void)side;++fallbacks;}
+static void gb_scope_begin(void){}
+static void gb_scope_end(void){}
 static void xpkit_device_draw_begin(void){}
 static int pfd_natives;
 static void draw_pfd(const Side *s,float x,float y,const char *label){(void)s;(void)x;(void)y;(void)label;++pfd_natives;}
