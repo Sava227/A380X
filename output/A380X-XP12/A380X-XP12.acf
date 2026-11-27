@@ -17605,7 +17605,7 @@ P _gear/0/_gear_y -5.199999809
 P _gear/0/_gear_z 14.960000038
 P _gear/0/_latE 0.000000000
 P _gear/0/_latR 0.000000000
-P _gear/0/_leg_len 8.500000000
+P _gear/0/_leg_len 7.711000109
 P _gear/0/_lonE 0.000000000
 P _gear/0/_lonR 117.000000000
 P _gear/0/_steerdeg_hispeed 7.000000000
@@ -17637,7 +17637,7 @@ P _gear/1/_gear_y -1.100000024
 P _gear/1/_gear_z 109.407997131
 P _gear/1/_latE 0.000000000
 P _gear/1/_latR 90.000000000
-P _gear/1/_leg_len 12.800000191
+P _gear/1/_leg_len 11.724000029
 P _gear/1/_lonE 0.000000000
 P _gear/1/_lonR 0.000000000
 P _gear/1/_steerdeg_hispeed 0.000000000
@@ -17669,7 +17669,7 @@ P _gear/2/_gear_y -1.100000024
 P _gear/2/_gear_z 109.407997131
 P _gear/2/_latE 0.000000000
 P _gear/2/_latR -90.000000000
-P _gear/2/_leg_len 12.800000191
+P _gear/2/_leg_len 11.724000029
 P _gear/2/_lonE 0.000000000
 P _gear/2/_lonR 0.000000000
 P _gear/2/_steerdeg_hispeed 0.000000000
@@ -17701,7 +17701,7 @@ P _gear/3/_gear_y -5.809999943
 P _gear/3/_gear_z 120.809997559
 P _gear/3/_latE 0.000000000
 P _gear/3/_latR 0.000000000
-P _gear/3/_leg_len 8.000000000
+P _gear/3/_leg_len 7.234000110
 P _gear/3/_lonE 0.000000000
 P _gear/3/_lonR 10.000000000
 P _gear/3/_steerdeg_hispeed 7.000000000
@@ -17733,7 +17733,7 @@ P _gear/4/_gear_y -5.809999943
 P _gear/4/_gear_z 120.809997559
 P _gear/4/_latE 0.000000000
 P _gear/4/_latR 0.000000000
-P _gear/4/_leg_len 8.000000000
+P _gear/4/_leg_len 7.234000110
 P _gear/4/_lonE 0.000000000
 P _gear/4/_lonR 10.000000000
 P _gear/4/_steerdeg_hispeed 7.000000000
