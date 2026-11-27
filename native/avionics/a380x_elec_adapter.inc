@@ -380,6 +380,11 @@ static int eln_detect_spawn(void)
     if (running || !eln_rawi(ENR_ON_GROUND)) return A380X_ELN_SPAWN_READY;
     return eln.default_spawn == A380X_ELN_SPAWN_TURNAROUND ? A380X_ELN_SPAWN_TURNAROUND : A380X_ELN_SPAWN_COLD_DARK;
 }
+static void eln_run_command(const char *name)
+{
+    XPLMCommandRef command = XPLMFindCommand(name);
+    if (command) XPLMCommandOnce(command);
+}
 /* Cold & dark cockpit per spec 7.1 (stock items the plugin does not own are set once). */
 static void eln_secure_cockpit(void)
 {
@@ -387,7 +392,7 @@ static void eln_secure_cockpit(void)
     eln_seti(ENR_APU_SWITCH, 0);
     for (i = 0; i < 4; ++i) eln_set_vi(ENR_FUEL_PUMP, i, 0);
     eln_seti(ENR_STROBE, 0); eln_seti(ENR_NAV, 0); eln_seti(ENR_BEACON, 0);
-    eln_seti(ENR_LANDING, 0); eln_seti(ENR_TAXI, 0);
+    eln_run_command("sim/lights/landing_lights_off"); eln_seti(ENR_TAXI, 0);   /* landing_lights_on is light 0 only */
     eln_seti(ENR_SEATBELT, 0); eln_seti(ENR_NO_SMOKING, 0); eln_seti(ENR_O2, 0); eln_seti(ENR_APU_BLEED, 0);
     if (eln.raw[ENR_PARKBRAKE]) eln_setf(ENR_PARKBRAKE, 1.0f);
     eln.nose = eln.strobe_auto = eln.no_smoking_auto = eln.rwy_turnoff = 0;
@@ -471,11 +476,6 @@ static int eln_preset_get(void *ctx, int item, int index)
     default: return 0;
     }
 }
-static void eln_run_command(const char *name)
-{
-    XPLMCommandRef command = XPLMFindCommand(name);
-    if (command) XPLMCommandOnce(command);
-}
 static void eln_preset_set(void *ctx, int item, int index, int value)
 {
     (void)ctx;
@@ -525,7 +525,7 @@ static void eln_preset_set(void *ctx, int item, int index, int value)
     case A380X_PI_NOSE_LIGHT: eln.nose = value ? (eln.nose ? eln.nose : 1) : 0; eln_seti(ENR_TAXI, eln.nose != 0); break;
     case A380X_PI_NOSE_TO_LIGHT: eln.nose = value ? 2 : (eln.nose == 2 ? 1 : eln.nose); eln_seti(ENR_TAXI, eln.nose != 0); break;
     case A380X_PI_RWY_TURNOFF: eln.rwy_turnoff = value != 0; break;
-    case A380X_PI_LANDING_LIGHTS: eln_seti(ENR_LANDING, value != 0); break;
+    case A380X_PI_LANDING_LIGHTS: eln_run_command(value ? "sim/lights/landing_lights_on" : "sim/lights/landing_lights_off"); break;
     case A380X_PI_AUTOBRAKE_RTO:
         if ((center_right.rto_arm != 0) != (value != 0)) eln_run_command("a380x/xp12/center_right/rto_toggle");
         break;

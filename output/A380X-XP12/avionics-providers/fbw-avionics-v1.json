@@ -2017,11 +2017,11 @@
   "files": [
     {
       "path": "plugins/A380XAvionics/mac_x64/A380XAvionics.xpl",
-      "sha256": "5dd38eb906fbf0d4a097aa61d27b990d2ac375bbe4a3a4cee6d9e5ad29d41908"
+      "sha256": "30d99cdeaa3ec983db7d091f10fd1e6bda4de2decae9a56a06be95291ca78747"
     },
     {
       "path": "plugins/A380XAvionics/win_x64/A380XAvionics.xpl",
-      "sha256": "7caf7b1a97cea124a78fbf73f161154f6d8e122f0490f5eb05052ad533a06184"
+      "sha256": "e93abad054030ddca4ef2483aa2ead08e8c26ce578f1f168cb9805a949e51156"
     },
     {
       "path": "plugins/A380XAvionics/sounds/priority_left.pcm",
@@ -2193,7 +2193,7 @@
     },
     {
       "path": "plugins/A380XAvionics/build-report.json",
-      "sha256": "5e67a24c0b027425e9a042b24daf1e201d9ca43b2ceb2bba6397487b6f8c061d"
+      "sha256": "c20d25052636dccb2baf500bdbb763018c20c83337928e58dc22b54c22414e02"
     }
   ],
   "runtime_tested": false,
