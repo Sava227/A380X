@@ -18550,7 +18550,7 @@ P _obja/30/_v10_att_psi_ref 180.000000000
 P _obja/30/_v10_att_the_ref 0.000000000
 P _obja/30/_v10_att_wing -1
 P _obja/30/_v10_att_x_acf_prt_ref 0.000000000
-P _obja/30/_v10_att_y_acf_prt_ref -0.519094488
+P _obja/30/_v10_att_y_acf_prt_ref 0.000000000
 P _obja/30/_v10_att_z_acf_prt_ref 115.108001709
 P _obja/30/_v10_is_internal 0
 P _obja/30/_v10_steers_with_gear 0
@@ -18563,7 +18563,7 @@ P _obja/31/_v10_att_psi_ref 180.000000000
 P _obja/31/_v10_att_the_ref 0.000000000
 P _obja/31/_v10_att_wing -1
 P _obja/31/_v10_att_x_acf_prt_ref 0.000000000
-P _obja/31/_v10_att_y_acf_prt_ref -2.074212598
+P _obja/31/_v10_att_y_acf_prt_ref -1.555118110
 P _obja/31/_v10_att_z_acf_prt_ref 115.108001709
 P _obja/31/_v10_is_internal 0
 P _obja/31/_v10_steers_with_gear 0
@@ -18576,7 +18576,7 @@ P _obja/32/_v10_att_psi_ref 180.000000000
 P _obja/32/_v10_att_the_ref 0.000000000
 P _obja/32/_v10_att_wing -1
 P _obja/32/_v10_att_x_acf_prt_ref 0.000000000
-P _obja/32/_v10_att_y_acf_prt_ref -0.519094488
+P _obja/32/_v10_att_y_acf_prt_ref 0.000000000
 P _obja/32/_v10_att_z_acf_prt_ref 115.108001709
 P _obja/32/_v10_is_internal 0
 P _obja/32/_v10_steers_with_gear 0
